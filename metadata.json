@@ -1,0 +1,5 @@
+{
+  "name": "Kafe Anı Duvarı",
+  "description": "Konsept kafeler için müşterilerin anlık fotoğraf çekip paylaşabileceği interaktif anı duvarı.",
+  "requestFramePermissions": ["camera"]
+}
