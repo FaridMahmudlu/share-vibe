@@ -68,7 +68,7 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
-      if (user && !user.isAnonymous) {
+      if (user) {
         setUserEmail(user.email);
 
         if (user.email && ADMIN_EMAILS.has(user.email)) {

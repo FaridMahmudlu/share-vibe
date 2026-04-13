@@ -1,10 +1,10 @@
 import React, { Suspense, startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { Camera, Upload, Heart, X, Sparkles, MapPin, Clock, Instagram, Twitter, Facebook, PlayCircle, Share2, Copy, Check, Trash2, Palette, RefreshCw, RotateCw, Sun, Contrast, ChevronLeft, ChevronRight, Coffee, Settings, ImageOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { db, auth, ensureAnonymousSession, storage } from './firebase';
+import { db, auth, storage, waitForAuthInitialization } from './firebase';
 import { collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc, serverTimestamp, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
 import { getGoogleSignInErrorMessage, resolveGoogleSignInRedirect, signInWithGoogle } from './googleAuth';
 import { deleteMediaRecord } from './mediaStorage';
 import { clearPendingUpload, getPendingUpload, savePendingUpload, type PendingUploadDraft } from './pendingUpload';
@@ -141,7 +141,9 @@ export default function App() {
   const [isCopied, setIsCopied] = useState(false);
   const [failedMediaIds, setFailedMediaIds] = useState<Record<string, true>>({});
   const [currentUserUid, setCurrentUserUid] = useState<string | null>(null);
-  const [isAnonymous, setIsAnonymous] = useState(true);
+  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
+  const [currentUserName, setCurrentUserName] = useState<string | null>(null);
+  const [currentUserPhotoUrl, setCurrentUserPhotoUrl] = useState<string | null>(null);
   const [isAuthResolved, setIsAuthResolved] = useState(false);
   const [isGoogleRedirectResolved, setIsGoogleRedirectResolved] = useState(false);
   const [isMediaItemsReady, setIsMediaItemsReady] = useState(false);
@@ -181,6 +183,14 @@ export default function App() {
   const streamRef = useRef<MediaStream | null>(null);
   const filterScrollRef = useRef<HTMLDivElement>(null);
   const resumedPendingUploadRef = useRef(false);
+  const isAuthenticated = Boolean(currentUserUid);
+
+  const syncCurrentUser = (user: User | null) => {
+    setCurrentUserUid(user?.uid ?? null);
+    setCurrentUserEmail(user?.email ?? null);
+    setCurrentUserName(user?.displayName ?? user?.email?.split('@')[0] ?? null);
+    setCurrentUserPhotoUrl(user?.photoURL ?? null);
+  };
 
   const scrollFilters = (direction: 'left' | 'right') => {
     if (filterScrollRef.current) {
@@ -214,6 +224,58 @@ export default function App() {
     setEditRotation(0);
     setEditBrightness(100);
     setEditContrast(100);
+  };
+
+  const ensureGoogleUser = async ({
+    beforeRedirect,
+    statusMessage,
+  }: {
+    beforeRedirect?: () => Promise<void> | void;
+    statusMessage?: string;
+  } = {}) => {
+    await waitForAuthInitialization();
+
+    if (auth.currentUser) {
+      syncCurrentUser(auth.currentUser);
+      return auth.currentUser;
+    }
+
+    try {
+      if (statusMessage) {
+        setUploadStatus(statusMessage);
+      }
+
+      setUploadError(null);
+      const result = await signInWithGoogle({ beforeRedirect });
+
+      if (!result) {
+        return null;
+      }
+
+      syncCurrentUser(result.user);
+      return result.user;
+    } catch (error) {
+      const message = getGoogleSignInErrorMessage(error);
+      setUploadError(message);
+      setUploadStatus(null);
+      console.error('Google sign-in error:', error);
+      return null;
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      syncCurrentUser(null);
+      setCurrentView('app');
+      setSelectedMediaId(null);
+      setShareMediaId(null);
+      setMediaToDelete(null);
+      setUploadStatus(null);
+      setUploadError(null);
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
   };
 
   const buildUploadDraft = (): UploadDraft | null => {
@@ -468,8 +530,7 @@ export default function App() {
         }
 
         if (redirectResult) {
-          setCurrentUserUid(redirectResult.user.uid);
-          setIsAnonymous(false);
+          syncCurrentUser(redirectResult.user);
         }
 
         if (pendingUpload) {
@@ -501,26 +562,12 @@ export default function App() {
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        setCurrentUserUid(user.uid);
-        setIsAnonymous(user.isAnonymous);
-      } else {
-        setCurrentUserUid(null);
-        setIsAnonymous(true);
-      }
+      syncCurrentUser(user);
       setIsAuthResolved(true);
     });
 
     return () => unsubscribeAuth();
   }, []);
-
-  useEffect(() => {
-    if (!isAuthResolved || !isGoogleRedirectResolved || currentUserUid) {
-      return;
-    }
-
-    void ensureAnonymousSession();
-  }, [isAuthResolved, isGoogleRedirectResolved, currentUserUid]);
 
   useEffect(() => {
     if (!isAuthResolved || !currentUserUid) {
@@ -571,8 +618,7 @@ export default function App() {
       !isAuthResolved ||
       !isGoogleRedirectResolved ||
       !isMediaItemsReady ||
-      !currentUserUid ||
-      isAnonymous
+      !currentUserUid
     ) {
       return;
     }
@@ -599,7 +645,6 @@ export default function App() {
     isGoogleRedirectResolved,
     isMediaItemsReady,
     currentUserUid,
-    isAnonymous,
     mediaItems,
     campaignTarget,
   ]);
@@ -640,31 +685,24 @@ export default function App() {
       return;
     }
 
-    let uid = currentUserUid;
+    let uid = currentUserUid ?? auth.currentUser?.uid ?? null;
 
-    if (!uid || isAnonymous) {
-      try {
-        setUploadStatus('Google ile giriş açılıyor...');
-        setUploadError(null);
-        const result = await signInWithGoogle({
-          beforeRedirect: () => savePendingUpload(draft),
-        });
-        if (!result) {
+    if (!uid) {
+      const user = await ensureGoogleUser({
+        beforeRedirect: () => savePendingUpload(draft),
+        statusMessage: 'Google ile giriş açılıyor...',
+      });
+
+      if (!user) {
+        if (!auth.currentUser) {
           setUploadStatus('Google girişi için yönlendiriliyorsunuz...');
-          return;
         }
-        uid = result.user.uid;
-        void discardPendingUpload();
-        setCurrentUserUid(uid);
-        setIsAnonymous(false);
-        setUploadStatus('Giriş doğrulanıyor...');
-      } catch (error) {
-        console.error('Giriş hatası:', error);
-        await discardPendingUpload();
-        setUploadError(getGoogleSignInErrorMessage(error));
-        setUploadStatus(null);
         return;
       }
+
+      uid = user.uid;
+      void discardPendingUpload();
+      setUploadStatus('Giriş doğrulanıyor...');
     }
 
     if (!uid) {
@@ -763,20 +801,14 @@ export default function App() {
   const toggleLike = async (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     
-    let uid = currentUserUid;
-    if (!uid || isAnonymous) {
-      try {
-        const result = await signInWithGoogle();
-        if (!result) {
-          return;
-        }
-        uid = result.user.uid;
-        setCurrentUserUid(uid);
-        setIsAnonymous(false);
-      } catch (error) {
-        console.error("Giriş hatası:", error);
+    let uid = currentUserUid ?? auth.currentUser?.uid ?? null;
+    if (!uid) {
+      const user = await ensureGoogleUser();
+      if (!user) {
         return;
       }
+
+      uid = user.uid;
     }
 
     await auth.currentUser?.getIdToken(true);
@@ -899,6 +931,23 @@ export default function App() {
       return mediaDate.toDateString() === today.toDateString();
     }).length;
   }, [mediaItems]);
+  const currentAccountLabel = currentUserName || currentUserEmail || 'Google hesabı';
+
+  if (!isAuthResolved || !isGoogleRedirectResolved) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4 text-cafe-50">
+        <div className="section-shell max-w-md text-center">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12 text-[color:var(--color-accent)]">
+            <Coffee className="w-6 h-6" />
+          </div>
+          <h1 className="text-2xl font-semibold text-cafe-50">Hesap durumu kontrol ediliyor</h1>
+          <p className="mt-3 text-sm leading-7 text-cafe-100/70">
+            Google oturumun doğrulanıyor. Giriş yaptıysan hesabın otomatik olarak geri yüklenecek.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (currentView === 'admin') {
     return (
@@ -944,8 +993,8 @@ export default function App() {
                       Anı Galerisi
                     </span>
                   </div>
-                  <p className="hidden lg:block text-sm text-cafe-100/60">
-                    Hızlı paylaşım, net galeri, sade deneyim.
+                  <p className="text-xs sm:text-sm text-cafe-100/60">
+                    {isAuthenticated ? (currentUserEmail ?? 'Google hesabı açık') : 'Google ile giriş gerekli'}
                   </p>
                 </div>
               </div>
@@ -958,11 +1007,32 @@ export default function App() {
 
               <div className="header-actions">
                 <div className="hidden lg:flex items-center gap-2 rounded-full border border-cafe-700/70 bg-white/78 px-3 py-2 text-sm text-cafe-100/72 shadow-sm">
-                  <span className={`h-2.5 w-2.5 rounded-full ${!isAnonymous && userUploadsThisWeekCount >= MAX_WEEKLY_UPLOADS ? 'bg-red-500' : 'bg-accent animate-pulse'}`} />
+                  <span className={`h-2.5 w-2.5 rounded-full ${isAuthenticated && userUploadsThisWeekCount >= MAX_WEEKLY_UPLOADS ? 'bg-red-500' : 'bg-accent animate-pulse'}`} />
                   <span className="font-medium">
-                    {!isAnonymous ? `${userUploadsThisWeekCount}/${MAX_WEEKLY_UPLOADS} paylaşım` : `${MAX_WEEKLY_UPLOADS} paylaşım limit`}
+                    {isAuthenticated ? `${userUploadsThisWeekCount}/${MAX_WEEKLY_UPLOADS} paylaşım` : 'Google ile giriş gerekli'}
                   </span>
                 </div>
+
+                {isAuthenticated ? (
+                  <div className="hidden xl:flex items-center gap-2 rounded-full border border-cafe-700/70 bg-white/78 px-2.5 py-2 shadow-sm">
+                    {currentUserPhotoUrl ? (
+                      <img
+                        src={currentUserPhotoUrl}
+                        alt={currentAccountLabel}
+                        className="h-8 w-8 rounded-full object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[color:var(--color-accent)]/14 text-[color:var(--color-accent)] text-xs font-bold uppercase">
+                        {currentAccountLabel.slice(0, 1)}
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-cafe-50">{currentAccountLabel}</p>
+                      <p className="truncate text-xs text-cafe-100/58">{currentUserEmail ?? 'Google hesabı açık'}</p>
+                    </div>
+                  </div>
+                ) : null}
 
                 <button
                   onClick={() => setIsThemeModalOpen(true)}
@@ -978,19 +1048,59 @@ export default function App() {
                 >
                   <Settings className="w-5 h-5" />
                 </button>
-                <button
-                  onClick={() => setIsUploadModalOpen(true)}
-                  className="header-primary-action hidden sm:inline-flex"
-                >
-                  <Camera className="w-4 h-4" />
-                  <span>Anı Ekle</span>
-                </button>
+                {isAuthenticated ? (
+                  <>
+                    <button
+                      onClick={() => setIsUploadModalOpen(true)}
+                      className="header-primary-action hidden sm:inline-flex"
+                    >
+                      <Camera className="w-4 h-4" />
+                      <span>Anı Ekle</span>
+                    </button>
+                    <button
+                      onClick={handleLogout}
+                      className="hidden lg:inline-flex items-center justify-center rounded-full border border-cafe-700/70 bg-white/78 px-4 py-2 text-sm font-semibold text-cafe-50 transition-colors hover:border-accent/40"
+                    >
+                      Çıkış
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={() => void ensureGoogleUser()}
+                    className="header-primary-action hidden sm:inline-flex"
+                  >
+                    <span>Google ile Giriş</span>
+                  </button>
+                )}
               </div>
             </div>
           </div>
         </header>
 
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-10 space-y-8 sm:space-y-10">
+          {!isAuthenticated ? (
+            <section className="section-shell max-w-3xl mx-auto text-center">
+              <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-[1.7rem] bg-[color:var(--color-accent)]/12 text-[color:var(--color-accent)]">
+                <Coffee className="w-7 h-7" />
+              </div>
+              <span className="section-pill">Google Hesabı Gerekli</span>
+              <h2 className="mt-4 text-3xl sm:text-4xl font-serif font-semibold text-cafe-50">
+                Galeriyi görmek ve paylaşım yapmak için Google ile giriş yap
+              </h2>
+              <p className="mt-4 max-w-2xl mx-auto text-sm sm:text-base leading-7 text-cafe-100/72">
+                Anonim giriş kaldırıldı. Bir kez Google hesabınla giriş yaptığında oturumun bu cihazda korunur; paylaşım, beğeni ve admin paneli için tekrar tekrar giriş yapman gerekmez.
+              </p>
+              <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+                <button
+                  onClick={() => void ensureGoogleUser()}
+                  className="header-primary-action"
+                >
+                  Google ile Giriş Yap
+                </button>
+              </div>
+            </section>
+          ) : (
+          <>
           <section id="experience" className="grid gap-6 xl:grid-cols-[minmax(0,1.45fr),minmax(320px,0.95fr)]">
             <div className="section-shell relative overflow-hidden">
               <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-r from-[color:var(--color-accent)]/18 via-white/30 to-transparent" />
@@ -1243,17 +1353,26 @@ export default function App() {
               </div>
             )}
           </section>
+          </>
+          )}
         </main>
       </div>
 
       <div className="fixed bottom-5 sm:bottom-8 left-1/2 z-40 flex -translate-x-1/2 flex-col items-center gap-3">
-        {currentUserUid && !isAnonymous && (
+        {isAuthenticated && (
           <div className="rounded-full border border-white/60 bg-white/82 px-4 py-2 text-xs text-cafe-100 shadow-[0_12px_35px_rgba(73,52,38,0.12)] backdrop-blur-xl">
             <span className="font-semibold">Haftalık limit:</span> {userUploadsThisWeekCount}/{MAX_WEEKLY_UPLOADS}
           </div>
         )}
         <button
-          onClick={() => setIsUploadModalOpen(true)}
+          onClick={() => {
+            if (isAuthenticated) {
+              setIsUploadModalOpen(true);
+              return;
+            }
+
+            void ensureGoogleUser();
+          }}
           className="floating-upload-button"
         >
           <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white/18">

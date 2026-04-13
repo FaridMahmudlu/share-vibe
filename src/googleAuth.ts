@@ -1,8 +1,6 @@
 import {
   GoogleAuthProvider,
   getRedirectResult,
-  linkWithPopup,
-  linkWithRedirect,
   signInWithPopup,
   signInWithRedirect,
   type UserCredential,
@@ -13,12 +11,6 @@ const REDIRECT_FALLBACK_CODES = new Set([
   'auth/popup-blocked',
   'auth/operation-not-supported-in-this-environment',
   'auth/web-storage-unsupported',
-]);
-
-const LINK_CONFLICT_CODES = new Set([
-  'auth/credential-already-in-use',
-  'auth/email-already-in-use',
-  'auth/provider-already-linked',
 ]);
 
 const getErrorCode = (error: unknown) =>
@@ -36,7 +28,6 @@ const isLocalDevelopmentHost = (domain: string) =>
 
 const createGoogleProvider = () => {
   const provider = new GoogleAuthProvider();
-  provider.setCustomParameters({ prompt: 'select_account' });
   return provider;
 };
 
@@ -64,43 +55,17 @@ export const signInWithGoogle = async (
 ): Promise<UserCredential | null> => {
   const { beforeRedirect } = options;
   const provider = createGoogleProvider();
-  const currentUser = auth.currentUser;
-
-  const signIn = async () => {
-    try {
-      return await finalizeSignIn(await signInWithPopup(auth, provider));
-    } catch (error) {
-      if (REDIRECT_FALLBACK_CODES.has(getErrorCode(error))) {
-        await beforeRedirect?.();
-        await signInWithRedirect(auth, provider);
-        return null;
-      }
-
-      throw error;
+  try {
+    return await finalizeSignIn(await signInWithPopup(auth, provider));
+  } catch (error) {
+    if (REDIRECT_FALLBACK_CODES.has(getErrorCode(error))) {
+      await beforeRedirect?.();
+      await signInWithRedirect(auth, provider);
+      return null;
     }
-  };
 
-  if (currentUser?.isAnonymous) {
-    try {
-      return await finalizeSignIn(await linkWithPopup(currentUser, provider));
-    } catch (error) {
-      const errorCode = getErrorCode(error);
-
-      if (LINK_CONFLICT_CODES.has(errorCode)) {
-        return signIn();
-      }
-
-      if (REDIRECT_FALLBACK_CODES.has(errorCode)) {
-        await beforeRedirect?.();
-        await linkWithRedirect(currentUser, provider);
-        return null;
-      }
-
-      throw error;
-    }
+    throw error;
   }
-
-  return signIn();
 };
 
 export const getGoogleSignInErrorMessage = (error: unknown) => {

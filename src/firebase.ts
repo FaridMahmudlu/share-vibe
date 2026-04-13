@@ -4,8 +4,6 @@ import {
   getAuth,
   onAuthStateChanged,
   setPersistence,
-  signInAnonymously,
-  type User,
 } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
@@ -28,32 +26,8 @@ const authReadyPromise = new Promise<void>((resolve) => {
   });
 });
 
-let anonymousSignInPromise: Promise<User | null> | null = null;
-
 export const waitForAuthInitialization = async () => {
   await persistencePromise;
   await authReadyPromise;
   return auth.currentUser;
-};
-
-export const ensureAnonymousSession = async () => {
-  await waitForAuthInitialization();
-
-  if (auth.currentUser) {
-    return auth.currentUser;
-  }
-
-  if (!anonymousSignInPromise) {
-    anonymousSignInPromise = signInAnonymously(auth)
-      .then((credential) => credential.user)
-      .catch((error) => {
-        console.error('Error signing in anonymously:', error);
-        return null;
-      })
-      .finally(() => {
-        anonymousSignInPromise = null;
-      });
-  }
-
-  return anonymousSignInPromise;
 };
