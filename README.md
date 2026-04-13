@@ -2,19 +2,35 @@
 <img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
 </div>
 
-# Run and deploy your AI Studio app
+# Kafe Anı
 
-This contains everything you need to run your app locally.
+Firebase tabanlı React/Vite uygulamasıdır. Müşteriler fotoğraf paylaşabilir, içerikleri beğenebilir ve yöneticiler tema ile kampanya ayarlarını yönetebilir.
 
-View your app in AI Studio: https://ai.studio/apps/0179b1de-f24b-4cc2-aaaa-4e4738a7589a
+## Yerelde Çalıştırma
 
-## Run Locally
+Gereksinimler:
 
-**Prerequisites:**  Node.js
+- Node.js 20+
+- Yapılandırılmış Firebase projesine internet erişimi
 
+Adımlar:
 
-1. Install dependencies:
+1. Bağımlılıkları kurun:
    `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
+2. Geliştirme sunucusunu başlatın:
    `npm run dev`
+3. Uygulamayı şu adresten açın:
+   `http://localhost:3000`
+
+## Kontroller
+
+- Prod build:
+  `npm run build`
+- TypeScript kontrolü:
+  `npm run lint`
+
+## Notlar
+
+- Firebase web yapılandırması [`firebase-applet-config.json`](./firebase-applet-config.json) içinde tutulur.
+- Uygulama galeri erişimi için otomatik anonim Firebase oturumu açar.
+- Admin yetkileri Firestore kuralları ve [`src/AdminPanel.tsx`](./src/AdminPanel.tsx) içinden kontrol edilir.

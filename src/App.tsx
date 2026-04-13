@@ -1,11 +1,25 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Camera, Upload, Heart, X, Sparkles, MapPin, Clock, Instagram, Twitter, Facebook, Video, PlayCircle, Share2, Copy, Check, Trash2, Palette, RefreshCw, RotateCw, Sun, Contrast, ChevronLeft, ChevronRight, Coffee, Settings } from 'lucide-react';
+import React, { Suspense, startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { Camera, Upload, Heart, X, Sparkles, MapPin, Clock, Instagram, Twitter, Facebook, PlayCircle, Share2, Copy, Check, Trash2, Palette, RefreshCw, RotateCw, Sun, Contrast, ChevronLeft, ChevronRight, Coffee, Settings, ImageOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { db, auth, storage } from './firebase';
-import { collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc, serverTimestamp, arrayUnion, arrayRemove, getDoc } from 'firebase/firestore';
-import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
-import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
-import AdminPanel from './AdminPanel';
+import { db, auth, ensureAnonymousSession, storage } from './firebase';
+import { collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc, serverTimestamp, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { onAuthStateChanged } from 'firebase/auth';
+import { getGoogleSignInErrorMessage, resolveGoogleSignInRedirect, signInWithGoogle } from './googleAuth';
+import { deleteMediaRecord } from './mediaStorage';
+import { clearPendingUpload, getPendingUpload, savePendingUpload, type PendingUploadDraft } from './pendingUpload';
+import {
+  DEFAULT_ACCENT_COLOR,
+  DEFAULT_CAFE_NAME,
+  DEFAULT_CAMPAIGN_REWARD,
+  DEFAULT_CAMPAIGN_TARGET,
+  DEFAULT_HANDWRITING_FONT,
+  DEFAULT_MEDIA_CAPTION,
+  THEME_COLORS,
+  THEME_FONTS,
+  normalizeHandwritingFont,
+  normalizeLegacyText,
+} from './uiConfig';
 
 type MediaType = 'image' | 'video';
 
@@ -23,6 +37,8 @@ type MediaItem = {
   createdAt: any;
 };
 
+type UploadDraft = PendingUploadDraft;
+
 const AnimatedBackground = () => (
   <div className="fixed inset-0 z-[-1] overflow-hidden pointer-events-none">
     <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-accent/30 blur-[100px] animate-blob" />
@@ -31,20 +47,18 @@ const AnimatedBackground = () => (
   </div>
 );
 
-const THEME_COLORS = [
-  { name: 'Pembe', value: '#ec4899' },
-  { name: 'Mor', value: '#a855f7' },
-  { name: 'Mavi', value: '#3b82f6' },
-  { name: 'Yeşil', value: '#10b981' },
-  { name: 'Turuncu', value: '#f97316' },
-];
-
-const THEME_FONTS = [
-  { name: 'Caveat', value: '"Caveat", cursive' },
-  { name: 'Dancing Script', value: '"Dancing Script", cursive' },
-  { name: 'Pacifico', value: '"Pacifico", cursive' },
-  { name: 'Indie Flower', value: '"Indie Flower", cursive' },
-];
+const BrokenMediaPlaceholder = ({
+  message,
+  compact = false,
+}: {
+  message: string;
+  compact?: boolean;
+}) => (
+  <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-gradient-to-br from-cafe-800 to-cafe-700 text-cafe-100/70 px-6 text-center">
+    <ImageOff className={compact ? 'w-8 h-8 text-cafe-100/40' : 'w-12 h-12 text-cafe-100/40'} />
+    <p className={compact ? 'text-xs font-medium' : 'text-sm font-medium'}>{message}</p>
+  </div>
+);
 
 const CAMERA_FILTERS = [
   { name: 'Normal', value: 'none' },
@@ -63,16 +77,34 @@ const CAMERA_FILTERS = [
   { name: 'Pop Art', value: 'saturate(400%) contrast(150%)' },
 ];
 
+const MAX_WEEKLY_UPLOADS = 2;
+const MAX_UPLOAD_IMAGE_DIMENSION = 2048;
+const MAX_UPLOAD_IMAGE_SIZE = 3_500_000;
+const AdminPanel = React.lazy(() => import('./AdminPanel'));
+
+const getMediaDate = (value: MediaItem['createdAt']) => {
+  if (!value) {
+    return null;
+  }
+
+  if (typeof value?.toDate === 'function') {
+    return value.toDate();
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
 export default function App() {
   const [currentView, setCurrentView] = useState<'app' | 'admin'>('app');
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isThemeModalOpen, setIsThemeModalOpen] = useState(false);
-  const [accentColor, setAccentColor] = useState('#ec4899');
-  const [handwritingFont, setHandwritingFont] = useState('"Caveat", cursive');
-  const [cafeName, setCafeName] = useState('Lumina Konsept Kafe');
-  const [campaignTarget, setCampaignTarget] = useState(5);
-  const [campaignReward, setCampaignReward] = useState('ücretsiz bir kahve');
+  const [accentColor, setAccentColor] = useState(DEFAULT_ACCENT_COLOR);
+  const [handwritingFont, setHandwritingFont] = useState(DEFAULT_HANDWRITING_FONT);
+  const [cafeName, setCafeName] = useState(DEFAULT_CAFE_NAME);
+  const [campaignTarget, setCampaignTarget] = useState(DEFAULT_CAMPAIGN_TARGET);
+  const [campaignReward, setCampaignReward] = useState(DEFAULT_CAMPAIGN_REWARD);
   const [isSaving, setIsSaving] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
@@ -81,7 +113,6 @@ export default function App() {
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
   const [activeFilter, setActiveFilter] = useState<string>('none');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [uploadType, setUploadType] = useState<MediaType>('image');
   const [caption, setCaption] = useState('');
   const [currentTable, setCurrentTable] = useState('Masa 12');
   const [selectedMediaId, setSelectedMediaId] = useState<string | null>(null);
@@ -89,8 +120,13 @@ export default function App() {
   const [mediaToDelete, setMediaToDelete] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState(false);
+  const [failedMediaIds, setFailedMediaIds] = useState<Record<string, true>>({});
   const [currentUserUid, setCurrentUserUid] = useState<string | null>(null);
   const [isAnonymous, setIsAnonymous] = useState(true);
+  const [isAuthResolved, setIsAuthResolved] = useState(false);
+  const [isGoogleRedirectResolved, setIsGoogleRedirectResolved] = useState(false);
+  const [isMediaItemsReady, setIsMediaItemsReady] = useState(false);
+  const [pendingRedirectUpload, setPendingRedirectUpload] = useState<UploadDraft | null>(null);
   const [showRewardModal, setShowRewardModal] = useState(false);
   
   // Image editing state
@@ -107,29 +143,25 @@ export default function App() {
     return mediaItems.filter(item => {
       if (item.authorUid !== currentUserUid) return false;
       if (!item.createdAt) return true; // If just uploaded and timestamp is pending, count it
-      const itemDate = item.createdAt.toDate ? item.createdAt.toDate() : new Date(item.createdAt);
+      const itemDate = getMediaDate(item.createdAt);
+      if (!itemDate) return false;
       return itemDate > oneWeekAgo;
     }).length;
   }, [mediaItems, currentUserUid]);
 
-  // Calculate total uploads for rewards
-  const totalUserUploadsCount = useMemo(() => {
-    if (!currentUserUid) return 0;
-    return mediaItems.filter(item => item.authorUid === currentUserUid).length;
-  }, [mediaItems, currentUserUid]);
-
   const isDeletable = (item: MediaItem) => {
     if (!item.createdAt) return true;
-    const itemDate = item.createdAt.toDate ? item.createdAt.toDate() : new Date(item.createdAt);
+    const itemDate = getMediaDate(item.createdAt);
+    if (!itemDate) return false;
     const now = new Date();
     const diffMinutes = (now.getTime() - itemDate.getTime()) / (1000 * 60);
     return diffMinutes <= 30;
   };
 
-  const cameraInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const filterScrollRef = useRef<HTMLDivElement>(null);
+  const resumedPendingUploadRef = useRef(false);
 
   const scrollFilters = (direction: 'left' | 'right') => {
     if (filterScrollRef.current) {
@@ -138,6 +170,216 @@ export default function App() {
         left: direction === 'left' ? -scrollAmount : scrollAmount,
         behavior: 'smooth'
       });
+    }
+  };
+
+  const discardPendingUpload = async () => {
+    try {
+      await clearPendingUpload();
+    } catch (error) {
+      console.warn('Pending upload cleanup failed:', error);
+    }
+  };
+
+  const markMediaAsFailed = (id: string) => {
+    setFailedMediaIds((current) => (current[id] ? current : { ...current, [id]: true }));
+  };
+
+  const resetUploadComposer = () => {
+    setPreviewUrl(null);
+    setSelectedFile(null);
+    setCaption('');
+    setUploadError(null);
+    setUploadStatus(null);
+    setUploadProgress(null);
+    setEditRotation(0);
+    setEditBrightness(100);
+    setEditContrast(100);
+  };
+
+  const buildUploadDraft = (): UploadDraft | null => {
+    if (!selectedFile) {
+      return null;
+    }
+
+    return {
+      file: selectedFile,
+      caption,
+      tableNumber: currentTable,
+      editRotation,
+      editBrightness,
+      editContrast,
+    };
+  };
+
+  const countWeeklyUploadsForUser = (uid: string) => {
+    const oneWeekAgo = new Date();
+    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+
+    return mediaItems.filter(item => {
+      if (item.authorUid !== uid) return false;
+      if (!item.createdAt) return true;
+      const itemDate = getMediaDate(item.createdAt);
+      if (!itemDate) return false;
+      return itemDate > oneWeekAgo;
+    }).length;
+  };
+
+  const countTotalUploadsForUser = (uid: string) =>
+    mediaItems.filter(item => item.authorUid === uid).length;
+
+  const loadImageFromFile = async (file: File) => {
+    const objectUrl = URL.createObjectURL(file);
+
+    try {
+      const image = new Image();
+      image.src = objectUrl;
+
+      await new Promise<void>((resolve, reject) => {
+        image.onload = () => resolve();
+        image.onerror = () => reject(new Error('Image could not be loaded.'));
+      });
+
+      return image;
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
+  };
+
+  const prepareFileForUpload = async (draft: UploadDraft) => {
+    if (!draft.file.type.startsWith('image/')) {
+      return draft.file;
+    }
+
+    const hasEdits = draft.editRotation !== 0 || draft.editBrightness !== 100 || draft.editContrast !== 100;
+    const needsCompression = draft.file.size > MAX_UPLOAD_IMAGE_SIZE;
+
+    setUploadStatus('Fotoğraf optimize ediliyor...');
+    await new Promise<void>((resolve) => {
+      window.requestAnimationFrame(() => resolve());
+    });
+    const image = await loadImageFromFile(draft.file);
+    const scaleRatio = Math.min(1, MAX_UPLOAD_IMAGE_DIMENSION / Math.max(image.width, image.height));
+    const targetWidth = Math.max(1, Math.round(image.width * scaleRatio));
+    const targetHeight = Math.max(1, Math.round(image.height * scaleRatio));
+    const needsResize = targetWidth !== image.width || targetHeight !== image.height;
+
+    if (!hasEdits && !needsResize && !needsCompression) {
+      return draft.file;
+    }
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+
+    if (!ctx) {
+      return draft.file;
+    }
+
+    if (Math.abs(draft.editRotation % 180) === 90) {
+      canvas.width = targetHeight;
+      canvas.height = targetWidth;
+    } else {
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+    }
+
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.rotate((draft.editRotation * Math.PI) / 180);
+    ctx.filter = `brightness(${draft.editBrightness}%) contrast(${draft.editContrast}%)`;
+    ctx.drawImage(image, -targetWidth / 2, -targetHeight / 2, targetWidth, targetHeight);
+
+    const blob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob(resolve, 'image/jpeg', 0.82);
+    });
+
+    if (!blob) {
+      return draft.file;
+    }
+
+    const fileNameWithoutExtension = draft.file.name.replace(/\.[^.]+$/, '') || 'photo';
+    return new File([blob], `${fileNameWithoutExtension}.jpg`, { type: 'image/jpeg' });
+  };
+
+  const performUpload = async (draft: UploadDraft, uid: string) => {
+    if (!uid) {
+      setUploadStatus(null);
+      setUploadError('Giriş bilgisi doğrulanamadı. Lütfen tekrar deneyin.');
+      return;
+    }
+
+    await auth.currentUser?.getIdToken(true);
+
+    if (countWeeklyUploadsForUser(uid) >= MAX_WEEKLY_UPLOADS) {
+      setUploadError(`Haftalık paylaşım limitinize (${MAX_WEEKLY_UPLOADS}) ulaştınız. Lütfen daha sonra tekrar deneyin.`);
+      setUploadStatus(null);
+      setUploadProgress(null);
+      return false;
+    }
+
+    setIsSaving(true);
+    setUploadError(null);
+    setUploadProgress(0);
+    setUploadStatus('Medya yükleniyor...');
+
+    try {
+      const fileToUpload = await prepareFileForUpload(draft);
+      const fileExtension = fileToUpload.name.split('.').pop() || 'jpg';
+      const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExtension}`;
+      const storageRef = ref(storage, `media/${fileName}`);
+      const uploadTask = uploadBytesResumable(storageRef, fileToUpload);
+
+      await new Promise<void>((resolve, reject) => {
+        uploadTask.on(
+          'state_changed',
+          (snapshot) => {
+            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+            setUploadProgress(progress);
+            setUploadStatus(`Yükleniyor... %${Math.round(progress)}`);
+          },
+          reject,
+          resolve
+        );
+      });
+
+      setUploadStatus('Bağlantı alınıyor...');
+      const downloadUrl = await getDownloadURL(storageRef);
+      const now = new Date();
+      const timeString = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+
+      setUploadStatus('Veritabanına kaydediliyor...');
+      await addDoc(collection(db, 'media'), {
+        url: downloadUrl,
+        type: draft.file.type.startsWith('video/') ? 'video' : 'image',
+        caption: normalizeLegacyText(draft.caption, DEFAULT_MEDIA_CAPTION),
+        likedBy: [],
+        likesCount: 0,
+        rotation: Math.random() * 6 - 3,
+        date: timeString,
+        tableNumber: draft.tableNumber,
+        authorUid: uid,
+        createdAt: serverTimestamp()
+      });
+
+      void discardPendingUpload();
+      setPendingRedirectUpload(null);
+      setUploadStatus(null);
+      setUploadProgress(null);
+      setIsUploadModalOpen(false);
+      resetUploadComposer();
+
+      if (countTotalUploadsForUser(uid) + 1 === campaignTarget) {
+        setShowRewardModal(true);
+      }
+
+      return true;
+    } catch (error: any) {
+      console.error("Error uploading media:", error);
+      setUploadError(error.message || 'Yükleme sırasında bir hata oluştu.');
+      setUploadStatus(null);
+      setUploadProgress(null);
+      return false;
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -152,14 +394,31 @@ export default function App() {
   }, [handwritingFont]);
 
   useEffect(() => {
+    if (!previewUrl) {
+      return;
+    }
+
+    return () => {
+      URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
+
+  useEffect(() => {
     const unsubscribeSettings = onSnapshot(doc(db, 'settings', 'global'), (doc) => {
       if (doc.exists()) {
         const data = doc.data();
-        if (data.accentColor) setAccentColor(data.accentColor);
-        if (data.handwritingFont) setHandwritingFont(data.handwritingFont);
-        if (data.cafeName) setCafeName(data.cafeName);
-        if (data.campaignTarget) setCampaignTarget(data.campaignTarget);
-        if (data.campaignReward) setCampaignReward(data.campaignReward);
+        if (typeof data.accentColor === 'string' && data.accentColor) {
+          setAccentColor(data.accentColor);
+        }
+
+        setHandwritingFont(normalizeHandwritingFont(data.handwritingFont));
+        setCafeName(normalizeLegacyText(data.cafeName, DEFAULT_CAFE_NAME));
+
+        if (typeof data.campaignTarget === 'number' && Number.isFinite(data.campaignTarget)) {
+          setCampaignTarget(data.campaignTarget);
+        }
+
+        setCampaignReward(normalizeLegacyText(data.campaignReward, DEFAULT_CAMPAIGN_REWARD));
       }
     });
 
@@ -173,6 +432,55 @@ export default function App() {
   }, [isCameraOpen]);
 
   useEffect(() => {
+    let isCancelled = false;
+
+    const resolveGoogleRedirect = async () => {
+      try {
+        const [redirectResult, pendingUpload] = await Promise.all([
+          resolveGoogleSignInRedirect(),
+          getPendingUpload().catch((error) => {
+            console.warn('Pending upload restore failed:', error);
+            return null;
+          }),
+        ]);
+
+        if (isCancelled) {
+          return;
+        }
+
+        if (redirectResult) {
+          setCurrentUserUid(redirectResult.user.uid);
+          setIsAnonymous(false);
+        }
+
+        if (pendingUpload) {
+          setPendingRedirectUpload(pendingUpload);
+        }
+      } catch (error) {
+        console.error('Error resolving Google redirect:', error);
+        await discardPendingUpload();
+
+        if (!isCancelled) {
+          setUploadError(getGoogleSignInErrorMessage(error));
+          setUploadStatus(null);
+          setUploadProgress(null);
+          setPendingRedirectUpload(null);
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsGoogleRedirectResolved(true);
+        }
+      }
+    };
+
+    void resolveGoogleRedirect();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       if (user) {
         setCurrentUserUid(user.uid);
@@ -181,12 +489,28 @@ export default function App() {
         setCurrentUserUid(null);
         setIsAnonymous(true);
       }
+      setIsAuthResolved(true);
     });
 
     return () => unsubscribeAuth();
   }, []);
 
   useEffect(() => {
+    if (!isAuthResolved || !isGoogleRedirectResolved || currentUserUid) {
+      return;
+    }
+
+    void ensureAnonymousSession();
+  }, [isAuthResolved, isGoogleRedirectResolved, currentUserUid]);
+
+  useEffect(() => {
+    if (!isAuthResolved || !currentUserUid) {
+      setMediaItems([]);
+      setIsMediaItemsReady(false);
+      return;
+    }
+
+    setIsMediaItemsReady(false);
     const q = query(collection(db, 'media'), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const items: MediaItem[] = [];
@@ -194,25 +518,72 @@ export default function App() {
         const data = doc.data();
         items.push({
           id: doc.id,
-          url: data.url,
-          type: data.type,
-          caption: data.caption,
-          likesCount: data.likesCount || 0,
-          likedBy: data.likedBy || [],
-          rotation: data.rotation,
-          date: data.date,
-          tableNumber: data.tableNumber,
-          authorUid: data.authorUid,
+          url: typeof data.url === 'string' ? data.url : '',
+          type: data.type === 'video' ? 'video' : 'image',
+          caption: normalizeLegacyText(data.caption, DEFAULT_MEDIA_CAPTION),
+          likesCount: typeof data.likesCount === 'number' ? data.likesCount : 0,
+          likedBy: Array.isArray(data.likedBy)
+            ? data.likedBy.filter((value: unknown): value is string => typeof value === 'string')
+            : [],
+          rotation: typeof data.rotation === 'number' ? data.rotation : 0,
+          date: normalizeLegacyText(data.date, '--:--'),
+          tableNumber: normalizeLegacyText(data.tableNumber, 'Masa'),
+          authorUid: typeof data.authorUid === 'string' ? data.authorUid : '',
           createdAt: data.createdAt
         });
       });
-      setMediaItems(items);
+      startTransition(() => {
+        setFailedMediaIds({});
+        setMediaItems(items);
+        setIsMediaItemsReady(true);
+      });
     }, (error) => {
       console.error("Error fetching media:", error);
+      setIsMediaItemsReady(true);
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [isAuthResolved, currentUserUid]);
+
+  useEffect(() => {
+    if (
+      !pendingRedirectUpload ||
+      resumedPendingUploadRef.current ||
+      !isAuthResolved ||
+      !isGoogleRedirectResolved ||
+      !isMediaItemsReady ||
+      !currentUserUid ||
+      isAnonymous
+    ) {
+      return;
+    }
+
+    resumedPendingUploadRef.current = true;
+    setIsUploadModalOpen(true);
+    setSelectedFile(pendingRedirectUpload.file);
+    setPreviewUrl(URL.createObjectURL(pendingRedirectUpload.file));
+    setCaption(pendingRedirectUpload.caption);
+    setCurrentTable(pendingRedirectUpload.tableNumber);
+    setEditRotation(pendingRedirectUpload.editRotation);
+    setEditBrightness(pendingRedirectUpload.editBrightness);
+    setEditContrast(pendingRedirectUpload.editContrast);
+    setUploadError(null);
+    setUploadStatus('Google girişi tamamlandı. Paylaşım gönderiliyor...');
+
+    void performUpload(pendingRedirectUpload, currentUserUid).finally(() => {
+      void discardPendingUpload();
+      setPendingRedirectUpload(null);
+    });
+  }, [
+    pendingRedirectUpload,
+    isAuthResolved,
+    isGoogleRedirectResolved,
+    isMediaItemsReady,
+    currentUserUid,
+    isAnonymous,
+    mediaItems,
+    campaignTarget,
+  ]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -222,189 +593,68 @@ export default function App() {
     }
   }, []);
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const fileNameLower = file.name.toLowerCase();
-      const isVideo = file.type.startsWith('video/') || !!fileNameLower.match(/\.(mp4|mov|webm|avi|mkv)$/i);
-      setUploadType(isVideo ? 'video' : 'image');
-      
-      const isHeic = !isVideo && (fileNameLower.endsWith('.heic') || fileNameLower.endsWith('.heif') || file.type === 'image/heic' || file.type === 'image/heif');
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const mediaParam = params.get('media');
 
-      if (isHeic) {
-        setUploadStatus("Fotoğraf formatı dönüştürülüyor...");
-        try {
-          const heic2any = (await import('heic2any')).default;
-          const convertedBlob = await heic2any({
-            blob: file,
-            toType: "image/jpeg",
-            quality: 0.8
-          });
-          
-          const convertedFile = new File(
-            [Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob], 
-            file.name.replace(/\.(heic|heif)$/i, '.jpg'), 
-            { type: 'image/jpeg' }
-          );
-          setSelectedFile(convertedFile);
-          setPreviewUrl(URL.createObjectURL(convertedFile));
-        } catch (error) {
-          console.error("HEIC conversion error:", error);
-          setUploadError("Fotoğraf formatı dönüştürülemedi. Lütfen farklı bir fotoğraf seçin.");
-        } finally {
-          setUploadStatus(null);
-        }
-      } else {
-        setSelectedFile(file);
-        const url = URL.createObjectURL(file);
-        setPreviewUrl(url);
-      }
+    if (mediaParam && mediaItems.some(item => item.id === mediaParam)) {
+      setSelectedMediaId(mediaParam);
     }
-    if (cameraInputRef.current) cameraInputRef.current.value = '';
-  };
+  }, [mediaItems]);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+
+    if (selectedMediaId) {
+      url.searchParams.set('media', selectedMediaId);
+    } else {
+      url.searchParams.delete('media');
+    }
+
+    window.history.replaceState({}, '', url);
+  }, [selectedMediaId]);
 
   const handleUpload = async () => {
-    if (!selectedFile) return;
+    const draft = buildUploadDraft();
+
+    if (!draft) {
+      return;
+    }
 
     let uid = currentUserUid;
 
     if (!uid || isAnonymous) {
       try {
-        setUploadStatus("Google ile giriş yapılıyor...");
-        const provider = new GoogleAuthProvider();
-        const result = await signInWithPopup(auth, provider);
+        setUploadStatus('Google ile giriş açılıyor...');
+        setUploadError(null);
+        const result = await signInWithGoogle({
+          beforeRedirect: () => savePendingUpload(draft),
+        });
+        if (!result) {
+          setUploadStatus('Google girişi için yönlendiriliyorsunuz...');
+          return;
+        }
         uid = result.user.uid;
+        void discardPendingUpload();
         setCurrentUserUid(uid);
         setIsAnonymous(false);
+        setUploadStatus('Giriş doğrulanıyor...');
       } catch (error) {
-        console.error("Giriş hatası:", error);
-        setUploadError("Paylaşım yapmak için Google ile giriş yapmalısınız.");
+        console.error('Giriş hatası:', error);
+        await discardPendingUpload();
+        setUploadError(getGoogleSignInErrorMessage(error));
         setUploadStatus(null);
         return;
       }
     }
 
-    // Check weekly limit (2 per week)
-    const oneWeekAgo = new Date();
-    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-    
-    const userUploadsThisWeek = mediaItems.filter(item => {
-      if (item.authorUid !== uid) return false;
-      if (!item.createdAt) return true; // If just uploaded and timestamp is pending, count it
-      const itemDate = item.createdAt.toDate ? item.createdAt.toDate() : new Date(item.createdAt);
-      return itemDate > oneWeekAgo;
-    });
-
-    if (userUploadsThisWeek.length >= 2) {
-      setUploadError("Haftalık paylaşım limitinize (2) ulaştınız. Lütfen daha sonra tekrar deneyin.");
+    if (!uid) {
+      setUploadStatus(null);
+      setUploadError('Giriş bilgisi doğrulanamadı. Lütfen tekrar deneyin.');
       return;
     }
 
-    setIsSaving(true);
-    setUploadError(null);
-    setUploadProgress(0);
-    setUploadStatus("Medya hafızaya yükleniyor...");
-    try {
-      let fileToUpload = selectedFile;
-      
-      // Apply edits if it's an image and edits were made
-      if (uploadType === 'image' && previewUrl && (editRotation !== 0 || editBrightness !== 100 || editContrast !== 100)) {
-        setUploadStatus("Fotoğraf işleniyor...");
-        const img = new Image();
-        img.src = previewUrl;
-        await new Promise((resolve, reject) => { 
-          img.onload = resolve; 
-          img.onerror = reject;
-        });
-        
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        
-        if (ctx) {
-          if (editRotation % 180 === 90 || editRotation % 180 === -90) {
-            canvas.width = img.height;
-            canvas.height = img.width;
-          } else {
-            canvas.width = img.width;
-            canvas.height = img.height;
-          }
-          
-          ctx.translate(canvas.width / 2, canvas.height / 2);
-          ctx.rotate((editRotation * Math.PI) / 180);
-          ctx.filter = `brightness(${editBrightness}%) contrast(${editContrast}%)`;
-          ctx.drawImage(img, -img.width / 2, -img.height / 2);
-          
-          const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.8));
-          if (blob) {
-            fileToUpload = new File([blob], selectedFile.name, { type: 'image/jpeg' });
-          }
-        }
-      }
-
-      // Upload to Firebase Storage
-      const fileExtension = fileToUpload.name.split('.').pop() || 'jpg';
-      const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExtension}`;
-      const storageRef = ref(storage, `media/${fileName}`);
-      
-      const uploadTask = uploadBytesResumable(storageRef, fileToUpload);
-
-      await new Promise<void>((resolve, reject) => {
-        uploadTask.on(
-          'state_changed',
-          (snapshot) => {
-            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-            setUploadProgress(progress);
-            setUploadStatus(`Yükleniyor... %${Math.round(progress)}`);
-          },
-          (error) => {
-            reject(error);
-          },
-          () => {
-            resolve();
-          }
-        );
-      });
-      
-      setUploadStatus("Bağlantı alınıyor...");
-      const downloadUrl = await getDownloadURL(storageRef);
-
-      const now = new Date();
-      const timeString = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-
-      setUploadStatus("Veritabanına kaydediliyor...");
-      // Save to Firestore
-      await addDoc(collection(db, 'media'), {
-        url: downloadUrl,
-        type: uploadType,
-        caption: caption || 'İsimsiz anı ✨',
-        likedBy: [],
-        likesCount: 0,
-        rotation: Math.random() * 6 - 3,
-        date: timeString,
-        tableNumber: currentTable,
-        authorUid: uid,
-        createdAt: serverTimestamp()
-      });
-
-      setUploadStatus(null);
-      setUploadProgress(null);
-      setIsUploadModalOpen(false);
-      setPreviewUrl(null);
-      setSelectedFile(null);
-      setCaption('');
-
-      // Check if this is the target upload
-      if (totalUserUploadsCount + 1 === campaignTarget) {
-        setShowRewardModal(true);
-      }
-    } catch (error: any) {
-      console.error("Error uploading media:", error);
-      setUploadError(error.message || "Yükleme sırasında bir hata oluştu.");
-      setUploadStatus(null);
-      setUploadProgress(null);
-    } finally {
-      setIsSaving(false);
-    }
+    await performUpload(draft, uid);
   };
 
   const stopCamera = () => {
@@ -469,7 +719,6 @@ export default function App() {
             const file = new File([blob], `photo_${Date.now()}.jpg`, { type: 'image/jpeg' });
             setSelectedFile(file);
             setPreviewUrl(URL.createObjectURL(file));
-            setUploadType('image');
             stopCamera();
             setActiveFilter('none');
           }
@@ -498,8 +747,10 @@ export default function App() {
     let uid = currentUserUid;
     if (!uid || isAnonymous) {
       try {
-        const provider = new GoogleAuthProvider();
-        const result = await signInWithPopup(auth, provider);
+        const result = await signInWithGoogle();
+        if (!result) {
+          return;
+        }
         uid = result.user.uid;
         setCurrentUserUid(uid);
         setIsAnonymous(false);
@@ -508,6 +759,8 @@ export default function App() {
         return;
       }
     }
+
+    await auth.currentUser?.getIdToken(true);
 
     const item = mediaItems.find(m => m.id === id);
     if (!item) return;
@@ -544,20 +797,7 @@ export default function App() {
 
     try {
       const item = mediaItems.find(m => m.id === id);
-      if (item && item.url) {
-        try {
-          // Extract file path from download URL
-          const urlObj = new URL(item.url);
-          const path = decodeURIComponent(urlObj.pathname.split('/o/')[1].split('?')[0]);
-          const fileRef = ref(storage, path);
-          await deleteObject(fileRef);
-        } catch (storageError) {
-          console.error("Error deleting file from storage:", storageError);
-          // Continue to delete the document even if storage deletion fails
-        }
-      }
-
-      await deleteDoc(doc(db, 'media', id));
+      await deleteMediaRecord(id, item?.url);
       if (selectedMediaId === id) {
         setSelectedMediaId(null);
       }
@@ -567,11 +807,17 @@ export default function App() {
     }
   };
 
-  const handleCopyLink = (id: string) => {
+  const handleCopyLink = async (id: string) => {
     const url = `${window.location.origin}?media=${id}`;
-    navigator.clipboard.writeText(url);
-    setIsCopied(true);
-    setTimeout(() => setIsCopied(false), 2000);
+
+    try {
+      await navigator.clipboard.writeText(url);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    } catch (error) {
+      console.error('Kopyalama hatası:', error);
+      window.prompt('Bağlantıyı kopyalayın:', url);
+    }
   };
 
   const shareToInstagramStory = async (mediaId: string) => {
@@ -583,24 +829,28 @@ export default function App() {
       try {
         // Fetch the image to create a blob
         const response = await fetch(item.url);
+        if (!response.ok) {
+          throw new Error(`Media fetch failed with status ${response.status}`);
+        }
         const blob = await response.blob();
         file = new File([blob], 'story.jpg', { type: 'image/jpeg' });
       } catch (fetchError) {
         console.warn("Could not fetch image for sharing (CORS issue), falling back to URL share.", fetchError);
       }
 
-      if (navigator.canShare) {
-        const shareData: ShareData = {
+      if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+        // Sadece dosyayı paylaşırsak Instagram bunu Hikaye/Akış olarak algılar.
+        // Metin veya URL eklersek sadece Mesaj (DM) olarak algılar.
+        await navigator.share({
+          files: [file]
+        });
+      } else if (navigator.canShare) {
+        // Dosya paylaşılamıyorsa sadece linki paylaş
+        await navigator.share({
           title: 'Anı',
           text: item.caption || 'Bu harika anıya göz at!',
           url: `${window.location.origin}?media=${mediaId}`
-        };
-
-        if (file && navigator.canShare({ files: [file] })) {
-          shareData.files = [file];
-        }
-
-        await navigator.share(shareData);
+        });
       } else {
         // Fallback if Web Share API is not supported
         alert("Cihazınız doğrudan paylaşımı desteklemiyor. Bağlantıyı kopyalayabilirsiniz.");
@@ -613,207 +863,395 @@ export default function App() {
   };
 
   const selectedMedia = selectedMediaId ? mediaItems.find(m => m.id === selectedMediaId) : null;
+  const deferredMediaItems = useDeferredValue(mediaItems);
+  const totalLikes = useMemo(
+    () => mediaItems.reduce((sum, item) => sum + item.likesCount, 0),
+    [mediaItems]
+  );
+  const todayMomentsCount = useMemo(() => {
+    const today = new Date();
+
+    return mediaItems.filter((item) => {
+      const mediaDate = getMediaDate(item.createdAt);
+      if (!mediaDate) {
+        return false;
+      }
+
+      return mediaDate.toDateString() === today.toDateString();
+    }).length;
+  }, [mediaItems]);
 
   if (currentView === 'admin') {
-    return <AdminPanel onBack={() => setCurrentView('app')} />;
+    return (
+      <Suspense
+        fallback={
+          <div className="min-h-screen flex items-center justify-center px-4 text-cafe-50">
+            <div className="section-shell max-w-md text-center">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12 text-[color:var(--color-accent)]">
+                <Settings className="w-6 h-6" />
+              </div>
+              <h1 className="text-2xl font-semibold text-cafe-50">Admin paneli yükleniyor</h1>
+              <p className="mt-3 text-sm leading-7 text-cafe-100/70">
+                Yönetim modülü ayrı yüklendiği için açılış performansı korunuyor.
+              </p>
+            </div>
+          </div>
+        }
+      >
+        <AdminPanel onBack={() => setCurrentView('app')} />
+      </Suspense>
+    );
   }
 
   return (
-    <div className="min-h-screen pb-24 font-sans selection:bg-accent/30 relative">
+    <div className="min-h-screen pb-32 font-sans selection:bg-accent/20 relative text-cafe-50">
       <AnimatedBackground />
-      
-      {/* Header / Navbar */}
-      <header className="sticky top-0 z-30 bg-cafe-900/80 backdrop-blur-xl border-b border-cafe-800/80 py-4 px-4 shadow-lg">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          
-          {/* Logo / Title */}
-          <div className="flex flex-col">
-            <span className="text-[10px] sm:text-xs font-bold text-accent tracking-[0.2em] uppercase mb-1 opacity-80">
-              {cafeName}
-            </span>
-            <h1 className="text-3xl sm:text-4xl font-serif font-light tracking-wide text-cafe-50 leading-none">
-              Galeri
-            </h1>
-          </div>
 
-          {/* Social Icons & Theme */}
-          <div className="flex items-center gap-4 sm:gap-5">
-            <button 
-              onClick={() => setCurrentView('admin')} 
-              className="text-cafe-100/50 hover:text-accent transition-colors" 
-              aria-label="Admin Paneli"
-            >
-              <Settings className="w-5 h-5 sm:w-6 sm:h-6" />
-            </button>
-            <button 
-              onClick={() => setIsThemeModalOpen(true)} 
-              className="text-cafe-100/50 hover:text-accent transition-colors" 
-              aria-label="Tema Ayarları"
-            >
-              <Palette className="w-5 h-5 sm:w-6 sm:h-6" />
-            </button>
-            <a href="#" className="text-cafe-100/50 hover:text-accent transition-colors" aria-label="Instagram">
-              <Instagram className="w-5 h-5 sm:w-6 sm:h-6" />
-            </a>
-            <a href="#" className="text-cafe-100/50 hover:text-accent transition-colors" aria-label="Twitter">
-              <Twitter className="w-5 h-5 sm:w-6 sm:h-6" />
-            </a>
-            <a href="#" className="text-cafe-100/50 hover:text-accent transition-colors" aria-label="Facebook">
-              <Facebook className="w-5 h-5 sm:w-6 sm:h-6" />
-            </a>
-          </div>
-        </div>
-      </header>
+      <div className="relative z-10">
+        <header className="sticky top-0 z-30 border-b border-white/45 bg-white/78 backdrop-blur-2xl shadow-[0_14px_40px_rgba(69,49,35,0.06)]">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+            <div className="flex items-center justify-between gap-3 lg:gap-5">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="ambient-ring flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12 text-[color:var(--color-accent)] shadow-inner">
+                  <Coffee className="w-5 h-5" />
+                </div>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-10">
-        {/* Responsive Masonry Gallery */}
-        <div className="masonry-grid">
-          <AnimatePresence>
-            {mediaItems.map((item, index) => (
-              <motion.div
-                key={item.id}
-                layout="position"
-                initial={{ opacity: 0, y: 40, scale: 0.8, rotate: item.rotation }}
-                animate={{ opacity: 1, y: 0, scale: 1, rotate: item.rotation }}
-                exit={{ opacity: 0, scale: 0.5, filter: "blur(4px)", transition: { duration: 0.25 } }}
-                transition={{ duration: 0.4, type: "spring", stiffness: 150 }}
-                className="masonry-item relative group"
-              >
-                <motion.div
-                  animate={currentUserUid && item.likedBy.includes(currentUserUid) ? { y: [0, -6, 0], scale: [1, 1.02, 1] } : { y: 0, scale: 1 }}
-                  transition={{ duration: 0.4, ease: "easeInOut" }}
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h1 className="truncate text-xl sm:text-2xl font-serif font-semibold tracking-[0.02em] text-cafe-50">
+                      {cafeName}
+                    </h1>
+                    <span className="hidden sm:inline-flex items-center rounded-full border border-cafe-700/70 bg-white/75 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-cafe-100/62">
+                      Anı Galerisi
+                    </span>
+                  </div>
+                  <p className="hidden md:block text-sm text-cafe-100/62">
+                    Sade, hızlı ve rahat paylaşım deneyimi.
+                  </p>
+                </div>
+              </div>
+
+              <nav className="hidden xl:flex items-center gap-2" aria-label="Sayfa kısayolları">
+                <a href="#experience" className="header-nav-link">Atmosfer</a>
+                <a href="#gallery" className="header-nav-link">Galeri</a>
+                <a href="#campaign" className="header-nav-link">Ödül</a>
+              </nav>
+
+              <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+                <div className="hidden lg:flex items-center gap-2 rounded-full border border-cafe-700/70 bg-white/78 px-3 py-2 text-sm text-cafe-100/72 shadow-sm">
+                  <span className={`h-2.5 w-2.5 rounded-full ${!isAnonymous && userUploadsThisWeekCount >= MAX_WEEKLY_UPLOADS ? 'bg-red-500' : 'bg-accent animate-pulse'}`} />
+                  <span className="font-medium">
+                    {!isAnonymous ? `${userUploadsThisWeekCount}/${MAX_WEEKLY_UPLOADS} paylaşım` : `${MAX_WEEKLY_UPLOADS} paylaşım limit`}
+                  </span>
+                </div>
+
+                <button
+                  onClick={() => setIsThemeModalOpen(true)}
+                  className="icon-button"
+                  aria-label="Tema ayarları"
                 >
-                  {/* Gallery Frame */}
-                  <div className="bg-cafe-800 p-2 sm:p-3 rounded-xl shadow-xl border border-cafe-700 transition-all duration-500 hover:-translate-y-2 hover:shadow-[0_20px_40px_rgba(0,0,0,0.15)] relative group/card overflow-hidden">
-                  
-                  {/* Media Container */}
-                  <div 
-                    className="relative aspect-square sm:aspect-[4/5] overflow-hidden rounded-lg bg-cafe-900 shadow-inner group/media cursor-pointer"
-                    onClick={() => setSelectedMediaId(item.id)}
-                  >
-                    {item.type === 'video' ? (
-                      <>
-                        <video
-                          src={item.url}
-                          className="w-full h-full object-cover transition-transform duration-500 group-hover/media:scale-105"
-                          autoPlay
-                          muted
-                          loop
-                          playsInline
-                        />
-                        <div className="absolute top-2 right-2 bg-black/40 backdrop-blur-sm rounded-full p-1.5 z-10 transition-transform group-hover/media:scale-110">
-                          <PlayCircle className="w-4 h-4 text-white/90" />
-                        </div>
-                      </>
-                    ) : (
-                      <img
-                        src={item.url}
-                        alt={item.caption}
-                        className="w-full h-full object-cover transition-transform duration-500 group-hover/media:scale-105"
-                        loading="lazy"
-                        referrerPolicy="no-referrer"
-                      />
-                    )}
-                    
-                    {/* Hover Overlay for Click Indication */}
-                    <div className="absolute inset-0 bg-black/0 group-hover/media:bg-black/20 transition-colors duration-300 flex items-center justify-center">
-                      <div className="opacity-0 group-hover/media:opacity-100 transform translate-y-4 group-hover/media:translate-y-0 transition-all duration-300 bg-black/60 backdrop-blur-md text-white px-5 py-2.5 rounded-full text-xs tracking-[0.15em] uppercase font-medium border border-white/20">
-                        Yakından Bak
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {/* Caption Area */}
-                  <div className="pt-3 sm:pt-4 pb-2 text-center px-1 sm:px-2">
-                    <p className="font-handwriting text-cafe-50 text-xl sm:text-3xl leading-tight opacity-90">
-                      {item.caption}
-                    </p>
-                  </div>
+                  <Palette className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={() => setCurrentView('admin')}
+                  className="icon-button"
+                  aria-label="Admin paneli"
+                >
+                  <Settings className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={() => setIsUploadModalOpen(true)}
+                  className="header-primary-action hidden sm:inline-flex"
+                >
+                  <Camera className="w-4 h-4" />
+                  <span>Anı Ekle</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </header>
 
-                  {/* Metadata Footer */}
-                  <div className="mt-2 pt-3 border-t border-cafe-700 flex items-center justify-between px-1">
-                    <div className="flex flex-col text-left">
-                      <span className="text-[10px] sm:text-sm font-medium text-cafe-100 flex items-center gap-1">
-                        <MapPin className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-accent" /> {item.tableNumber}
-                      </span>
-                      <span className="text-[8px] sm:text-xs text-cafe-100/50 flex items-center gap-1 mt-0.5">
-                        <Clock className="w-2.5 h-2.5 sm:w-3 sm:h-3" /> {item.date}
-                      </span>
-                    </div>
-                    
-                    <div className="flex items-center gap-1 sm:gap-1.5">
-                      {currentUserUid === item.authorUid && isDeletable(item) && (
-                        <button
-                          onClick={(e) => handleDelete(item.id, e)}
-                          className="flex items-center justify-center bg-red-500/10 hover:bg-red-500/20 w-6 h-6 sm:w-9 sm:h-9 rounded-full transition-colors active:scale-95"
-                          aria-label="Sil"
-                        >
-                          <Trash2 className="w-3 h-3 sm:w-4 sm:h-4 text-red-400" />
-                        </button>
-                      )}
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setShareMediaId(item.id); }}
-                        className="flex items-center justify-center bg-cafe-700 hover:bg-cafe-600 w-6 h-6 sm:w-9 sm:h-9 rounded-full transition-colors active:scale-95"
-                        aria-label="Paylaş"
-                      >
-                        <Share2 className="w-3 h-3 sm:w-4 sm:h-4 text-cafe-100/70" />
-                      </button>
-                      <button
-                        onClick={(e) => toggleLike(item.id, e)}
-                        className="flex items-center gap-1 sm:gap-1.5 bg-cafe-700 hover:bg-cafe-600 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full transition-colors active:scale-95"
-                      >
-                        <motion.div
-                          animate={currentUserUid && item.likedBy.includes(currentUserUid) ? { scale: [1, 1.4, 1] } : { scale: 1 }}
-                          transition={{ duration: 0.3 }}
-                        >
-                          <Heart
-                            className={`w-3 h-3 sm:w-5 sm:h-5 transition-colors ${
-                              currentUserUid && item.likedBy.includes(currentUserUid) ? 'fill-accent text-accent' : 'text-cafe-100/70'
-                            }`}
-                          />
-                        </motion.div>
-                        <span className={`text-[10px] sm:text-sm font-bold ${currentUserUid && item.likedBy.includes(currentUserUid) ? 'text-accent' : 'text-cafe-100/70'}`}>
-                          {item.likesCount}
-                        </span>
-                      </button>
-                    </div>
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-10 space-y-8 sm:space-y-10">
+          <section id="experience" className="grid gap-6 xl:grid-cols-[minmax(0,1.45fr),minmax(320px,0.95fr)]">
+            <div className="section-shell relative overflow-hidden">
+              <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-r from-[color:var(--color-accent)]/18 via-white/30 to-transparent" />
+              <span className="section-pill">Misafir deneyimini sergile</span>
+              <div className="relative space-y-5">
+                <div className="space-y-3">
+                  <h2 className="max-w-3xl text-4xl sm:text-5xl xl:text-6xl font-serif leading-[0.92] text-cafe-50">
+                    Masadaki atmosferi canlı, rafine ve paylaşılabilir bir galeriye dönüştür.
+                  </h2>
+                  <p className="max-w-2xl text-sm sm:text-base leading-7 text-cafe-100/72">
+                    Misafirler fotoğrafını birkaç dokunuşla eklesin, sen mekânın enerjisini şık bir vitrinde topla. Daha temiz tipografi, daha güçlü odak ve daha hızlı etkileşim için arayüz yeniden düzenlendi.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    onClick={() => setIsUploadModalOpen(true)}
+                    className="inline-flex items-center gap-2 rounded-full bg-[color:var(--color-accent)] px-5 py-3 text-sm font-semibold tracking-[0.18em] uppercase text-white shadow-[0_20px_45px_rgba(0,0,0,0.12)] transition-transform hover:-translate-y-0.5"
+                  >
+                    <Camera className="w-4 h-4" />
+                    Anı Ekle
+                  </button>
+                  <a
+                    href="#gallery"
+                    className="inline-flex items-center gap-2 rounded-full border border-cafe-700/80 bg-white/75 px-5 py-3 text-sm font-semibold text-cafe-100 transition-colors hover:border-accent/50 hover:text-cafe-50"
+                  >
+                    Galeriyi Keşfet
+                  </a>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="stat-card">
+                    <span className="stat-label">Toplam Anı</span>
+                    <strong className="stat-value">{mediaItems.length}</strong>
+                    <p className="stat-note">Mekânda paylaşılan tüm kareler</p>
+                  </div>
+                  <div className="stat-card">
+                    <span className="stat-label">Bugün</span>
+                    <strong className="stat-value">{todayMomentsCount}</strong>
+                    <p className="stat-note">Bugün eklenen taze içerikler</p>
+                  </div>
+                  <div className="stat-card">
+                    <span className="stat-label">Toplam Beğeni</span>
+                    <strong className="stat-value">{totalLikes}</strong>
+                    <p className="stat-note">Galeriyle kurulan etkileşim</p>
                   </div>
                 </div>
-                </motion.div>
-              </motion.div>
-            ))}
-          </AnimatePresence>
-        </div>
-      </main>
+              </div>
+            </div>
 
-      {/* Floating Action Button for Upload */}
-      <div className="fixed bottom-6 sm:bottom-8 left-1/2 -translate-x-1/2 z-40 flex flex-col items-center gap-2">
+            <aside className="section-shell space-y-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <span className="section-pill">Akış Özeti</span>
+                  <h3 className="mt-3 text-2xl font-semibold text-cafe-50">Daha akıcı, daha kontrollü kullanım</h3>
+                </div>
+                <div className="ambient-ring flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12 text-[color:var(--color-accent)]">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+              </div>
+
+              <div className="grid gap-3">
+                <div className="glass-card flex items-start gap-3">
+                  <MapPin className="mt-0.5 w-4 h-4 text-[color:var(--color-accent)]" />
+                  <div>
+                    <p className="text-sm font-semibold text-cafe-50">Masa bazlı keşif</p>
+                    <p className="text-sm text-cafe-100/70">Her paylaşım masa bilgisiyle birlikte düzenli bir şekilde sergileniyor.</p>
+                  </div>
+                </div>
+                <div className="glass-card flex items-start gap-3">
+                  <Heart className="mt-0.5 w-4 h-4 text-[color:var(--color-accent)]" />
+                  <div>
+                    <p className="text-sm font-semibold text-cafe-50">Hafifletilmiş etkileşim</p>
+                    <p className="text-sm text-cafe-100/70">Kart animasyonları ve liste videoları sadeleştirildi; gezinti daha stabil hale geldi.</p>
+                  </div>
+                </div>
+                <div className="glass-card flex items-start gap-3">
+                  <Upload className="mt-0.5 w-4 h-4 text-[color:var(--color-accent)]" />
+                  <div>
+                    <p className="text-sm font-semibold text-cafe-50">Optimize yükleme</p>
+                    <p className="text-sm text-cafe-100/70">Fotoğraflar yükleme öncesi optimize edilerek daha akıcı paylaşım sağlanıyor.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div id="campaign" className="reward-card">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.22em] text-cafe-100/55">Kampanya</p>
+                    <h4 className="mt-2 text-xl font-semibold text-cafe-50">{campaignTarget} paylaşımda ödül</h4>
+                  </div>
+                  <div className="rounded-2xl bg-[color:var(--color-accent)]/14 p-3 text-[color:var(--color-accent)]">
+                    <Coffee className="w-5 h-5" />
+                  </div>
+                </div>
+                <p className="mt-3 text-sm leading-6 text-cafe-100/72">
+                  Misafirler {campaignTarget}. paylaşımında <strong className="text-cafe-50">{campaignReward}</strong> kazanıyor. Bu alan artık daha görünür ve yönlendirici.
+                </p>
+                <div className="mt-4 flex items-center justify-between rounded-2xl border border-white/60 bg-white/75 px-4 py-3 text-sm">
+                  <span className="text-cafe-100/70">Haftalık kullanıcı limiti</span>
+                  <strong className="text-cafe-50">{MAX_WEEKLY_UPLOADS} paylaşım</strong>
+                </div>
+              </div>
+            </aside>
+          </section>
+
+          <section id="gallery" className="space-y-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div className="space-y-2">
+                <span className="section-pill">Canlı Galeri</span>
+                <h2 className="text-3xl sm:text-4xl font-serif font-semibold text-cafe-50">
+                  Mekânın ritmini gösteren anlar
+                </h2>
+                <p className="max-w-2xl text-sm sm:text-base leading-7 text-cafe-100/72">
+                  Kartlar daha okunaklı hale getirildi, bozuk medya için güvenli placeholder eklendi ve yoğun cihazlarda akışı yoran gereksiz animasyonlar kaldırıldı.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <div className="inline-flex items-center rounded-full border border-cafe-700/80 bg-white/75 px-4 py-2 text-sm text-cafe-100/72">
+                  {deferredMediaItems.length} içerik
+                </div>
+                <div className="inline-flex items-center rounded-full border border-cafe-700/80 bg-white/75 px-4 py-2 text-sm text-cafe-100/72">
+                  Ödül: {campaignReward}
+                </div>
+              </div>
+            </div>
+
+            {deferredMediaItems.length === 0 ? (
+              <div className="section-shell text-center py-14">
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12 text-[color:var(--color-accent)]">
+                  <Camera className="w-6 h-6" />
+                </div>
+                <h3 className="text-2xl font-semibold text-cafe-50">Galeri hazır, ilk anı bekliyor</h3>
+                <p className="mt-3 max-w-xl mx-auto text-sm sm:text-base leading-7 text-cafe-100/70">
+                  Misafir deneyimini görünür kılmak için ilk fotoğrafı ekleyin. Yeni tasarım boş durumlarda da yönlendirici kalacak şekilde düzenlendi.
+                </p>
+              </div>
+            ) : (
+              <div className="masonry-grid">
+                {deferredMediaItems.map((item) => {
+                  const isLiked = Boolean(currentUserUid && item.likedBy.includes(currentUserUid));
+                  const canDelete = currentUserUid === item.authorUid && isDeletable(item);
+
+                  return (
+                    <article
+                      key={item.id}
+                      className="masonry-item"
+                      style={{ transform: `rotate(${item.rotation * 0.35}deg)` }}
+                    >
+                      <div className="gallery-card group">
+                        <button
+                          type="button"
+                          className="gallery-media"
+                          onClick={() => setSelectedMediaId(item.id)}
+                        >
+                          {!item.url || failedMediaIds[item.id] ? (
+                            <BrokenMediaPlaceholder compact message="Görsel yüklenemedi" />
+                          ) : item.type === 'video' ? (
+                            <>
+                              <video
+                                src={item.url}
+                                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+                                muted
+                                playsInline
+                                preload="metadata"
+                                onError={() => markMediaAsFailed(item.id)}
+                              />
+                              <div className="absolute right-3 top-3 flex items-center gap-1 rounded-full bg-black/55 px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.18em] text-white backdrop-blur-sm">
+                                <PlayCircle className="w-3.5 h-3.5" />
+                                Video
+                              </div>
+                            </>
+                          ) : (
+                            <img
+                              src={item.url}
+                              alt={item.caption}
+                              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+                              loading="lazy"
+                              decoding="async"
+                              referrerPolicy="no-referrer"
+                              onError={() => markMediaAsFailed(item.id)}
+                            />
+                          )}
+
+                          <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-3 p-3">
+                            <span className="rounded-full border border-white/40 bg-white/85 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-cafe-50 shadow-sm">
+                              {item.tableNumber}
+                            </span>
+                            <span className="rounded-full bg-black/45 px-3 py-1.5 text-[11px] font-medium text-white backdrop-blur-sm">
+                              {item.date}
+                            </span>
+                          </div>
+
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/5 to-transparent opacity-90" />
+                          <div className="absolute inset-x-0 bottom-0 flex items-center justify-center p-4">
+                            <span className="rounded-full border border-white/30 bg-white/18 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-white backdrop-blur-md transition-transform duration-300 group-hover:-translate-y-1">
+                              Yakından Bak
+                            </span>
+                          </div>
+                        </button>
+
+                        <div className="px-2 pt-4 pb-2">
+                          <p className="font-handwriting text-[2rem] leading-tight text-cafe-50">
+                            {item.caption}
+                          </p>
+
+                          <div className="mt-4 flex items-end justify-between gap-3 border-t border-cafe-700/70 pt-4">
+                            <div className="space-y-1.5 text-sm text-cafe-100/72">
+                              <div className="flex items-center gap-2">
+                                <MapPin className="w-3.5 h-3.5 text-[color:var(--color-accent)]" />
+                                <span className="font-medium text-cafe-50">{item.tableNumber}</span>
+                              </div>
+                              <div className="flex items-center gap-2 text-cafe-100/60">
+                                <Clock className="w-3.5 h-3.5" />
+                                <span>{item.date}</span>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              {canDelete && (
+                                <button
+                                  onClick={(event) => handleDelete(item.id, event)}
+                                  className="icon-button text-red-500 hover:border-red-200 hover:bg-red-50"
+                                  aria-label="Anıyı sil"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
+                              <button
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setShareMediaId(item.id);
+                                }}
+                                className="icon-button"
+                                aria-label="Paylaş"
+                              >
+                                <Share2 className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={(event) => toggleLike(item.id, event)}
+                                className={`inline-flex items-center gap-2 rounded-full border px-3.5 py-2 text-sm font-semibold transition-colors ${
+                                  isLiked
+                                    ? 'border-accent/25 bg-[color:var(--color-accent)]/12 text-[color:var(--color-accent)]'
+                                    : 'border-cafe-700/80 bg-white/80 text-cafe-100 hover:border-accent/30 hover:text-cafe-50'
+                                }`}
+                              >
+                                <Heart className={`w-4 h-4 ${isLiked ? 'fill-current' : ''}`} />
+                                <span>{item.likesCount}</span>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        </main>
+      </div>
+
+      <div className="fixed bottom-5 sm:bottom-8 left-1/2 z-40 flex -translate-x-1/2 flex-col items-center gap-3">
         {currentUserUid && !isAnonymous && (
-          <div className="bg-cafe-900/80 backdrop-blur-md text-cafe-50 text-xs px-3 py-1.5 rounded-full shadow-lg border border-cafe-700/50 flex items-center gap-2">
-            <span className={`w-2 h-2 rounded-full ${userUploadsThisWeekCount >= 2 ? 'bg-red-500' : 'bg-accent animate-pulse'}`} />
-            <span className="font-medium">Haftalık Limit: {userUploadsThisWeekCount} / 2</span>
+          <div className="rounded-full border border-white/60 bg-white/82 px-4 py-2 text-xs text-cafe-100 shadow-[0_12px_35px_rgba(73,52,38,0.12)] backdrop-blur-xl">
+            <span className="font-semibold">Haftalık limit:</span> {userUploadsThisWeekCount}/{MAX_WEEKLY_UPLOADS}
           </div>
         )}
-        <input
-          type="file"
-          accept="image/*,video/*"
-          capture="environment"
-          ref={cameraInputRef}
-          onChange={handleFileChange}
-          className="hidden"
-        />
         <button
           onClick={() => setIsUploadModalOpen(true)}
-          className="group relative flex items-center gap-3 bg-accent hover:brightness-110 text-cafe-900 px-6 sm:px-8 py-4 rounded-full shadow-2xl shadow-accent/20 transition-all hover:-translate-y-1 active:translate-y-0 font-bold tracking-[0.1em] uppercase text-sm sm:text-base border border-cafe-900/10"
+          className="floating-upload-button"
         >
-          <div className="absolute inset-0 rounded-full bg-white/20 animate-ping opacity-20 group-hover:opacity-0" />
-          <div className="flex items-center gap-1.5">
-            <Camera className="w-4 h-4 sm:w-5 sm:h-5" />
-            <span className="text-cafe-900/30 text-lg font-light">|</span>
-            <Video className="w-4 h-4 sm:w-5 sm:h-5" />
-          </div>
-          <span className="whitespace-nowrap">Anı Ekle</span>
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white/18">
+            <Camera className="w-5 h-5" />
+          </span>
+          <span className="flex flex-col items-start">
+            <span className="text-[11px] uppercase tracking-[0.24em] text-white/70">Hızlı İşlem</span>
+            <span className="text-sm sm:text-base font-semibold text-white">Yeni anı paylaş</span>
+          </span>
         </button>
       </div>
 
@@ -843,19 +1281,23 @@ export default function App() {
             >
               {/* Media Section */}
               <div className="flex-1 bg-black relative min-h-[45vh] md:min-h-[60vh] overflow-hidden">
-                {selectedMedia.type === 'video' ? (
-                  <video 
-                    src={selectedMedia.url} 
+                {!selectedMedia.url || failedMediaIds[selectedMedia.id] ? (
+                  <BrokenMediaPlaceholder message="Bu medya şu anda görüntülenemiyor" />
+                ) : selectedMedia.type === 'video' ? (
+                  <video
+                    src={selectedMedia.url}
                     className="absolute inset-0 w-full h-full object-contain"
                     controls
                     autoPlay
                     playsInline
+                    onError={() => markMediaAsFailed(selectedMedia.id)}
                   />
                 ) : (
-                  <img 
-                    src={selectedMedia.url} 
+                  <img
+                    src={selectedMedia.url}
                     alt={selectedMedia.caption}
                     className="absolute inset-0 w-full h-full object-contain"
+                    onError={() => markMediaAsFailed(selectedMedia.id)}
                   />
                 )}
               </div>
@@ -1062,32 +1504,19 @@ export default function App() {
                   <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-5">
                 {/* Media Preview Container */}
                 <div className="relative w-full h-48 sm:h-64 rounded-xl overflow-hidden bg-cafe-900 border border-cafe-700 shadow-inner shrink-0 flex items-center justify-center">
-                  {uploadType === 'video' ? (
-                    <video
-                      src={previewUrl}
-                      className="w-full h-full object-contain"
-                      controls
-                      autoPlay
-                      muted
-                      loop
-                      playsInline
-                    />
-                  ) : (
-                    <img
-                      src={previewUrl}
-                      alt="Preview"
-                      className="w-full h-full object-contain transition-all"
-                      style={{
-                        transform: `rotate(${editRotation}deg)`,
-                        filter: `brightness(${editBrightness}%) contrast(${editContrast}%)`
-                      }}
-                    />
-                  )}
+                  <img
+                    src={previewUrl}
+                    alt="Preview"
+                    className="w-full h-full object-contain transition-all"
+                    style={{
+                      transform: `rotate(${editRotation}deg)`,
+                      filter: `brightness(${editBrightness}%) contrast(${editContrast}%)`
+                    }}
+                  />
                 </div>
 
-                {uploadType === 'image' && (
-                  <div className="space-y-4 shrink-0 bg-cafe-800/50 p-4 rounded-xl border border-cafe-700">
-                    <div className="flex items-center justify-between gap-4">
+                <div className="space-y-4 shrink-0 bg-cafe-800/50 p-4 rounded-xl border border-cafe-700">
+                  <div className="flex items-center justify-between gap-4">
                       <div className="flex items-center gap-2 text-cafe-100/70">
                         <RotateCw className="w-4 h-4" />
                         <span className="text-sm font-medium">Döndür</span>
@@ -1136,7 +1565,6 @@ export default function App() {
                       />
                     </div>
                   </div>
-                )}
                 
                 <div className="space-y-4 shrink-0">
                   <div className="space-y-2">
@@ -1160,7 +1588,7 @@ export default function App() {
 
                   <div className="space-y-2">
                     <label htmlFor="caption" className="block text-sm font-medium text-cafe-100/70">
-                      {uploadType === 'video' ? 'Videoya' : 'Fotoğrafa'} bir not düş (İsteğe bağlı)
+                      Fotoğrafa bir not düş (İsteğe bağlı)
                     </label>
                     <input
                       id="caption"
