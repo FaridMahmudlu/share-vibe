@@ -17,6 +17,7 @@ import {
   DEFAULT_MEDIA_CAPTION,
   THEME_COLORS,
   THEME_FONTS,
+  THEME_PRESETS,
   normalizeHandwritingFont,
   normalizeLegacyText,
 } from './uiConfig';
@@ -81,6 +82,24 @@ const MAX_WEEKLY_UPLOADS = 2;
 const MAX_UPLOAD_IMAGE_DIMENSION = 2048;
 const MAX_UPLOAD_IMAGE_SIZE = 3_500_000;
 const AdminPanel = React.lazy(() => import('./AdminPanel'));
+
+const EXPERIENCE_HIGHLIGHTS = [
+  {
+    title: 'Masayı seç, anı ekle',
+    description: 'Paylaşım sırasında masa bilgisi net biçimde kaydedilir.',
+    icon: MapPin,
+  },
+  {
+    title: 'Akıcı galeri gezintisi',
+    description: 'Liste performansı iyileştirildi, etkileşim daha hafif.',
+    icon: Heart,
+  },
+  {
+    title: 'Yükleme öncesi optimize',
+    description: 'Fotoğraflar daha hızlı yüklenmesi için sadeleştirilir.',
+    icon: Upload,
+  },
+];
 
 const getMediaDate = (value: MediaItem['createdAt']) => {
   if (!value) {
@@ -908,10 +927,10 @@ export default function App() {
       <AnimatedBackground />
 
       <div className="relative z-10">
-        <header className="sticky top-0 z-30 border-b border-white/45 bg-white/78 backdrop-blur-2xl shadow-[0_14px_40px_rgba(69,49,35,0.06)]">
+        <header className="sticky top-0 z-30 border-b border-white/45 bg-white/80 backdrop-blur-2xl shadow-[0_14px_34px_rgba(69,49,35,0.05)]">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
-            <div className="flex items-center justify-between gap-3 lg:gap-5">
-              <div className="flex min-w-0 items-center gap-3">
+            <div className="header-bar">
+              <div className="header-brand">
                 <div className="ambient-ring flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12 text-[color:var(--color-accent)] shadow-inner">
                   <Coffee className="w-5 h-5" />
                 </div>
@@ -921,23 +940,23 @@ export default function App() {
                     <h1 className="truncate text-xl sm:text-2xl font-serif font-semibold tracking-[0.02em] text-cafe-50">
                       {cafeName}
                     </h1>
-                    <span className="hidden sm:inline-flex items-center rounded-full border border-cafe-700/70 bg-white/75 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-cafe-100/62">
+                    <span className="hidden md:inline-flex items-center rounded-full border border-cafe-700/70 bg-white/75 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-cafe-100/62">
                       Anı Galerisi
                     </span>
                   </div>
-                  <p className="hidden md:block text-sm text-cafe-100/62">
-                    Sade, hızlı ve rahat paylaşım deneyimi.
+                  <p className="hidden lg:block text-sm text-cafe-100/60">
+                    Hızlı paylaşım, net galeri, sade deneyim.
                   </p>
                 </div>
               </div>
 
-              <nav className="hidden xl:flex items-center gap-2" aria-label="Sayfa kısayolları">
-                <a href="#experience" className="header-nav-link">Atmosfer</a>
+              <nav className="header-nav-shell" aria-label="Sayfa kısayolları">
                 <a href="#gallery" className="header-nav-link">Galeri</a>
-                <a href="#campaign" className="header-nav-link">Ödül</a>
+                <a href="#highlights" className="header-nav-link">Nasıl Çalışır</a>
+                <a href="#campaign" className="header-nav-link">Kampanya</a>
               </nav>
 
-              <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+              <div className="header-actions">
                 <div className="hidden lg:flex items-center gap-2 rounded-full border border-cafe-700/70 bg-white/78 px-3 py-2 text-sm text-cafe-100/72 shadow-sm">
                   <span className={`h-2.5 w-2.5 rounded-full ${!isAnonymous && userUploadsThisWeekCount >= MAX_WEEKLY_UPLOADS ? 'bg-red-500' : 'bg-accent animate-pulse'}`} />
                   <span className="font-medium">
@@ -1022,42 +1041,34 @@ export default function App() {
               </div>
             </div>
 
-            <aside className="section-shell space-y-4">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <span className="section-pill">Akış Özeti</span>
-                  <h3 className="mt-3 text-2xl font-semibold text-cafe-50">Daha akıcı, daha kontrollü kullanım</h3>
+            <aside className="space-y-3">
+              <div id="highlights" className="section-shell compact-info-shell">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <span className="section-pill">Nasıl Çalışır</span>
+                    <h3 className="mt-3 text-xl font-semibold text-cafe-50">Kısa, net ve hızlı akış</h3>
+                  </div>
+                  <div className="ambient-ring flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12 text-[color:var(--color-accent)]">
+                    <Sparkles className="w-4 h-4" />
+                  </div>
                 </div>
-                <div className="ambient-ring flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12 text-[color:var(--color-accent)]">
-                  <Sparkles className="w-5 h-5" />
+
+                <div className="compact-highlight-grid mt-4">
+                  {EXPERIENCE_HIGHLIGHTS.map(({ title, description, icon: Icon }) => (
+                    <div key={title} className="compact-highlight-card">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12 text-[color:var(--color-accent)]">
+                        <Icon className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-cafe-50">{title}</p>
+                        <p className="mt-1 text-sm leading-6 text-cafe-100/68">{description}</p>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
 
-              <div className="grid gap-3">
-                <div className="glass-card flex items-start gap-3">
-                  <MapPin className="mt-0.5 w-4 h-4 text-[color:var(--color-accent)]" />
-                  <div>
-                    <p className="text-sm font-semibold text-cafe-50">Masa bazlı keşif</p>
-                    <p className="text-sm text-cafe-100/70">Her paylaşım masa bilgisiyle birlikte düzenli bir şekilde sergileniyor.</p>
-                  </div>
-                </div>
-                <div className="glass-card flex items-start gap-3">
-                  <Heart className="mt-0.5 w-4 h-4 text-[color:var(--color-accent)]" />
-                  <div>
-                    <p className="text-sm font-semibold text-cafe-50">Hafifletilmiş etkileşim</p>
-                    <p className="text-sm text-cafe-100/70">Kart animasyonları ve liste videoları sadeleştirildi; gezinti daha stabil hale geldi.</p>
-                  </div>
-                </div>
-                <div className="glass-card flex items-start gap-3">
-                  <Upload className="mt-0.5 w-4 h-4 text-[color:var(--color-accent)]" />
-                  <div>
-                    <p className="text-sm font-semibold text-cafe-50">Optimize yükleme</p>
-                    <p className="text-sm text-cafe-100/70">Fotoğraflar yükleme öncesi optimize edilerek daha akıcı paylaşım sağlanıyor.</p>
-                  </div>
-                </div>
-              </div>
-
-              <div id="campaign" className="reward-card">
+              <div id="campaign" className="reward-card compact-reward-card">
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <p className="text-xs uppercase tracking-[0.22em] text-cafe-100/55">Kampanya</p>
@@ -1068,7 +1079,7 @@ export default function App() {
                   </div>
                 </div>
                 <p className="mt-3 text-sm leading-6 text-cafe-100/72">
-                  Misafirler {campaignTarget}. paylaşımında <strong className="text-cafe-50">{campaignReward}</strong> kazanıyor. Bu alan artık daha görünür ve yönlendirici.
+                  Misafirler {campaignTarget}. paylaşımında <strong className="text-cafe-50">{campaignReward}</strong> kazanır.
                 </p>
                 <div className="mt-4 flex items-center justify-between rounded-2xl border border-white/60 bg-white/75 px-4 py-3 text-sm">
                   <span className="text-cafe-100/70">Haftalık kullanıcı limiti</span>
@@ -1789,13 +1800,18 @@ export default function App() {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-md bg-cafe-900 border border-cafe-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+              className="relative w-full max-w-3xl max-h-[90vh] overflow-y-auto bg-cafe-900 border border-cafe-800 rounded-[2rem] shadow-2xl flex flex-col"
             >
-              <div className="p-4 sm:p-6 border-b border-cafe-800 flex justify-between items-center bg-cafe-800/30">
-                <h2 className="text-xl font-bold text-cafe-50 flex items-center gap-2">
-                  <Palette className="w-5 h-5 text-accent" />
-                  Tema Ayarları
-                </h2>
+              <div className="p-4 sm:p-6 border-b border-cafe-800 flex justify-between items-start gap-4 bg-cafe-800/30">
+                <div>
+                  <h2 className="text-xl sm:text-2xl font-bold text-cafe-50 flex items-center gap-2">
+                    <Palette className="w-5 h-5 text-accent" />
+                    Tema Ayarları
+                  </h2>
+                  <p className="mt-2 text-sm text-cafe-100/65">
+                    Renk, font ve hazır kombinlerle galeri görünümünü hızla şekillendir.
+                  </p>
+                </div>
                 <button
                   onClick={() => setIsThemeModalOpen(false)}
                   className="p-2 text-cafe-100/50 hover:text-cafe-50 hover:bg-cafe-800 rounded-full transition-colors"
@@ -1804,38 +1820,134 @@ export default function App() {
                 </button>
               </div>
 
-              <div className="p-4 sm:p-6 space-y-6">
-                {/* Accent Color Selection */}
-                <div>
-                  <h3 className="text-sm font-medium text-cafe-100/70 mb-3">Vurgu Rengi</h3>
-                  <div className="flex flex-wrap gap-3">
-                    {THEME_COLORS.map(color => (
+              <div className="p-4 sm:p-6 grid gap-5 xl:grid-cols-[1.15fr,0.85fr]">
+                <div className="space-y-5">
+                  <div className="rounded-[1.75rem] border border-cafe-700 bg-cafe-800/55 p-4 sm:p-5">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-base font-semibold text-cafe-50">Hazır Tema Kombinleri</h3>
+                        <p className="mt-1 text-sm text-cafe-100/65">Tek dokunuşla dengeli ve daha kaliteli görünüm uygula.</p>
+                      </div>
                       <button
-                        key={color.value}
-                        onClick={() => setAccentColor(color.value)}
-                        className={`w-10 h-10 rounded-full border-2 transition-all ${accentColor === color.value ? 'border-white scale-110 shadow-[0_0_15px_rgba(255,255,255,0.3)]' : 'border-transparent hover:scale-105'}`}
-                        style={{ backgroundColor: color.value }}
-                        title={color.name}
-                        aria-label={color.name}
-                      />
-                    ))}
+                        onClick={() => {
+                          setAccentColor(DEFAULT_ACCENT_COLOR);
+                          setHandwritingFont(DEFAULT_HANDWRITING_FONT);
+                        }}
+                        className="text-xs font-semibold uppercase tracking-[0.18em] text-cafe-100/60 hover:text-cafe-50"
+                      >
+                        Sıfırla
+                      </button>
+                    </div>
+
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      {THEME_PRESETS.map((preset) => (
+                        <button
+                          key={preset.name}
+                          onClick={() => {
+                            setAccentColor(preset.accentColor);
+                            setHandwritingFont(preset.handwritingFont);
+                          }}
+                          className={`rounded-2xl border p-4 text-left transition-all ${
+                            accentColor === preset.accentColor && handwritingFont === preset.handwritingFont
+                              ? 'border-accent bg-accent/10 shadow-[0_16px_36px_rgba(0,0,0,0.08)]'
+                              : 'border-cafe-700 bg-cafe-800/70 hover:border-cafe-600'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="h-3.5 w-3.5 rounded-full" style={{ backgroundColor: preset.accentColor }} />
+                            <p className="font-semibold text-cafe-50">{preset.name}</p>
+                          </div>
+                          <p className="mt-3 text-2xl text-cafe-50" style={{ fontFamily: preset.handwritingFont }}>
+                            {DEFAULT_MEDIA_CAPTION}
+                          </p>
+                          <p className="mt-2 text-sm leading-6 text-cafe-100/65">
+                            {preset.description}
+                          </p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-[1.75rem] border border-cafe-700 bg-cafe-800/55 p-4 sm:p-5">
+                    <h3 className="text-base font-semibold text-cafe-50">Vurgu Rengi</h3>
+                    <div className="mt-4 flex flex-wrap gap-3">
+                      {THEME_COLORS.map(color => (
+                        <button
+                          key={color.value}
+                          onClick={() => setAccentColor(color.value)}
+                          className={`theme-color-swatch ${accentColor === color.value ? 'theme-color-swatch-active' : ''}`}
+                          style={{ backgroundColor: color.value }}
+                          title={color.name}
+                          aria-label={color.name}
+                        />
+                      ))}
+                    </div>
+                    <p className="mt-3 text-sm text-cafe-100/65">
+                      Seçilen vurgu rengi butonlar, aktif durumlar ve kampanya kartında görünür.
+                    </p>
+                  </div>
+
+                  <div className="rounded-[1.75rem] border border-cafe-700 bg-cafe-800/55 p-4 sm:p-5">
+                    <h3 className="text-base font-semibold text-cafe-50">El Yazısı Fontu</h3>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      {THEME_FONTS.map(font => (
+                        <button
+                          key={font.value}
+                          onClick={() => setHandwritingFont(font.value)}
+                          className={`p-3.5 rounded-2xl border transition-all text-lg ${handwritingFont === font.value ? 'border-accent bg-accent/10 text-accent' : 'border-cafe-700 bg-cafe-800 text-cafe-50 hover:border-cafe-600'}`}
+                          style={{ fontFamily: font.value }}
+                        >
+                          {font.name}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
-                {/* Font Selection */}
-                <div>
-                  <h3 className="text-sm font-medium text-cafe-100/70 mb-3">El Yazısı Fontu</h3>
-                  <div className="grid grid-cols-2 gap-3">
-                    {THEME_FONTS.map(font => (
-                      <button
-                        key={font.value}
-                        onClick={() => setHandwritingFont(font.value)}
-                        className={`p-3 rounded-xl border transition-all text-lg ${handwritingFont === font.value ? 'border-accent bg-accent/10 text-accent' : 'border-cafe-700 bg-cafe-800 text-cafe-50 hover:border-cafe-600'}`}
-                        style={{ fontFamily: font.value }}
-                      >
-                        {font.name}
-                      </button>
-                    ))}
+                <div className="space-y-5">
+                  <div className="rounded-[1.75rem] border border-cafe-700 bg-cafe-800/55 p-4 sm:p-5">
+                    <h3 className="text-base font-semibold text-cafe-50">Canlı Önizleme</h3>
+                    <p className="mt-1 text-sm text-cafe-100/65">
+                      Tema seçiminin kartlar ve öne çıkan alanlarda nasıl göründüğünü anında izle.
+                    </p>
+
+                    <div className="mt-4 rounded-[1.8rem] border border-cafe-700 bg-cafe-900/90 p-4 shadow-inner">
+                      <div className="rounded-[1.4rem] bg-cafe-800 p-3 shadow-lg">
+                        <div className="relative aspect-[4/5] overflow-hidden rounded-[1.15rem] bg-gradient-to-br from-cafe-700 to-cafe-900">
+                          <div className="absolute left-3 top-3 rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white" style={{ backgroundColor: accentColor }}>
+                            Masa 7
+                          </div>
+                          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 to-transparent p-4">
+                            <p className="text-3xl text-white" style={{ fontFamily: handwritingFont }}>
+                              {DEFAULT_MEDIA_CAPTION}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="pt-4 space-y-3">
+                          <div className="flex items-center justify-between text-sm text-cafe-100/70">
+                            <span>Kafe adı</span>
+                            <strong className="text-cafe-50">{cafeName}</strong>
+                          </div>
+                          <div className="flex items-center justify-between text-sm text-cafe-100/70">
+                            <span>Ödül akışı</span>
+                            <strong className="text-cafe-50">{campaignTarget} paylaşım</strong>
+                          </div>
+                          <div className="rounded-2xl border border-cafe-700 bg-cafe-800/80 px-4 py-3 text-sm text-cafe-100/75">
+                            Temayı sade tuttuğunda hem mobilde hem masaüstünde daha temiz bir algı oluşur.
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-[1.75rem] border border-cafe-700 bg-cafe-800/55 p-4 sm:p-5">
+                    <h3 className="text-base font-semibold text-cafe-50">Tasarım Notları</h3>
+                    <ul className="mt-3 space-y-3 text-sm leading-6 text-cafe-100/68">
+                      <li>Kehribar ve adaçayı tonları daha sıcak ve davetkâr görünür.</li>
+                      <li>El yazısı fontu yalnızca dikkat çekmesi gereken noktalarda kullanılmalı.</li>
+                      <li>Dengeli kontrast, özellikle küçük ekranlarda okunabilirliği artırır.</li>
+                    </ul>
                   </div>
                 </div>
               </div>

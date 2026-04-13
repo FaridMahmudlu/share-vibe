@@ -13,6 +13,33 @@ export const THEME_FONTS = [
   { name: 'Shantell Sans', value: '"Shantell Sans", cursive' },
 ];
 
+export const THEME_PRESETS = [
+  {
+    name: 'Sıcak Karşılama',
+    accentColor: '#c97a43',
+    handwritingFont: '"Kalam", cursive',
+    description: 'Sıcak ve tanıdık bir kafe hissi verir.',
+  },
+  {
+    name: 'Doğal Köşe',
+    accentColor: '#5f8d6d',
+    handwritingFont: '"Patrick Hand", cursive',
+    description: 'Bitkili ve sakin konseptler için dengeli görünüm.',
+  },
+  {
+    name: 'Gece Servisi',
+    accentColor: '#355c7d',
+    handwritingFont: '"Caveat", cursive',
+    description: 'Akşam atmosferi ve modern bir vurgu için.',
+  },
+  {
+    name: 'Romantik Masa',
+    accentColor: '#b56576',
+    handwritingFont: '"Shantell Sans", cursive',
+    description: 'Daha yumuşak ve butik bir sunum sağlar.',
+  },
+];
+
 export const DEFAULT_ACCENT_COLOR = '#c97a43';
 export const DEFAULT_HANDWRITING_FONT = THEME_FONTS[0].value;
 export const DEFAULT_CAFE_NAME = 'Lumina Konsept Kafe';
