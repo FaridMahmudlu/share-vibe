@@ -8,7 +8,10 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "deploy:hosting": "firebase deploy --only hosting --project gen-lang-client-0200945474",
+    "deploy:rules": "firebase deploy --only firestore:rules --project gen-lang-client-0200945474",
+    "deploy:prod": "npm run build && firebase deploy --only \"hosting,firestore:rules\" --project gen-lang-client-0200945474"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",

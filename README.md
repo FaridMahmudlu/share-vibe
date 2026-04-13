@@ -1,36 +1,45 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Kafe Ani
 
-# Kafe Anı
+Firebase tabanli React/Vite uygulamasidir. Musteriler ani paylasabilir, icerikleri begenebilir ve yoneticiler tema ile kampanya ayarlarini yonetebilir.
 
-Firebase tabanlı React/Vite uygulamasıdır. Müşteriler fotoğraf paylaşabilir, içerikleri beğenebilir ve yöneticiler tema ile kampanya ayarlarını yönetebilir.
-
-## Yerelde Çalıştırma
+## Yerelde Calistirma
 
 Gereksinimler:
 
 - Node.js 20+
-- Yapılandırılmış Firebase projesine internet erişimi
+- Yapilandirilmis Firebase projesine internet erisimi
 
-Adımlar:
+Adimlar:
 
-1. Bağımlılıkları kurun:
+1. Bagimliliklari kurun:
    `npm install`
-2. Geliştirme sunucusunu başlatın:
+2. Gelistirme sunucusunu baslatin:
    `npm run dev`
-3. Uygulamayı şu adresten açın:
+3. Uygulamayi su adresten acin:
    `http://localhost:3000`
 
 ## Kontroller
 
 - Prod build:
   `npm run build`
-- TypeScript kontrolü:
+- TypeScript kontrolu:
   `npm run lint`
+
+## Firebase Deploy
+
+- Hosting ve Firestore deploy yapilandirmasi repo icinde tutulur:
+  [`firebase.json`](./firebase.json)
+  [`firestore.rules`](./firestore.rules)
+  [`firestore.indexes.json`](./firestore.indexes.json)
+  [`.firebaserc`](./.firebaserc)
+- Canli deploy oncesi bir kez Firebase CLI login gerekir:
+  `firebase login`
+- Ardindan canli deploy:
+  `npm run build`
+  `firebase deploy --only "hosting,firestore:rules" --project gen-lang-client-0200945474`
 
 ## Notlar
 
-- Firebase web yapılandırması [`firebase-applet-config.json`](./firebase-applet-config.json) içinde tutulur.
-- Uygulama galeri erişimi için otomatik anonim Firebase oturumu açar.
-- Admin yetkileri Firestore kuralları ve [`src/AdminPanel.tsx`](./src/AdminPanel.tsx) içinden kontrol edilir.
+- Firebase web yapilandirmasi [`firebase-applet-config.json`](./firebase-applet-config.json) icinde tutulur.
+- Uygulama yalnizca Google ile giris kullanir; anonim giris kaldirilmistir.
+- Admin yetkileri Firestore kurallari ve [`src/AdminPanel.tsx`](./src/AdminPanel.tsx) icinden kontrol edilir.
