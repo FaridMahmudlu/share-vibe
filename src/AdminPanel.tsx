@@ -1,22 +1,21 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { db, auth } from './firebase';
 import { collection, doc, getDoc, onSnapshot, orderBy, query, setDoc } from 'firebase/firestore';
 import {
   ArrowLeft,
+  ArrowUpDown,
   Clock,
-  Coffee,
   Gift,
   ImageIcon,
   LogOut,
   MapPin,
   Palette,
   Save,
+  Search,
   Settings,
   ShieldCheck,
   Sparkles,
   Trash2,
-  Type,
-  Video,
 } from 'lucide-react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { signInWithGoogle } from './googleAuth';
@@ -30,6 +29,7 @@ import {
   DEFAULT_MEDIA_CAPTION,
   THEME_COLORS,
   THEME_FONTS,
+  THEME_PRESETS,
   normalizeHandwritingFont,
   normalizeLegacyText,
 } from './uiConfig';
@@ -42,12 +42,34 @@ type AdminMediaItem = {
   tableNumber: string;
   date: string;
   likesCount: number;
+  createdAt: any;
 };
 
 const ADMIN_EMAILS = new Set([
   'fariddmahmudlu2008@gmail.com',
   'aslankerem182@gmail.com',
 ]);
+
+const DEFAULT_ADMIN_SETTINGS = {
+  cafeName: DEFAULT_CAFE_NAME,
+  accentColor: DEFAULT_ACCENT_COLOR,
+  handwritingFont: DEFAULT_HANDWRITING_FONT,
+  campaignTarget: DEFAULT_CAMPAIGN_TARGET,
+  campaignReward: DEFAULT_CAMPAIGN_REWARD,
+};
+
+const getMediaDate = (value: AdminMediaItem['createdAt']) => {
+  if (!value) {
+    return null;
+  }
+
+  if (typeof value?.toDate === 'function') {
+    return value.toDate();
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
 
 export default function AdminPanel({ onBack }: { onBack: () => void }) {
   const [isAdmin, setIsAdmin] = useState(false);
@@ -57,14 +79,13 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
   const [mediaToDelete, setMediaToDelete] = useState<AdminMediaItem | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [mediaItems, setMediaItems] = useState<AdminMediaItem[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [mediaTypeFilter, setMediaTypeFilter] = useState<'all' | 'image' | 'video'>('all');
+  const [tableFilter, setTableFilter] = useState('all');
+  const [sortMode, setSortMode] = useState<'newest' | 'likes'>('newest');
 
-  const [settings, setSettings] = useState({
-    cafeName: DEFAULT_CAFE_NAME,
-    accentColor: DEFAULT_ACCENT_COLOR,
-    handwritingFont: DEFAULT_HANDWRITING_FONT,
-    campaignTarget: DEFAULT_CAMPAIGN_TARGET,
-    campaignReward: DEFAULT_CAMPAIGN_REWARD,
-  });
+  const [settings, setSettings] = useState(DEFAULT_ADMIN_SETTINGS);
+  const [savedSettings, setSavedSettings] = useState(DEFAULT_ADMIN_SETTINGS);
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
@@ -108,21 +129,22 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
       }
 
       const data = snapshot.data();
-      setSettings((previous) => ({
-        ...previous,
-        ...data,
+      const nextSettings = {
+        cafeName: normalizeLegacyText(data.cafeName, DEFAULT_ADMIN_SETTINGS.cafeName),
         accentColor:
           typeof data.accentColor === 'string' && data.accentColor
             ? data.accentColor
-            : previous.accentColor,
-        cafeName: normalizeLegacyText(data.cafeName, previous.cafeName),
+            : DEFAULT_ADMIN_SETTINGS.accentColor,
         handwritingFont: normalizeHandwritingFont(data.handwritingFont),
         campaignTarget:
           typeof data.campaignTarget === 'number' && Number.isFinite(data.campaignTarget)
             ? data.campaignTarget
-            : previous.campaignTarget,
-        campaignReward: normalizeLegacyText(data.campaignReward, previous.campaignReward),
-      }));
+            : DEFAULT_ADMIN_SETTINGS.campaignTarget,
+        campaignReward: normalizeLegacyText(data.campaignReward, DEFAULT_ADMIN_SETTINGS.campaignReward),
+      };
+
+      setSettings(nextSettings);
+      setSavedSettings(nextSettings);
     });
 
     const unsubscribeMedia = onSnapshot(
@@ -140,6 +162,7 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
             tableNumber: normalizeLegacyText(data.tableNumber, 'Masa'),
             date: normalizeLegacyText(data.date, '--:--'),
             likesCount: typeof data.likesCount === 'number' ? data.likesCount : 0,
+            createdAt: data.createdAt,
           });
         });
 
@@ -155,6 +178,80 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
       unsubscribeMedia();
     };
   }, [isAdmin]);
+
+  const totalLikes = useMemo(
+    () => mediaItems.reduce((sum, item) => sum + item.likesCount, 0),
+    [mediaItems]
+  );
+
+  const todayUploadsCount = useMemo(() => {
+    const today = new Date();
+
+    return mediaItems.filter((item) => {
+      const itemDate = getMediaDate(item.createdAt);
+      return itemDate ? itemDate.toDateString() === today.toDateString() : false;
+    }).length;
+  }, [mediaItems]);
+
+  const uniqueTables = useMemo(
+    () =>
+      Array.from(
+        new Set<string>(
+          mediaItems
+            .map((item) => item.tableNumber)
+            .filter((value) => value && value.trim().length > 0)
+        )
+      ).sort((left, right) => left.localeCompare(right, 'tr')),
+    [mediaItems]
+  );
+
+  const topTable = useMemo(() => {
+    if (mediaItems.length === 0) {
+      return null;
+    }
+
+    const counters = new Map<string, number>();
+    for (const item of mediaItems) {
+      counters.set(item.tableNumber, (counters.get(item.tableNumber) ?? 0) + 1);
+    }
+
+    return Array.from(counters.entries()).sort((left, right) => right[1] - left[1])[0] ?? null;
+  }, [mediaItems]);
+
+  const filteredMediaItems = useMemo(() => {
+    const normalizedSearch = searchTerm.trim().toLocaleLowerCase('tr');
+
+    return [...mediaItems]
+      .filter((item) => mediaTypeFilter === 'all' || item.type === mediaTypeFilter)
+      .filter((item) => tableFilter === 'all' || item.tableNumber === tableFilter)
+      .filter((item) => {
+        if (!normalizedSearch) {
+          return true;
+        }
+
+        const haystack = `${item.caption} ${item.tableNumber} ${item.date}`.toLocaleLowerCase('tr');
+        return haystack.includes(normalizedSearch);
+      })
+      .sort((left, right) => {
+        if (sortMode === 'likes') {
+          return right.likesCount - left.likesCount;
+        }
+
+        const leftDate = getMediaDate(left.createdAt)?.getTime() ?? 0;
+        const rightDate = getMediaDate(right.createdAt)?.getTime() ?? 0;
+        return rightDate - leftDate;
+      });
+  }, [mediaItems, mediaTypeFilter, searchTerm, sortMode, tableFilter]);
+
+  const settingsDirty = useMemo(
+    () =>
+      settings.cafeName !== savedSettings.cafeName ||
+      settings.accentColor !== savedSettings.accentColor ||
+      settings.handwritingFont !== savedSettings.handwritingFont ||
+      settings.campaignTarget !== savedSettings.campaignTarget ||
+      settings.campaignReward !== savedSettings.campaignReward,
+    [savedSettings, settings]
+  );
 
   const handleLogin = async () => {
     try {
@@ -289,12 +386,18 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
               <ShieldCheck className="w-4 h-4 text-[color:var(--color-accent)]" />
               <span>{userEmail}</span>
             </div>
+            {settingsDirty && (
+              <div className="hidden xl:flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-700">
+                <Sparkles className="w-4 h-4" />
+                <span>Kaydedilmemiş değişiklikler var</span>
+              </div>
+            )}
             <button onClick={handleLogout} className="icon-button" aria-label="Çıkış yap">
               <LogOut className="w-5 h-5" />
             </button>
             <button
               onClick={handleSave}
-              disabled={isSaving}
+              disabled={isSaving || !settingsDirty}
               className="inline-flex items-center gap-2 rounded-full bg-[color:var(--color-accent)] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_18px_36px_rgba(0,0,0,0.12)] transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Save className="w-4 h-4" />
@@ -305,7 +408,78 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-10 space-y-6">
-        <section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr),minmax(360px,0.9fr)]">
+        <section className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr),360px]">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="stat-card">
+              <span className="stat-label">Toplam Paylaşım</span>
+              <strong className="stat-value">{mediaItems.length}</strong>
+              <p className="stat-note">Galeride yer alan tüm içerikler</p>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">Bugün</span>
+              <strong className="stat-value">{todayUploadsCount}</strong>
+              <p className="stat-note">Bugün eklenen yeni paylaşımlar</p>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">Toplam Beğeni</span>
+              <strong className="stat-value">{totalLikes}</strong>
+              <p className="stat-note">Misafirlerin bıraktığı toplam etkileşim</p>
+            </div>
+            <div className="stat-card">
+              <span className="stat-label">Aktif Masa</span>
+              <strong className="stat-value">{uniqueTables.length}</strong>
+              <p className="stat-note">Paylaşım gelen masa sayısı</p>
+            </div>
+          </div>
+
+          <aside className="section-shell space-y-4">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <span className="section-pill">Hızlı Erişim</span>
+                <h2 className="mt-3 text-2xl font-semibold text-cafe-50">Günün özeti</h2>
+              </div>
+              <div className="ambient-ring flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12 text-[color:var(--color-accent)]">
+                <Sparkles className="w-5 h-5" />
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
+              <a href="#admin-brand" className="compact-highlight-card transition-transform hover:-translate-y-0.5">
+                <Palette className="mt-1 w-4 h-4 text-[color:var(--color-accent)]" />
+                <div>
+                  <p className="text-sm font-semibold text-cafe-50">Marka ayarları</p>
+                  <p className="mt-1 text-sm leading-6 text-cafe-100/68">Kafe adı, renk ve font düzenleyin.</p>
+                </div>
+              </a>
+              <a href="#admin-campaign" className="compact-highlight-card transition-transform hover:-translate-y-0.5">
+                <Gift className="mt-1 w-4 h-4 text-[color:var(--color-accent)]" />
+                <div>
+                  <p className="text-sm font-semibold text-cafe-50">Kampanya alanı</p>
+                  <p className="mt-1 text-sm leading-6 text-cafe-100/68">Ödül hedefini ve mesajını güncelleyin.</p>
+                </div>
+              </a>
+              <a href="#admin-media" className="compact-highlight-card transition-transform hover:-translate-y-0.5">
+                <ImageIcon className="mt-1 w-4 h-4 text-[color:var(--color-accent)]" />
+                <div>
+                  <p className="text-sm font-semibold text-cafe-50">Medya arşivi</p>
+                  <p className="mt-1 text-sm leading-6 text-cafe-100/68">Paylaşımları filtreleyin ve yönetin.</p>
+                </div>
+              </a>
+            </div>
+
+            <div className="glass-card">
+              <p className="text-sm font-semibold text-cafe-50">En aktif masa</p>
+              <p className="mt-2 text-2xl font-semibold text-cafe-50">
+                {topTable ? topTable[0] : 'Henüz veri yok'}
+              </p>
+              <p className="mt-2 text-sm leading-6 text-cafe-100/70">
+                {topTable ? `${topTable[1]} paylaşım ile bugün öne çıkıyor.` : 'Paylaşım geldikçe burada öne çıkan masa görünür.'}
+              </p>
+            </div>
+          </aside>
+        </section>
+
+        <section id="admin-brand" className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr),minmax(360px,0.9fr)] scroll-mt-28 lg:scroll-mt-32">
           <div className="section-shell space-y-6">
             <div>
               <span className="section-pill">Marka Kimliği</span>
@@ -366,6 +540,43 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
                 ))}
               </div>
             </div>
+
+            <div className="glass-card">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-cafe-100/70">Hazır tema kombinleri</label>
+                  <p className="mt-1 text-sm text-cafe-100/68">Hızlıca dengeli bir görünüm seçebilirsiniz.</p>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                {THEME_PRESETS.map((preset) => (
+                  <button
+                    key={preset.name}
+                    onClick={() =>
+                      setSettings({
+                        ...settings,
+                        accentColor: preset.accentColor,
+                        handwritingFont: preset.handwritingFont,
+                      })
+                    }
+                    className={`rounded-2xl border p-4 text-left transition-colors ${
+                      settings.accentColor === preset.accentColor && settings.handwritingFont === preset.handwritingFont
+                        ? 'border-accent/30 bg-[color:var(--color-accent)]/10'
+                        : 'border-cafe-700/80 bg-white/80 hover:border-accent/30'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="h-3 w-3 rounded-full" style={{ backgroundColor: preset.accentColor }} />
+                      <p className="text-sm font-semibold text-cafe-50">{preset.name}</p>
+                    </div>
+                    <p className="mt-3 text-lg text-cafe-50" style={{ fontFamily: preset.handwritingFont }}>
+                      {DEFAULT_MEDIA_CAPTION}
+                    </p>
+                    <p className="mt-2 text-sm leading-6 text-cafe-100/68">{preset.description}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           <aside className="section-shell">
@@ -406,7 +617,7 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
           </aside>
         </section>
 
-        <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr),400px]">
+        <section id="admin-campaign" className="grid gap-6 xl:grid-cols-[minmax(0,1fr),400px] scroll-mt-28 lg:scroll-mt-32">
           <div className="section-shell space-y-5">
             <div>
               <span className="section-pill">Kampanya Kurgusu</span>
@@ -470,44 +681,48 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
           </div>
 
           <aside className="section-shell space-y-4">
-            <span className="section-pill">Operasyon Notları</span>
+            <span className="section-pill">Operasyon Özeti</span>
             <div className="glass-card">
               <div className="flex items-center gap-3">
                 <div className="rounded-2xl bg-[color:var(--color-accent)]/12 p-3 text-[color:var(--color-accent)]">
                   <Settings className="w-5 h-5" />
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-cafe-50">Tek merkezden yönetim</p>
-                  <p className="text-sm text-cafe-100/70">Tema, kampanya ve medya akışı tek panelde toplandı.</p>
+                  <p className="text-sm font-semibold text-cafe-50">Kaydetmeden yayınlanmaz</p>
+                  <p className="text-sm text-cafe-100/70">Tema ve kampanya düzenlemeleri yalnızca kaydettiğinizde yayınlanır.</p>
                 </div>
               </div>
             </div>
             <div className="glass-card">
               <div className="flex items-center gap-3">
                 <div className="rounded-2xl bg-[color:var(--color-accent)]/12 p-3 text-[color:var(--color-accent)]">
-                  <Trash2 className="w-5 h-5" />
+                  <Gift className="w-5 h-5" />
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-cafe-50">Admin silme yetkisi</p>
-                  <p className="text-sm text-cafe-100/70">Alt bölümden tüm anıları doğrudan silebilirsiniz.</p>
+                  <p className="text-sm font-semibold text-cafe-50">Mevcut ödül hedefi</p>
+                  <p className="text-sm text-cafe-100/70">
+                    Misafirler {settings.campaignTarget}. paylaşımda {settings.campaignReward} kazanır.
+                  </p>
                 </div>
               </div>
             </div>
             <div className="glass-card">
               <div className="flex items-center gap-3">
                 <div className="rounded-2xl bg-[color:var(--color-accent)]/12 p-3 text-[color:var(--color-accent)]">
-                  <Coffee className="w-5 h-5" />
+                  <MapPin className="w-5 h-5" />
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-cafe-50">Canlı galeri uyumu</p>
-                  <p className="text-sm text-cafe-100/70">Yaptığınız değişiklikler ana galeride anlık olarak görünür.</p>
+                  <p className="text-sm font-semibold text-cafe-50">En aktif masa</p>
+                  <p className="text-sm text-cafe-100/70">
+                    {topTable ? `${topTable[0]} şu anda ${topTable[1]} paylaşım ile önde.` : 'Henüz yeterli paylaşım verisi oluşmadı.'}
+                  </p>
                 </div>
               </div>
             </div>
           </aside>
         </section>
 
-        <section className="section-shell space-y-5">
+        <section id="admin-media" className="section-shell space-y-5 scroll-mt-28 lg:scroll-mt-32">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <span className="section-pill">Medya Yönetimi</span>
@@ -517,23 +732,77 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
               </p>
             </div>
             <div className="inline-flex items-center rounded-full border border-cafe-700/80 bg-white/75 px-4 py-2 text-sm text-cafe-100/72">
-              {mediaItems.length} kayıt
+              {filteredMediaItems.length} sonuç
             </div>
           </div>
 
-          {mediaItems.length === 0 ? (
+          <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr),180px,180px,200px]">
+            <label className="glass-card flex items-center gap-3">
+              <Search className="w-4 h-4 text-cafe-100/60" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="Başlık, masa ya da saat ara"
+                className="w-full bg-transparent text-sm text-cafe-50 outline-none placeholder:text-cafe-100/50"
+              />
+            </label>
+
+            <div className="glass-card flex items-center gap-3">
+              <ImageIcon className="w-4 h-4 text-cafe-100/60" />
+              <select
+                value={mediaTypeFilter}
+                onChange={(event) => setMediaTypeFilter(event.target.value as 'all' | 'image' | 'video')}
+                className="w-full bg-transparent text-sm text-cafe-50 outline-none"
+              >
+                <option value="all">Tüm medya</option>
+                <option value="image">Fotoğraf</option>
+                <option value="video">Video</option>
+              </select>
+            </div>
+
+            <div className="glass-card flex items-center gap-3">
+              <MapPin className="w-4 h-4 text-cafe-100/60" />
+              <select
+                value={tableFilter}
+                onChange={(event) => setTableFilter(event.target.value)}
+                className="w-full bg-transparent text-sm text-cafe-50 outline-none"
+              >
+                <option value="all">Tüm masalar</option>
+                {uniqueTables.map((table) => (
+                  <option key={table} value={table}>
+                    {table}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="glass-card flex items-center gap-3">
+              <ArrowUpDown className="w-4 h-4 text-cafe-100/60" />
+              <select
+                value={sortMode}
+                onChange={(event) => setSortMode(event.target.value as 'newest' | 'likes')}
+                className="w-full bg-transparent text-sm text-cafe-50 outline-none"
+              >
+                <option value="newest">En yeni</option>
+                <option value="likes">En çok beğenilen</option>
+              </select>
+            </div>
+          </div>
+
+          {filteredMediaItems.length === 0 ? (
             <div className="rounded-[2rem] border border-dashed border-cafe-700/70 bg-white/60 px-6 py-12 text-center">
               <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12 text-[color:var(--color-accent)]">
                 <ImageIcon className="w-6 h-6" />
               </div>
-              <h3 className="text-xl font-semibold text-cafe-50">Henüz yönetilecek içerik yok</h3>
+              <h3 className="text-xl font-semibold text-cafe-50">Filtreye uygun içerik bulunamadı</h3>
               <p className="mt-3 text-sm leading-7 text-cafe-100/72">
-                Galeriye yeni medya eklendiğinde burada otomatik olarak listelenecek.
+                Arama veya filtreleri değiştirerek farklı sonuçları görebilirsiniz.
               </p>
             </div>
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
-              {mediaItems.map((item) => (
+              {filteredMediaItems.map((item) => (
                 <article key={item.id} className="glass-card overflow-hidden p-0">
                   <div className="relative aspect-[4/3] overflow-hidden bg-cafe-800">
                     {!item.url ? (
