@@ -85,19 +85,19 @@ const AdminPanel = React.lazy(() => import('./AdminPanel'));
 
 const EXPERIENCE_HIGHLIGHTS = [
   {
-    title: 'Masayı seç, anı ekle',
-    description: 'Paylaşım sırasında masa bilgisi net biçimde kaydedilir.',
+    title: 'Masanı seç',
+    description: 'Paylaşımın hangi masaya ait olduğu düzenli biçimde görünür.',
     icon: MapPin,
   },
   {
-    title: 'Akıcı galeri gezintisi',
-    description: 'Liste performansı iyileştirildi, etkileşim daha hafif.',
-    icon: Heart,
+    title: 'Fotoğrafını yükle',
+    description: 'Görsel birkaç adımda galeriye eklenir ve herkes tarafından görülebilir.',
+    icon: Upload,
   },
   {
-    title: 'Yükleme öncesi optimize',
-    description: 'Fotoğraflar daha hızlı yüklenmesi için sadeleştirilir.',
-    icon: Upload,
+    title: 'Galeride yerini al',
+    description: 'Misafirler paylaşımları inceleyebilir, beğenebilir ve keşfedebilir.',
+    icon: Heart,
   },
 ];
 
@@ -1025,27 +1025,29 @@ export default function App() {
                     </span>
                   </div>
                   <p className="text-xs sm:text-sm text-cafe-100/60">
-                    Konsept kafeler için sade, hızlı ve zarif paylaşım akışı.
+                    Fotoğraf paylaş, anını galeride hemen gör.
                   </p>
                 </div>
               </div>
 
               <nav className="header-nav-shell" aria-label="Sayfa kısayolları">
                 <a href="#gallery" className="header-nav-link">Galeri</a>
-                <a href="#highlights" className="header-nav-link">Nasıl Çalışır</a>
+                <a href="#highlights" className="header-nav-link">Nasıl Paylaşılır</a>
                 <a href="#campaign" className="header-nav-link">Kampanya</a>
               </nav>
 
               <div className="header-actions">
-                <div
-                  className="hidden md:flex items-center gap-2 rounded-full border border-cafe-700/70 bg-white/78 px-3.5 py-2 text-sm text-cafe-100/72 shadow-sm"
-                  title={isAuthenticated ? (currentUserEmail ?? 'Google hesabı açık') : 'Google ile giriş yap'}
-                >
-                  <span className={`h-2.5 w-2.5 rounded-full ${isAuthenticated && userUploadsThisWeekCount >= MAX_WEEKLY_UPLOADS ? 'bg-red-500' : 'bg-accent animate-pulse'}`} />
-                  <span className="font-medium">
-                    {isAuthenticated ? `Hesabın açık · ${userUploadsThisWeekCount}/${MAX_WEEKLY_UPLOADS} paylaşım` : 'Giriş yap, galeri netleşsin'}
-                  </span>
-                </div>
+                {isAuthenticated && (
+                  <div
+                    className="hidden lg:flex items-center gap-2 rounded-full border border-cafe-700/70 bg-white/78 px-3 py-2 text-sm text-cafe-100/72 shadow-sm"
+                    title={currentUserEmail ?? 'Google hesabı açık'}
+                  >
+                    <span className={`h-2.5 w-2.5 rounded-full ${userUploadsThisWeekCount >= MAX_WEEKLY_UPLOADS ? 'bg-red-500' : 'bg-accent'}`} />
+                    <span className="font-medium">
+                      {userUploadsThisWeekCount}/{MAX_WEEKLY_UPLOADS} paylaşım hakkı
+                    </span>
+                  </div>
+                )}
 
                 <button
                   onClick={() => setIsThemeModalOpen(true)}
@@ -1068,7 +1070,7 @@ export default function App() {
                       className="header-primary-action hidden sm:inline-flex"
                     >
                       <Camera className="w-4 h-4" />
-                      <span>Anı Ekle</span>
+                      <span>Paylaş</span>
                     </button>
                     <button
                       onClick={handleLogout}
@@ -1082,7 +1084,7 @@ export default function App() {
                     onClick={() => void ensureGoogleUser()}
                     className="header-primary-action hidden sm:inline-flex"
                   >
-                    <span>Google ile Giriş</span>
+                    <span>Giriş Yap</span>
                   </button>
                 )}
               </div>
@@ -1094,14 +1096,14 @@ export default function App() {
           <section id="experience" className="grid gap-6 xl:grid-cols-[minmax(0,1.45fr),minmax(320px,0.95fr)]">
             <div className="section-shell relative overflow-hidden">
               <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-r from-[color:var(--color-accent)]/18 via-white/30 to-transparent" />
-              <span className="section-pill">Misafir deneyimini sergile</span>
+              <span className="section-pill">Kolay paylaşım</span>
               <div className="relative space-y-5">
                 <div className="space-y-3">
                   <h2 className="max-w-3xl text-4xl sm:text-5xl xl:text-6xl font-serif leading-[0.92] text-cafe-50">
-                    Masadaki atmosferi canlı, rafine ve paylaşılabilir bir galeriye dönüştür.
+                    Kafedeki güzel anları birkaç saniyede paylaşın.
                   </h2>
                   <p className="max-w-2xl text-sm sm:text-base leading-7 text-cafe-100/72">
-                    Misafirler fotoğrafını birkaç dokunuşla eklesin, sen mekânın enerjisini şık bir vitrinde topla. Daha temiz tipografi, daha güçlü odak ve daha hızlı etkileşim için arayüz yeniden düzenlendi.
+                    Masanızı seçin, fotoğrafınızı ekleyin ve paylaşımınız anında galeride yerini alsın. Diğer misafirlerin bıraktığı anıları da tek akışta keşfedin.
                   </p>
                 </div>
 
@@ -1111,13 +1113,13 @@ export default function App() {
                     className="inline-flex items-center gap-2 rounded-full bg-[color:var(--color-accent)] px-5 py-3 text-sm font-semibold tracking-[0.18em] uppercase text-white shadow-[0_20px_45px_rgba(0,0,0,0.12)] transition-transform hover:-translate-y-0.5"
                   >
                     <Camera className="w-4 h-4" />
-                    {isAuthenticated ? 'Anı Ekle' : 'Google ile Giriş'}
+                    {isAuthenticated ? 'Fotoğraf Paylaş' : 'Giriş Yap'}
                   </button>
                   <a
                     href="#gallery"
                     className="inline-flex items-center gap-2 rounded-full border border-cafe-700/80 bg-white/75 px-5 py-3 text-sm font-semibold text-cafe-100 transition-colors hover:border-accent/50 hover:text-cafe-50"
                   >
-                    Galeriyi Keşfet
+                    Galeriyi Gör
                   </a>
                 </div>
 
@@ -1125,17 +1127,17 @@ export default function App() {
                   <div className="stat-card">
                     <span className="stat-label">Toplam Anı</span>
                     <strong className="stat-value">{mediaItems.length}</strong>
-                    <p className="stat-note">Mekânda paylaşılan tüm kareler</p>
+                    <p className="stat-note">Galeride yer alan tüm fotoğraf ve videolar</p>
                   </div>
                   <div className="stat-card">
                     <span className="stat-label">Bugün</span>
                     <strong className="stat-value">{todayMomentsCount}</strong>
-                    <p className="stat-note">Bugün eklenen taze içerikler</p>
+                    <p className="stat-note">Bugün paylaşılan yeni anlar</p>
                   </div>
                   <div className="stat-card">
                     <span className="stat-label">Toplam Beğeni</span>
                     <strong className="stat-value">{totalLikes}</strong>
-                    <p className="stat-note">Galeriyle kurulan etkileşim</p>
+                    <p className="stat-note">Misafirlerin verdiği toplam beğeni</p>
                   </div>
                 </div>
               </div>
@@ -1145,8 +1147,8 @@ export default function App() {
               <div id="highlights" className="section-shell compact-info-shell">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <span className="section-pill">Nasıl Çalışır</span>
-                    <h3 className="mt-3 text-xl font-semibold text-cafe-50">Kısa, net ve hızlı akış</h3>
+                    <span className="section-pill">Nasıl paylaşılır</span>
+                    <h3 className="mt-3 text-xl font-semibold text-cafe-50">Üç adımda paylaş</h3>
                   </div>
                   <div className="ambient-ring flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12 text-[color:var(--color-accent)]">
                     <Sparkles className="w-4 h-4" />
@@ -1179,10 +1181,10 @@ export default function App() {
                   </div>
                 </div>
                 <p className="mt-3 text-sm leading-6 text-cafe-100/72">
-                  Misafirler {campaignTarget}. paylaşımında <strong className="text-cafe-50">{campaignReward}</strong> kazanır.
+                  Belirlenen paylaşım sayısına ulaşan misafirler <strong className="text-cafe-50">{campaignReward}</strong> kazanır.
                 </p>
                 <div className="mt-4 flex items-center justify-between rounded-2xl border border-white/60 bg-white/75 px-4 py-3 text-sm">
-                  <span className="text-cafe-100/70">Haftalık kullanıcı limiti</span>
+                  <span className="text-cafe-100/70">Haftalık paylaşım hakkı</span>
                   <strong className="text-cafe-50">{MAX_WEEKLY_UPLOADS} paylaşım</strong>
                 </div>
               </div>
@@ -1194,10 +1196,10 @@ export default function App() {
               <div className="space-y-2">
                 <span className="section-pill">Canlı Galeri</span>
                 <h2 className="text-3xl sm:text-4xl font-serif font-semibold text-cafe-50">
-                  Mekânın ritmini gösteren anlar
+                  Son paylaşılan anlar
                 </h2>
                 <p className="max-w-2xl text-sm sm:text-base leading-7 text-cafe-100/72">
-                  Kartlar daha okunaklı hale getirildi, bozuk medya için güvenli placeholder eklendi ve yoğun cihazlarda akışı yoran gereksiz animasyonlar kaldırıldı.
+                  Misafirlerin bıraktığı fotoğraf ve videolar burada listelenir. Giriş yapmayan kullanıcılar içerikleri bulanık önizleme olarak görür.
                 </p>
               </div>
 
@@ -1216,9 +1218,9 @@ export default function App() {
                 <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12 text-[color:var(--color-accent)]">
                   <Camera className="w-6 h-6" />
                 </div>
-                <h3 className="text-2xl font-semibold text-cafe-50">Galeri hazır, ilk anı bekliyor</h3>
+                <h3 className="text-2xl font-semibold text-cafe-50">Henüz paylaşım yok</h3>
                 <p className="mt-3 max-w-xl mx-auto text-sm sm:text-base leading-7 text-cafe-100/70">
-                  Misafir deneyimini görünür kılmak için ilk fotoğrafı ekleyin. Yeni tasarım boş durumlarda da yönlendirici kalacak şekilde düzenlendi.
+                  İlk fotoğrafı paylaşarak galeriyi başlatabilirsiniz. Yeni paylaşımlar burada sırasıyla görünecek.
                 </p>
               </div>
             ) : (
