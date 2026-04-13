@@ -1211,12 +1211,6 @@ export default function App() {
               </div>
             </div>
 
-            {isGuestPreview && (
-              <div className="rounded-[1.45rem] border border-dashed border-cafe-700/80 bg-white/72 px-4 py-3 text-sm leading-6 text-cafe-100/76 shadow-[0_10px_30px_rgba(81,58,41,0.05)]">
-                Misafir önizlemesi aktif. Görseller hafif bulanık görünür; detaylı inceleme, beğeni ve yeni paylaşım için Google ile giriş yapabilirsin.
-              </div>
-            )}
-
             {deferredMediaItems.length === 0 ? (
               <div className="section-shell text-center py-14">
                 <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12 text-[color:var(--color-accent)]">
@@ -1283,19 +1277,14 @@ export default function App() {
                             </span>
                           </div>
 
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/5 to-transparent opacity-90" />
-                          {isGuestPreview && (
-                            <div className="absolute inset-0 flex items-center justify-center p-4">
-                              <div className="rounded-full border border-white/35 bg-black/30 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-white backdrop-blur-md">
-                                Giriş yapınca net görünür
-                              </div>
+                          <div className={`absolute inset-0 bg-gradient-to-t from-black/45 via-black/5 to-transparent ${isGuestPreview ? 'opacity-40' : 'opacity-90'}`} />
+                          {!isGuestPreview && (
+                            <div className="absolute inset-x-0 bottom-0 flex items-center justify-center p-4">
+                              <span className="rounded-full border border-white/30 bg-white/18 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-white backdrop-blur-md transition-transform duration-300 group-hover:-translate-y-1">
+                                Yakından Bak
+                              </span>
                             </div>
                           )}
-                          <div className="absolute inset-x-0 bottom-0 flex items-center justify-center p-4">
-                            <span className="rounded-full border border-white/30 bg-white/18 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-white backdrop-blur-md transition-transform duration-300 group-hover:-translate-y-1">
-                              {isGuestPreview ? 'Net görmek için giriş yap' : 'Yakından Bak'}
-                            </span>
-                          </div>
                         </button>
 
                         <div className="px-2 pt-4 pb-2">
