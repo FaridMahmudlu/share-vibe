@@ -1144,7 +1144,7 @@ export default function App() {
             </div>
 
             <aside className="space-y-3">
-              <div id="highlights" className="section-shell compact-info-shell">
+              <div id="highlights" className="section-shell compact-info-shell scroll-mt-28 lg:scroll-mt-32">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <span className="section-pill">Nasıl paylaşılır</span>
@@ -1170,7 +1170,7 @@ export default function App() {
                 </div>
               </div>
 
-              <div id="campaign" className="reward-card compact-reward-card">
+              <div id="campaign" className="reward-card compact-reward-card scroll-mt-28 lg:scroll-mt-32">
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <p className="text-xs uppercase tracking-[0.22em] text-cafe-100/55">Kampanya</p>
@@ -1191,7 +1191,7 @@ export default function App() {
             </aside>
           </section>
 
-          <section id="gallery" className="space-y-5">
+          <section id="gallery" className="space-y-5 scroll-mt-28 lg:scroll-mt-32">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
               <div className="space-y-2">
                 <span className="section-pill">Canlı Galeri</span>
