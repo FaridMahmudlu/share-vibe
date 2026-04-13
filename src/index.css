@@ -210,6 +210,7 @@ body::before {
   align-items: center;
   justify-content: flex-end;
   gap: 0.5rem;
+  flex-wrap: wrap;
   min-width: 0;
 }
 
@@ -391,6 +392,14 @@ body::before {
 }
 
 @media (max-width: 639px) {
+  .header-bar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .header-actions {
+    justify-content: flex-start;
+  }
+
   .section-shell,
   .reward-card,
   .gallery-card {
@@ -433,6 +442,10 @@ body::before {
   .header-bar {
     grid-template-columns: minmax(0, 1fr) auto auto;
     gap: 1rem;
+  }
+
+  .header-actions {
+    flex-wrap: nowrap;
   }
 
   .header-nav-shell {

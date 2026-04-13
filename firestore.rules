@@ -100,8 +100,8 @@ service cloud.firestore {
     }
 
     match /media/{mediaId} {
-      // Anyone authenticated (including anonymous) can read
-      allow read: if isAuthenticated();
+      // Gallery feed is visible to guests; write actions still require authentication
+      allow read: if true;
       
       // Anyone authenticated can create if data is valid
       allow create: if isAuthenticated() && isValidMediaItem(request.resource.data);

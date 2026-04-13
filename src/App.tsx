@@ -142,8 +142,6 @@ export default function App() {
   const [failedMediaIds, setFailedMediaIds] = useState<Record<string, true>>({});
   const [currentUserUid, setCurrentUserUid] = useState<string | null>(null);
   const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
-  const [currentUserName, setCurrentUserName] = useState<string | null>(null);
-  const [currentUserPhotoUrl, setCurrentUserPhotoUrl] = useState<string | null>(null);
   const [isAuthResolved, setIsAuthResolved] = useState(false);
   const [isGoogleRedirectResolved, setIsGoogleRedirectResolved] = useState(false);
   const [isMediaItemsReady, setIsMediaItemsReady] = useState(false);
@@ -188,8 +186,6 @@ export default function App() {
   const syncCurrentUser = (user: User | null) => {
     setCurrentUserUid(user?.uid ?? null);
     setCurrentUserEmail(user?.email ?? null);
-    setCurrentUserName(user?.displayName ?? user?.email?.split('@')[0] ?? null);
-    setCurrentUserPhotoUrl(user?.photoURL ?? null);
   };
 
   const scrollFilters = (direction: 'left' | 'right') => {
@@ -276,6 +272,41 @@ export default function App() {
     } catch (error) {
       console.error('Logout error:', error);
     }
+  };
+
+  const handleOpenComposer = async () => {
+    if (auth.currentUser) {
+      setIsUploadModalOpen(true);
+      return;
+    }
+
+    const user = await ensureGoogleUser();
+    if (user) {
+      setIsUploadModalOpen(true);
+    }
+  };
+
+  const handleOpenAdminPanel = async () => {
+    if (auth.currentUser) {
+      setCurrentView('admin');
+      return;
+    }
+
+    const user = await ensureGoogleUser();
+    if (user) {
+      setCurrentView('admin');
+    }
+  };
+
+  const handleMediaSelection = async (mediaId: string) => {
+    if (!auth.currentUser) {
+      const user = await ensureGoogleUser();
+      if (!user) {
+        return;
+      }
+    }
+
+    setSelectedMediaId(mediaId);
   };
 
   const buildUploadDraft = (): UploadDraft | null => {
@@ -570,7 +601,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!isAuthResolved || !currentUserUid) {
+    if (!isAuthResolved) {
       setMediaItems([]);
       setIsMediaItemsReady(false);
       return;
@@ -609,7 +640,7 @@ export default function App() {
     });
 
     return () => unsubscribe();
-  }, [isAuthResolved, currentUserUid]);
+  }, [isAuthResolved]);
 
   useEffect(() => {
     if (
@@ -913,7 +944,7 @@ export default function App() {
     }
   };
 
-  const selectedMedia = selectedMediaId ? mediaItems.find(m => m.id === selectedMediaId) : null;
+  const selectedMedia = isAuthenticated && selectedMediaId ? mediaItems.find(m => m.id === selectedMediaId) : null;
   const deferredMediaItems = useDeferredValue(mediaItems);
   const totalLikes = useMemo(
     () => mediaItems.reduce((sum, item) => sum + item.likesCount, 0),
@@ -931,7 +962,7 @@ export default function App() {
       return mediaDate.toDateString() === today.toDateString();
     }).length;
   }, [mediaItems]);
-  const currentAccountLabel = currentUserName || currentUserEmail || 'Google hesabı';
+  const isGuestPreview = !isAuthenticated;
 
   if (!isAuthResolved || !isGoogleRedirectResolved) {
     return (
@@ -994,7 +1025,7 @@ export default function App() {
                     </span>
                   </div>
                   <p className="text-xs sm:text-sm text-cafe-100/60">
-                    {isAuthenticated ? (currentUserEmail ?? 'Google hesabı açık') : 'Google ile giriş gerekli'}
+                    Konsept kafeler için sade, hızlı ve zarif paylaşım akışı.
                   </p>
                 </div>
               </div>
@@ -1006,33 +1037,15 @@ export default function App() {
               </nav>
 
               <div className="header-actions">
-                <div className="hidden lg:flex items-center gap-2 rounded-full border border-cafe-700/70 bg-white/78 px-3 py-2 text-sm text-cafe-100/72 shadow-sm">
+                <div
+                  className="hidden md:flex items-center gap-2 rounded-full border border-cafe-700/70 bg-white/78 px-3.5 py-2 text-sm text-cafe-100/72 shadow-sm"
+                  title={isAuthenticated ? (currentUserEmail ?? 'Google hesabı açık') : 'Google ile giriş yap'}
+                >
                   <span className={`h-2.5 w-2.5 rounded-full ${isAuthenticated && userUploadsThisWeekCount >= MAX_WEEKLY_UPLOADS ? 'bg-red-500' : 'bg-accent animate-pulse'}`} />
                   <span className="font-medium">
-                    {isAuthenticated ? `${userUploadsThisWeekCount}/${MAX_WEEKLY_UPLOADS} paylaşım` : 'Google ile giriş gerekli'}
+                    {isAuthenticated ? `Hesabın açık · ${userUploadsThisWeekCount}/${MAX_WEEKLY_UPLOADS} paylaşım` : 'Giriş yap, galeri netleşsin'}
                   </span>
                 </div>
-
-                {isAuthenticated ? (
-                  <div className="hidden xl:flex items-center gap-2 rounded-full border border-cafe-700/70 bg-white/78 px-2.5 py-2 shadow-sm">
-                    {currentUserPhotoUrl ? (
-                      <img
-                        src={currentUserPhotoUrl}
-                        alt={currentAccountLabel}
-                        className="h-8 w-8 rounded-full object-cover"
-                        referrerPolicy="no-referrer"
-                      />
-                    ) : (
-                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[color:var(--color-accent)]/14 text-[color:var(--color-accent)] text-xs font-bold uppercase">
-                        {currentAccountLabel.slice(0, 1)}
-                      </div>
-                    )}
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-cafe-50">{currentAccountLabel}</p>
-                      <p className="truncate text-xs text-cafe-100/58">{currentUserEmail ?? 'Google hesabı açık'}</p>
-                    </div>
-                  </div>
-                ) : null}
 
                 <button
                   onClick={() => setIsThemeModalOpen(true)}
@@ -1042,7 +1055,7 @@ export default function App() {
                   <Palette className="w-5 h-5" />
                 </button>
                 <button
-                  onClick={() => setCurrentView('admin')}
+                  onClick={() => void handleOpenAdminPanel()}
                   className="icon-button"
                   aria-label="Admin paneli"
                 >
@@ -1051,7 +1064,7 @@ export default function App() {
                 {isAuthenticated ? (
                   <>
                     <button
-                      onClick={() => setIsUploadModalOpen(true)}
+                      onClick={() => void handleOpenComposer()}
                       className="header-primary-action hidden sm:inline-flex"
                     >
                       <Camera className="w-4 h-4" />
@@ -1078,29 +1091,6 @@ export default function App() {
         </header>
 
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-10 space-y-8 sm:space-y-10">
-          {!isAuthenticated ? (
-            <section className="section-shell max-w-3xl mx-auto text-center">
-              <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-[1.7rem] bg-[color:var(--color-accent)]/12 text-[color:var(--color-accent)]">
-                <Coffee className="w-7 h-7" />
-              </div>
-              <span className="section-pill">Google Hesabı Gerekli</span>
-              <h2 className="mt-4 text-3xl sm:text-4xl font-serif font-semibold text-cafe-50">
-                Galeriyi görmek ve paylaşım yapmak için Google ile giriş yap
-              </h2>
-              <p className="mt-4 max-w-2xl mx-auto text-sm sm:text-base leading-7 text-cafe-100/72">
-                Anonim giriş kaldırıldı. Bir kez Google hesabınla giriş yaptığında oturumun bu cihazda korunur; paylaşım, beğeni ve admin paneli için tekrar tekrar giriş yapman gerekmez.
-              </p>
-              <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-                <button
-                  onClick={() => void ensureGoogleUser()}
-                  className="header-primary-action"
-                >
-                  Google ile Giriş Yap
-                </button>
-              </div>
-            </section>
-          ) : (
-          <>
           <section id="experience" className="grid gap-6 xl:grid-cols-[minmax(0,1.45fr),minmax(320px,0.95fr)]">
             <div className="section-shell relative overflow-hidden">
               <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-r from-[color:var(--color-accent)]/18 via-white/30 to-transparent" />
@@ -1117,11 +1107,11 @@ export default function App() {
 
                 <div className="flex flex-wrap gap-3">
                   <button
-                    onClick={() => setIsUploadModalOpen(true)}
+                    onClick={() => void handleOpenComposer()}
                     className="inline-flex items-center gap-2 rounded-full bg-[color:var(--color-accent)] px-5 py-3 text-sm font-semibold tracking-[0.18em] uppercase text-white shadow-[0_20px_45px_rgba(0,0,0,0.12)] transition-transform hover:-translate-y-0.5"
                   >
                     <Camera className="w-4 h-4" />
-                    Anı Ekle
+                    {isAuthenticated ? 'Anı Ekle' : 'Google ile Giriş'}
                   </button>
                   <a
                     href="#gallery"
@@ -1221,6 +1211,12 @@ export default function App() {
               </div>
             </div>
 
+            {isGuestPreview && (
+              <div className="rounded-[1.45rem] border border-dashed border-cafe-700/80 bg-white/72 px-4 py-3 text-sm leading-6 text-cafe-100/76 shadow-[0_10px_30px_rgba(81,58,41,0.05)]">
+                Misafir önizlemesi aktif. Görseller hafif bulanık görünür; detaylı inceleme, beğeni ve yeni paylaşım için Google ile giriş yapabilirsin.
+              </div>
+            )}
+
             {deferredMediaItems.length === 0 ? (
               <div className="section-shell text-center py-14">
                 <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12 text-[color:var(--color-accent)]">
@@ -1247,7 +1243,7 @@ export default function App() {
                         <button
                           type="button"
                           className="gallery-media"
-                          onClick={() => setSelectedMediaId(item.id)}
+                          onClick={() => void handleMediaSelection(item.id)}
                         >
                           {!item.url || failedMediaIds[item.id] ? (
                             <BrokenMediaPlaceholder compact message="Görsel yüklenemedi" />
@@ -1255,7 +1251,7 @@ export default function App() {
                             <>
                               <video
                                 src={item.url}
-                                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+                                className={`w-full h-full object-cover transition-transform duration-500 ${isGuestPreview ? 'scale-[1.06] blur-[10px] brightness-[0.88]' : 'group-hover:scale-[1.03]'}`}
                                 muted
                                 playsInline
                                 preload="metadata"
@@ -1270,7 +1266,7 @@ export default function App() {
                             <img
                               src={item.url}
                               alt={item.caption}
-                              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+                              className={`w-full h-full object-cover transition-transform duration-500 ${isGuestPreview ? 'scale-[1.06] blur-[10px] brightness-[0.9]' : 'group-hover:scale-[1.03]'}`}
                               loading="lazy"
                               decoding="async"
                               referrerPolicy="no-referrer"
@@ -1288,9 +1284,16 @@ export default function App() {
                           </div>
 
                           <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/5 to-transparent opacity-90" />
+                          {isGuestPreview && (
+                            <div className="absolute inset-0 flex items-center justify-center p-4">
+                              <div className="rounded-full border border-white/35 bg-black/30 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-white backdrop-blur-md">
+                                Giriş yapınca net görünür
+                              </div>
+                            </div>
+                          )}
                           <div className="absolute inset-x-0 bottom-0 flex items-center justify-center p-4">
                             <span className="rounded-full border border-white/30 bg-white/18 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-white backdrop-blur-md transition-transform duration-300 group-hover:-translate-y-1">
-                              Yakından Bak
+                              {isGuestPreview ? 'Net görmek için giriş yap' : 'Yakından Bak'}
                             </span>
                           </div>
                         </button>
@@ -1353,8 +1356,6 @@ export default function App() {
               </div>
             )}
           </section>
-          </>
-          )}
         </main>
       </div>
 
@@ -1365,14 +1366,7 @@ export default function App() {
           </div>
         )}
         <button
-          onClick={() => {
-            if (isAuthenticated) {
-              setIsUploadModalOpen(true);
-              return;
-            }
-
-            void ensureGoogleUser();
-          }}
+          onClick={() => void handleOpenComposer()}
           className="floating-upload-button"
         >
           <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white/18">
@@ -1380,7 +1374,7 @@ export default function App() {
           </span>
           <span className="flex flex-col items-start">
             <span className="text-[11px] uppercase tracking-[0.24em] text-white/70">Hızlı İşlem</span>
-            <span className="text-sm sm:text-base font-semibold text-white">Yeni anı paylaş</span>
+            <span className="text-sm sm:text-base font-semibold text-white">{isAuthenticated ? 'Yeni anı paylaş' : 'Giriş yapıp paylaş'}</span>
           </span>
         </button>
       </div>
