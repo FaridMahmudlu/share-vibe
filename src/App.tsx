@@ -1,5 +1,5 @@
 import React, { Suspense, startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { Camera, Upload, Heart, X, Sparkles, MapPin, Clock, Instagram, Twitter, Facebook, PlayCircle, Share2, Copy, Check, Trash2, Palette, RefreshCw, RotateCw, Sun, Contrast, ChevronLeft, ChevronRight, Coffee, Settings, ImageOff } from 'lucide-react';
+import { Camera, Upload, Heart, X, Sparkles, MapPin, Clock, Instagram, Twitter, Facebook, Share2, Copy, Check, Trash2, Palette, RefreshCw, RotateCw, Sun, Contrast, ChevronLeft, ChevronRight, Coffee, Settings, ImageOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db, auth, storage, waitForAuthInitialization } from './firebase';
 import { collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc, serverTimestamp, arrayUnion, arrayRemove } from 'firebase/firestore';
@@ -8,6 +8,7 @@ import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
 import { getGoogleSignInErrorMessage, resolveGoogleSignInRedirect, signInWithGoogle } from './googleAuth';
 import { deleteMediaRecord } from './mediaStorage';
 import { clearPendingUpload, getPendingUpload, savePendingUpload, type PendingUploadDraft } from './pendingUpload';
+import DropdownSelect from './DropdownSelect';
 import {
   DEFAULT_ACCENT_COLOR,
   DEFAULT_CAFE_NAME,
@@ -22,7 +23,7 @@ import {
   normalizeLegacyText,
 } from './uiConfig';
 
-type MediaType = 'image' | 'video';
+type MediaType = 'image';
 
 type MediaItem = {
   id: string;
@@ -98,6 +99,29 @@ const EXPERIENCE_HIGHLIGHTS = [
     title: 'Galeride yerini al',
     description: 'Misafirler paylaşımları inceleyebilir, beğenebilir ve keşfedebilir.',
     icon: Heart,
+  },
+];
+
+const TABLE_OPTIONS = [
+  ...Array.from({ length: 20 }, (_, index) => ({
+    value: `Masa ${index + 1}`,
+    label: `Masa ${index + 1}`,
+    hint: 'Paylaşım bu masa altında görünsün',
+  })),
+  {
+    value: 'Bar',
+    label: 'Bar',
+    hint: 'Bar alanındaki paylaşımlar',
+  },
+  {
+    value: 'Bahçe',
+    label: 'Bahçe',
+    hint: 'Açık alan paylaşımları',
+  },
+  {
+    value: 'Teras',
+    label: 'Teras',
+    hint: 'Teras masaları için seçim',
   },
 ];
 
@@ -360,7 +384,7 @@ export default function App() {
 
   const prepareFileForUpload = async (draft: UploadDraft) => {
     if (!draft.file.type.startsWith('image/')) {
-      return draft.file;
+      throw new Error('Yalnız fotoğraf yükleyebilirsiniz.');
     }
 
     const hasEdits = draft.editRotation !== 0 || draft.editBrightness !== 100 || draft.editContrast !== 100;
@@ -461,7 +485,7 @@ export default function App() {
       setUploadStatus('Veritabanına kaydediliyor...');
       await addDoc(collection(db, 'media'), {
         url: downloadUrl,
-        type: draft.file.type.startsWith('video/') ? 'video' : 'image',
+        type: 'image',
         caption: normalizeLegacyText(draft.caption, DEFAULT_MEDIA_CAPTION),
         likedBy: [],
         likesCount: 0,
@@ -613,10 +637,14 @@ export default function App() {
       const items: MediaItem[] = [];
       snapshot.forEach((doc) => {
         const data = doc.data();
+        if (data.type === 'video') {
+          return;
+        }
+
         items.push({
           id: doc.id,
           url: typeof data.url === 'string' ? data.url : '',
-          type: data.type === 'video' ? 'video' : 'image',
+          type: 'image',
           caption: normalizeLegacyText(data.caption, DEFAULT_MEDIA_CAPTION),
           likesCount: typeof data.likesCount === 'number' ? data.likesCount : 0,
           likedBy: Array.isArray(data.likedBy)
@@ -1127,7 +1155,7 @@ export default function App() {
                   <div className="stat-card">
                     <span className="stat-label">Toplam Anı</span>
                     <strong className="stat-value">{mediaItems.length}</strong>
-                    <p className="stat-note">Galeride yer alan tüm fotoğraf ve videolar</p>
+                    <p className="stat-note">Galeride yer alan tüm fotoğraflar</p>
                   </div>
                   <div className="stat-card">
                     <span className="stat-label">Bugün</span>
@@ -1199,13 +1227,13 @@ export default function App() {
                   Son paylaşılan anlar
                 </h2>
                 <p className="max-w-2xl text-sm sm:text-base leading-7 text-cafe-100/72">
-                  Misafirlerin bıraktığı fotoğraf ve videolar burada listelenir. Giriş yapmayan kullanıcılar içerikleri bulanık önizleme olarak görür.
+                  Misafirlerin bıraktığı fotoğraflar burada listelenir. Giriş yapmayan kullanıcılar içerikleri bulanık önizleme olarak görür.
                 </p>
               </div>
 
               <div className="flex flex-wrap gap-2">
                 <div className="inline-flex items-center rounded-full border border-cafe-700/80 bg-white/75 px-4 py-2 text-sm text-cafe-100/72">
-                  {deferredMediaItems.length} içerik
+                  {deferredMediaItems.length} fotoğraf
                 </div>
                 <div className="inline-flex items-center rounded-full border border-cafe-700/80 bg-white/75 px-4 py-2 text-sm text-cafe-100/72">
                   Ödül: {campaignReward}
@@ -1243,21 +1271,6 @@ export default function App() {
                         >
                           {!item.url || failedMediaIds[item.id] ? (
                             <BrokenMediaPlaceholder compact message="Görsel yüklenemedi" />
-                          ) : item.type === 'video' ? (
-                            <>
-                              <video
-                                src={item.url}
-                                className={`w-full h-full object-cover transition-transform duration-500 ${isGuestPreview ? 'scale-[1.06] blur-[10px] brightness-[0.88]' : 'group-hover:scale-[1.03]'}`}
-                                muted
-                                playsInline
-                                preload="metadata"
-                                onError={() => markMediaAsFailed(item.id)}
-                              />
-                              <div className="absolute right-3 top-3 flex items-center gap-1 rounded-full bg-black/55 px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.18em] text-white backdrop-blur-sm">
-                                <PlayCircle className="w-3.5 h-3.5" />
-                                Video
-                              </div>
-                            </>
                           ) : (
                             <img
                               src={item.url}
@@ -1398,15 +1411,6 @@ export default function App() {
               <div className="flex-1 bg-black relative min-h-[45vh] md:min-h-[60vh] overflow-hidden">
                 {!selectedMedia.url || failedMediaIds[selectedMedia.id] ? (
                   <BrokenMediaPlaceholder message="Bu medya şu anda görüntülenemiyor" />
-                ) : selectedMedia.type === 'video' ? (
-                  <video
-                    src={selectedMedia.url}
-                    className="absolute inset-0 w-full h-full object-contain"
-                    controls
-                    autoPlay
-                    playsInline
-                    onError={() => markMediaAsFailed(selectedMedia.id)}
-                  />
                 ) : (
                   <img
                     src={selectedMedia.url}
@@ -1683,22 +1687,16 @@ export default function App() {
                 
                 <div className="space-y-4 shrink-0">
                   <div className="space-y-2">
-                    <label htmlFor="tableSelect" className="block text-sm font-medium text-cafe-100/70">
+                    <div className="block text-sm font-medium text-cafe-100/70">
                       Hangi Masadasınız?
-                    </label>
-                    <select
-                      id="tableSelect"
+                    </div>
+                    <DropdownSelect
                       value={currentTable}
-                      onChange={(e) => setCurrentTable(e.target.value)}
-                      className="w-full bg-cafe-900 border border-cafe-700 rounded-xl px-4 py-3 text-cafe-50 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-all appearance-none"
-                    >
-                      {Array.from({ length: 20 }, (_, i) => i + 1).map(num => (
-                        <option key={num} value={`Masa ${num}`}>Masa {num}</option>
-                      ))}
-                      <option value="Bar">Bar</option>
-                      <option value="Bahçe">Bahçe</option>
-                      <option value="Teras">Teras</option>
-                    </select>
+                      onChange={setCurrentTable}
+                      options={TABLE_OPTIONS}
+                      ariaLabel="Masa seçimi"
+                      icon={MapPin}
+                    />
                   </div>
 
                   <div className="space-y-2">

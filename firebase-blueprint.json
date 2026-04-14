@@ -2,7 +2,7 @@
   "entities": {
     "MediaItem": {
       "title": "MediaItem",
-      "description": "A photo or video uploaded by a user from a specific table.",
+      "description": "A photo uploaded by a user from a specific table.",
       "type": "object",
       "properties": {
         "url": {
@@ -12,7 +12,7 @@
         },
         "type": {
           "type": "string",
-          "enum": ["image", "video"],
+          "enum": ["image"],
           "description": "Type of the media"
         },
         "caption": {

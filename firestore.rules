@@ -9,7 +9,7 @@ service cloud.firestore {
     // Document ID: auto-generated
     // Fields:
     //   - url: string (required, valid URL)
-    //   - type: string (required, 'image' or 'video')
+    //   - type: string (required, 'image')
     //   - caption: string (required, max 40 chars)
     //   - likedBy: list (required, list of UIDs)
     //   - likesCount: number (required, >= 0)
@@ -67,7 +67,7 @@ service cloud.firestore {
       return hasRequiredFields(['url', 'type', 'caption', 'likedBy', 'likesCount', 'rotation', 'date', 'tableNumber', 'authorUid', 'createdAt']) &&
              hasOnlyAllowedFields(['url', 'type', 'caption', 'likedBy', 'likesCount', 'rotation', 'date', 'tableNumber', 'authorUid', 'createdAt']) &&
              isValidUrl(data.url) &&
-             data.type in ['image', 'video'] &&
+             data.type == 'image' &&
              data.caption is string && data.caption.size() <= 100 &&
              data.likedBy is list && data.likedBy.size() <= 10000 &&
              data.likesCount is number && data.likesCount >= 0 &&

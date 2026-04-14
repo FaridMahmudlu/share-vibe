@@ -20,6 +20,7 @@ import {
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { signInWithGoogle } from './googleAuth';
 import { deleteMediaRecord } from './mediaStorage';
+import DropdownSelect from './DropdownSelect';
 import {
   DEFAULT_ACCENT_COLOR,
   DEFAULT_CAFE_NAME,
@@ -37,7 +38,6 @@ import {
 type AdminMediaItem = {
   id: string;
   url: string;
-  type: 'image' | 'video';
   caption: string;
   tableNumber: string;
   date: string;
@@ -57,6 +57,19 @@ const DEFAULT_ADMIN_SETTINGS = {
   campaignTarget: DEFAULT_CAMPAIGN_TARGET,
   campaignReward: DEFAULT_CAMPAIGN_REWARD,
 };
+
+const SORT_OPTIONS = [
+  {
+    value: 'newest',
+    label: 'En yeni',
+    hint: 'Son eklenen fotoğraflar üstte kalsın',
+  },
+  {
+    value: 'likes',
+    label: 'En çok beğenilen',
+    hint: 'Etkileşimi yüksek olanları öne çıkar',
+  },
+];
 
 const getMediaDate = (value: AdminMediaItem['createdAt']) => {
   if (!value) {
@@ -80,7 +93,6 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [mediaItems, setMediaItems] = useState<AdminMediaItem[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [mediaTypeFilter, setMediaTypeFilter] = useState<'all' | 'image' | 'video'>('all');
   const [tableFilter, setTableFilter] = useState('all');
   const [sortMode, setSortMode] = useState<'newest' | 'likes'>('newest');
 
@@ -154,10 +166,13 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
 
         snapshot.forEach((entry) => {
           const data = entry.data();
+          if (data.type === 'video') {
+            return;
+          }
+
           nextItems.push({
             id: entry.id,
             url: typeof data.url === 'string' ? data.url : '',
-            type: data.type === 'video' ? 'video' : 'image',
             caption: normalizeLegacyText(data.caption, DEFAULT_MEDIA_CAPTION),
             tableNumber: normalizeLegacyText(data.tableNumber, 'Masa'),
             date: normalizeLegacyText(data.date, '--:--'),
@@ -222,7 +237,6 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
     const normalizedSearch = searchTerm.trim().toLocaleLowerCase('tr');
 
     return [...mediaItems]
-      .filter((item) => mediaTypeFilter === 'all' || item.type === mediaTypeFilter)
       .filter((item) => tableFilter === 'all' || item.tableNumber === tableFilter)
       .filter((item) => {
         if (!normalizedSearch) {
@@ -241,7 +255,23 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
         const rightDate = getMediaDate(right.createdAt)?.getTime() ?? 0;
         return rightDate - leftDate;
       });
-  }, [mediaItems, mediaTypeFilter, searchTerm, sortMode, tableFilter]);
+  }, [mediaItems, searchTerm, sortMode, tableFilter]);
+
+  const tableOptions = useMemo(
+    () => [
+      {
+        value: 'all',
+        label: 'Tüm masalar',
+        hint: 'Bütün masalardaki fotoğrafları göster',
+      },
+      ...uniqueTables.map((table) => ({
+        value: table,
+        label: table,
+        hint: 'Yalnız bu masaya ait paylaşımlar',
+      })),
+    ],
+    [uniqueTables]
+  );
 
   const settingsDirty = useMemo(
     () =>
@@ -413,7 +443,7 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
             <div className="stat-card">
               <span className="stat-label">Toplam Paylaşım</span>
               <strong className="stat-value">{mediaItems.length}</strong>
-              <p className="stat-note">Galeride yer alan tüm içerikler</p>
+              <p className="stat-note">Galeride yer alan tüm fotoğraflar</p>
             </div>
             <div className="stat-card">
               <span className="stat-label">Bugün</span>
@@ -722,13 +752,13 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
           </aside>
         </section>
 
-        <section id="admin-media" className="section-shell space-y-5 scroll-mt-28 lg:scroll-mt-32">
+        <section id="admin-media" className="section-shell section-shell--overflow-visible space-y-5 scroll-mt-28 lg:scroll-mt-32">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <span className="section-pill">Medya Yönetimi</span>
               <h2 className="mt-3 text-3xl font-serif font-semibold text-cafe-50">Yüklenen tüm anılar</h2>
               <p className="mt-2 text-sm leading-7 text-cafe-100/72">
-                Admin olarak tüm fotoğraf ve videoları burada görebilir, gerektiğinde tek tıkla kaldırabilirsiniz.
+                Admin olarak tüm fotoğrafları burada görebilir, gerektiğinde tek tıkla kaldırabilirsiniz.
               </p>
             </div>
             <div className="inline-flex items-center rounded-full border border-cafe-700/80 bg-white/75 px-4 py-2 text-sm text-cafe-100/72">
@@ -736,7 +766,7 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
             </div>
           </div>
 
-          <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr),180px,180px,200px]">
+          <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr),220px,220px]">
             <label className="glass-card flex items-center gap-3">
               <Search className="w-4 h-4 text-cafe-100/60" />
               <input
@@ -748,46 +778,21 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
               />
             </label>
 
-            <div className="glass-card flex items-center gap-3">
-              <ImageIcon className="w-4 h-4 text-cafe-100/60" />
-              <select
-                value={mediaTypeFilter}
-                onChange={(event) => setMediaTypeFilter(event.target.value as 'all' | 'image' | 'video')}
-                className="w-full bg-transparent text-sm text-cafe-50 outline-none"
-              >
-                <option value="all">Tüm medya</option>
-                <option value="image">Fotoğraf</option>
-                <option value="video">Video</option>
-              </select>
-            </div>
+            <DropdownSelect
+              value={tableFilter}
+              onChange={setTableFilter}
+              options={tableOptions}
+              ariaLabel="Masa filtresi"
+              icon={MapPin}
+            />
 
-            <div className="glass-card flex items-center gap-3">
-              <MapPin className="w-4 h-4 text-cafe-100/60" />
-              <select
-                value={tableFilter}
-                onChange={(event) => setTableFilter(event.target.value)}
-                className="w-full bg-transparent text-sm text-cafe-50 outline-none"
-              >
-                <option value="all">Tüm masalar</option>
-                {uniqueTables.map((table) => (
-                  <option key={table} value={table}>
-                    {table}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="glass-card flex items-center gap-3">
-              <ArrowUpDown className="w-4 h-4 text-cafe-100/60" />
-              <select
-                value={sortMode}
-                onChange={(event) => setSortMode(event.target.value as 'newest' | 'likes')}
-                className="w-full bg-transparent text-sm text-cafe-50 outline-none"
-              >
-                <option value="newest">En yeni</option>
-                <option value="likes">En çok beğenilen</option>
-              </select>
-            </div>
+            <DropdownSelect
+              value={sortMode}
+              onChange={(value) => setSortMode(value as 'newest' | 'likes')}
+              options={SORT_OPTIONS}
+              ariaLabel="Sıralama seçimi"
+              icon={ArrowUpDown}
+            />
           </div>
 
           {filteredMediaItems.length === 0 ? (
@@ -810,19 +815,6 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
                         <ImageIcon className="w-8 h-8" />
                         <span className="text-sm font-medium">Medya bulunamadı</span>
                       </div>
-                    ) : item.type === 'video' ? (
-                      <>
-                        <video
-                          src={item.url}
-                          className="w-full h-full object-cover"
-                          muted
-                          playsInline
-                          preload="metadata"
-                        />
-                        <div className="absolute right-3 top-3 rounded-full bg-black/55 px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.18em] text-white backdrop-blur-sm">
-                          Video
-                        </div>
-                      </>
                     ) : (
                       <img
                         src={item.url}
