@@ -135,6 +135,7 @@ export default function App() {
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isDesktopCameraOpen, setIsDesktopCameraOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [caption, setCaption] = useState('');
   const [currentTable, setCurrentTable] = useState('Masa 12');
@@ -182,6 +183,8 @@ export default function App() {
   };
 
   const cameraInputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const resumedPendingUploadRef = useRef(false);
   const isAuthenticated = Boolean(currentUserUid);
 
@@ -202,6 +205,19 @@ export default function App() {
     setFailedMediaIds((current) => (current[id] ? current : { ...current, [id]: true }));
   };
 
+  const stopDesktopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+
+    setIsDesktopCameraOpen(false);
+  };
+
   const clearUploadInputValues = () => {
     for (const input of [cameraInputRef.current]) {
       if (input) {
@@ -220,6 +236,7 @@ export default function App() {
     setEditRotation(0);
     setEditBrightness(100);
     setEditContrast(100);
+    stopDesktopCamera();
     clearUploadInputValues();
   };
 
@@ -516,6 +533,13 @@ export default function App() {
     };
   }, [previewUrl]);
 
+  useEffect(() => () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+  }, []);
+
   useEffect(() => {
     const unsubscribeSettings = onSnapshot(doc(db, 'settings', 'global'), (doc) => {
       if (doc.exists()) {
@@ -744,11 +768,56 @@ export default function App() {
     await performUpload(draft, uid);
   };
 
+  const isMobileCameraDevice = () => {
+    if (typeof navigator === 'undefined') {
+      return false;
+    }
+
+    const userAgent = navigator.userAgent;
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent)
+      || (/Macintosh/i.test(userAgent) && navigator.maxTouchPoints > 1);
+  };
+
+  const startDesktopCamera = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setUploadError('Kamera açılamadı.');
+      return;
+    }
+
+    try {
+      stopDesktopCamera();
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: 'environment',
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
+        audio: false,
+      });
+
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+      setIsDesktopCameraOpen(true);
+    } catch (error) {
+      console.error('Desktop camera access failed:', error);
+      setUploadError('Kamera açılamadı.');
+      stopDesktopCamera();
+    }
+  };
+
   const openUploadSource = () => {
     setUploadError(null);
     setUploadStatus(null);
     setUploadProgress(null);
-    cameraInputRef.current?.click();
+
+    if (isMobileCameraDevice()) {
+      cameraInputRef.current?.click();
+      return;
+    }
+
+    void startDesktopCamera();
   };
 
   const handleSelectedFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -772,6 +841,39 @@ export default function App() {
     setEditRotation(0);
     setEditBrightness(100);
     setEditContrast(100);
+  };
+
+  const captureDesktopPhoto = () => {
+    if (!videoRef.current) {
+      return;
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = videoRef.current.videoWidth;
+    canvas.height = videoRef.current.videoHeight;
+    const ctx = canvas.getContext('2d');
+
+    if (!ctx) {
+      return;
+    }
+
+    ctx.drawImage(videoRef.current, 0, 0);
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        return;
+      }
+
+      const file = new File([blob], `photo_${Date.now()}.jpg`, { type: 'image/jpeg' });
+      setSelectedFile(file);
+      setPreviewUrl(URL.createObjectURL(file));
+      setUploadError(null);
+      setUploadStatus(null);
+      setUploadProgress(null);
+      setEditRotation(0);
+      setEditBrightness(100);
+      setEditContrast(100);
+      stopDesktopCamera();
+    }, 'image/jpeg', 0.92);
   };
 
   const cancelUpload = () => {
@@ -1428,19 +1530,43 @@ export default function App() {
                 onChange={handleSelectedFileChange}
               />
 
-              {!previewUrl ? (
+              {!previewUrl && !isDesktopCameraOpen ? (
                 <div className="p-6 sm:p-8 flex flex-col gap-4">
-                  <div className="rounded-2xl border border-cafe-700 bg-cafe-800/55 p-4 text-sm leading-6 text-cafe-100/70">
-                    Mobil cihazlarda bu buton telefonun kendi kamera uygulamasını açar. Böylece cihazın HDR, portre, gece modu ve daha yüksek kaliteli orijinal çekimi kullanılabilir.
-                  </div>
-
                   <button
                     onClick={openUploadSource}
                     className="flex items-center justify-center gap-3 w-full py-4 bg-cafe-700 hover:bg-cafe-600 text-cafe-50 rounded-xl transition-colors shadow-lg"
                   >
                     <Camera className="w-6 h-6 text-accent" />
-                    <span className="font-medium text-lg">Normal Kamera ile Çek</span>
+                    <span className="font-medium text-lg">Kamera ile Çek</span>
                   </button>
+                </div>
+              ) : isDesktopCameraOpen ? (
+                <div className="p-4 sm:p-5 flex flex-col items-center gap-4">
+                  <div className="relative w-full rounded-xl overflow-hidden bg-black aspect-[3/4] sm:aspect-video flex items-center justify-center shadow-inner border border-cafe-700">
+                    <video
+                      ref={videoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+
+                  <div className="flex gap-3 w-full">
+                    <button
+                      onClick={cancelUpload}
+                      className="flex-1 px-4 py-3 rounded-xl font-medium text-cafe-100 hover:bg-cafe-700 transition-colors"
+                    >
+                      İptal
+                    </button>
+                    <button
+                      onClick={captureDesktopPhoto}
+                      className="flex-1 px-4 py-3 rounded-xl font-medium bg-accent hover:brightness-110 text-cafe-900 shadow-lg shadow-accent/20 transition-colors flex items-center justify-center gap-2"
+                    >
+                      <Camera className="w-5 h-5" />
+                      Fotoğraf Çek
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <>
@@ -1451,7 +1577,7 @@ export default function App() {
                     onClick={openUploadSource}
                     className="rounded-xl border border-cafe-700 bg-cafe-800/65 px-3 py-2.5 text-sm font-medium text-cafe-50 transition-colors hover:bg-cafe-700"
                   >
-                    Yeniden Çek
+                    Tekrar Çek
                   </button>
                 </div>
 
