@@ -181,9 +181,7 @@ export default function App() {
     return diffMinutes <= 30;
   };
 
-  const rearCameraInputRef = useRef<HTMLInputElement>(null);
-  const frontCameraInputRef = useRef<HTMLInputElement>(null);
-  const galleryInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const resumedPendingUploadRef = useRef(false);
   const isAuthenticated = Boolean(currentUserUid);
 
@@ -205,7 +203,7 @@ export default function App() {
   };
 
   const clearUploadInputValues = () => {
-    for (const input of [rearCameraInputRef.current, frontCameraInputRef.current, galleryInputRef.current]) {
+    for (const input of [cameraInputRef.current]) {
       if (input) {
         input.value = '';
       }
@@ -746,19 +744,11 @@ export default function App() {
     await performUpload(draft, uid);
   };
 
-  const openUploadSource = (source: 'environment' | 'user' | 'gallery') => {
+  const openUploadSource = () => {
     setUploadError(null);
     setUploadStatus(null);
     setUploadProgress(null);
-
-    const targetInput =
-      source === 'environment'
-        ? rearCameraInputRef.current
-        : source === 'user'
-          ? frontCameraInputRef.current
-          : galleryInputRef.current;
-
-    targetInput?.click();
+    cameraInputRef.current?.click();
   };
 
   const handleSelectedFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -1430,25 +1420,10 @@ export default function App() {
               </div>
               
               <input
-                ref={rearCameraInputRef}
+                ref={cameraInputRef}
                 type="file"
                 accept="image/*"
                 capture="environment"
-                className="hidden"
-                onChange={handleSelectedFileChange}
-              />
-              <input
-                ref={frontCameraInputRef}
-                type="file"
-                accept="image/*"
-                capture="user"
-                className="hidden"
-                onChange={handleSelectedFileChange}
-              />
-              <input
-                ref={galleryInputRef}
-                type="file"
-                accept="image/*"
                 className="hidden"
                 onChange={handleSelectedFileChange}
               />
@@ -1456,59 +1431,27 @@ export default function App() {
               {!previewUrl ? (
                 <div className="p-6 sm:p-8 flex flex-col gap-4">
                   <div className="rounded-2xl border border-cafe-700 bg-cafe-800/55 p-4 text-sm leading-6 text-cafe-100/70">
-                    Mobil cihazlarda bu seçimler telefonun kendi kamera uygulamasını açar. Böylece cihazın HDR, portre, gece modu ve daha yüksek kaliteli orijinal çekimi kullanılabilir.
+                    Mobil cihazlarda bu buton telefonun kendi kamera uygulamasını açar. Böylece cihazın HDR, portre, gece modu ve daha yüksek kaliteli orijinal çekimi kullanılabilir.
                   </div>
 
-                  <div className="grid gap-3">
-                    <button
-                      onClick={() => openUploadSource('environment')}
-                      className="flex items-center justify-center gap-3 w-full py-4 bg-cafe-700 hover:bg-cafe-600 text-cafe-50 rounded-xl transition-colors shadow-lg"
-                    >
-                      <Camera className="w-6 h-6 text-accent" />
-                      <span className="font-medium text-lg">Cihaz Kamerası ile Çek</span>
-                    </button>
-                    <button
-                      onClick={() => openUploadSource('user')}
-                      className="flex items-center justify-center gap-3 w-full py-4 border border-cafe-700 bg-cafe-800/70 hover:bg-cafe-700 text-cafe-50 rounded-xl transition-colors"
-                    >
-                      <Camera className="w-5 h-5 text-accent" />
-                      <span className="font-medium">Ön Kamera / Selfie</span>
-                    </button>
-                    <button
-                      onClick={() => openUploadSource('gallery')}
-                      className="flex items-center justify-center gap-3 w-full py-4 border border-cafe-700 bg-cafe-800/70 hover:bg-cafe-700 text-cafe-50 rounded-xl transition-colors"
-                    >
-                      <Upload className="w-5 h-5 text-accent" />
-                      <span className="font-medium">Galeriden Seç</span>
-                    </button>
-                  </div>
-
-                  <p className="text-xs text-center text-cafe-100/55">
-                    Tarayıcı `capture` özelliğini desteklemiyorsa normal dosya seçici açılır.
-                  </p>
+                  <button
+                    onClick={openUploadSource}
+                    className="flex items-center justify-center gap-3 w-full py-4 bg-cafe-700 hover:bg-cafe-600 text-cafe-50 rounded-xl transition-colors shadow-lg"
+                  >
+                    <Camera className="w-6 h-6 text-accent" />
+                    <span className="font-medium text-lg">Normal Kamera ile Çek</span>
+                  </button>
                 </div>
               ) : (
                 <>
                   {/* Modal Body (Scrollable) */}
                   <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-5">
-                <div className="grid gap-2 sm:grid-cols-3">
+                <div className="grid gap-2">
                   <button
-                    onClick={() => openUploadSource('environment')}
+                    onClick={openUploadSource}
                     className="rounded-xl border border-cafe-700 bg-cafe-800/65 px-3 py-2.5 text-sm font-medium text-cafe-50 transition-colors hover:bg-cafe-700"
                   >
                     Yeniden Çek
-                  </button>
-                  <button
-                    onClick={() => openUploadSource('user')}
-                    className="rounded-xl border border-cafe-700 bg-cafe-800/65 px-3 py-2.5 text-sm font-medium text-cafe-50 transition-colors hover:bg-cafe-700"
-                  >
-                    Selfie Kamera
-                  </button>
-                  <button
-                    onClick={() => openUploadSource('gallery')}
-                    className="rounded-xl border border-cafe-700 bg-cafe-800/65 px-3 py-2.5 text-sm font-medium text-cafe-50 transition-colors hover:bg-cafe-700"
-                  >
-                    Galeriden Değiştir
                   </button>
                 </div>
 
