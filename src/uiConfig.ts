@@ -77,7 +77,7 @@ export const THEME_PRESETS = [
 export const DEFAULT_ACCENT_COLOR = '#c97a43';
 export const DEFAULT_HANDWRITING_FONT = THEME_FONTS[0].value;
 export const DEFAULT_CAFE_NAME = 'Lumina Konsept Kafe';
-export const DEFAULT_CAMPAIGN_TARGET = 5;
+export const DEFAULT_CAMPAIGN_TARGET = 4;
 export const DEFAULT_CAMPAIGN_REWARD = 'ücretsiz bir kahve';
 export const DEFAULT_MEDIA_CAPTION = 'İsimsiz anı ✨';
 

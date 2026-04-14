@@ -1,5 +1,5 @@
 import React, { Suspense, startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { Camera, Upload, Heart, X, Sparkles, MapPin, Clock, Instagram, Twitter, Facebook, Share2, Copy, Check, Trash2, Palette, RotateCw, Sun, Contrast, Coffee, Settings, ImageOff } from 'lucide-react';
+import { Camera, Upload, Heart, X, Sparkles, MapPin, Clock, Instagram, Twitter, Facebook, Share2, Copy, Check, Trash2, RotateCw, Sun, Contrast, Coffee, Settings, ImageOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db, auth, storage, waitForAuthInitialization } from './firebase';
 import { collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc, serverTimestamp, arrayUnion, arrayRemove } from 'firebase/firestore';
@@ -16,9 +16,6 @@ import {
   DEFAULT_CAMPAIGN_TARGET,
   DEFAULT_HANDWRITING_FONT,
   DEFAULT_MEDIA_CAPTION,
-  THEME_COLORS,
-  THEME_FONTS,
-  THEME_PRESETS,
   normalizeHandwritingFont,
   normalizeLegacyText,
 } from './uiConfig';
@@ -40,6 +37,11 @@ type MediaItem = {
 };
 
 type UploadDraft = PendingUploadDraft;
+type RewardPreviewItem = Pick<MediaItem, 'id' | 'url' | 'caption'>;
+type RewardCelebration = {
+  items: RewardPreviewItem[];
+  target: number;
+} | null;
 
 const AnimatedBackground = () => (
   <div className="fixed inset-0 z-[-1] overflow-hidden pointer-events-none">
@@ -66,24 +68,6 @@ const MAX_WEEKLY_UPLOADS = 2;
 const MAX_UPLOAD_IMAGE_DIMENSION = 4096;
 const MAX_UPLOAD_IMAGE_SIZE = 8_000_000;
 const AdminPanel = React.lazy(() => import('./AdminPanel'));
-
-const EXPERIENCE_HIGHLIGHTS = [
-  {
-    title: 'Masanı seç',
-    description: 'Paylaşımın hangi masaya ait olduğu düzenli biçimde görünür.',
-    icon: MapPin,
-  },
-  {
-    title: 'Fotoğrafını yükle',
-    description: 'Görsel birkaç adımda galeriye eklenir ve herkes tarafından görülebilir.',
-    icon: Upload,
-  },
-  {
-    title: 'Galeride yerini al',
-    description: 'Misafirler paylaşımları inceleyebilir, beğenebilir ve keşfedebilir.',
-    icon: Heart,
-  },
-];
 
 const TABLE_OPTIONS = [
   ...Array.from({ length: 20 }, (_, index) => ({
@@ -121,11 +105,19 @@ const getMediaDate = (value: MediaItem['createdAt']) => {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
+const getCampaignProgressCount = (totalUploads: number, campaignTarget: number) => {
+  if (campaignTarget <= 0 || totalUploads <= 0) {
+    return 0;
+  }
+
+  const remainder = totalUploads % campaignTarget;
+  return remainder === 0 ? campaignTarget : remainder;
+};
+
 export default function App() {
   const [currentView, setCurrentView] = useState<'app' | 'admin'>('app');
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
-  const [isThemeModalOpen, setIsThemeModalOpen] = useState(false);
   const [accentColor, setAccentColor] = useState(DEFAULT_ACCENT_COLOR);
   const [handwritingFont, setHandwritingFont] = useState(DEFAULT_HANDWRITING_FONT);
   const [cafeName, setCafeName] = useState(DEFAULT_CAFE_NAME);
@@ -151,7 +143,8 @@ export default function App() {
   const [isGoogleRedirectResolved, setIsGoogleRedirectResolved] = useState(false);
   const [isMediaItemsReady, setIsMediaItemsReady] = useState(false);
   const [pendingRedirectUpload, setPendingRedirectUpload] = useState<UploadDraft | null>(null);
-  const [showRewardModal, setShowRewardModal] = useState(false);
+  const [rewardCelebration, setRewardCelebration] = useState<RewardCelebration>(null);
+  const [showSharePrompt, setShowSharePrompt] = useState(false);
   
   // Image editing state
   const [editRotation, setEditRotation] = useState(0);
@@ -186,6 +179,7 @@ export default function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const resumedPendingUploadRef = useRef(false);
+  const sharePromptScheduledRef = useRef(false);
   const isAuthenticated = Boolean(currentUserUid);
 
   const syncCurrentUser = (user: User | null) => {
@@ -293,6 +287,8 @@ export default function App() {
   };
 
   const handleOpenComposer = async () => {
+    setShowSharePrompt(false);
+
     if (auth.currentUser) {
       setIsUploadModalOpen(true);
       return;
@@ -357,6 +353,18 @@ export default function App() {
 
   const countTotalUploadsForUser = (uid: string) =>
     mediaItems.filter(item => item.authorUid === uid).length;
+
+  const buildRewardPreviewItems = (uid: string, latestUpload: RewardPreviewItem) =>
+    mediaItems
+      .filter((item) => item.authorUid === uid)
+      .slice(0, Math.max(0, campaignTarget - 1))
+      .map((item) => ({
+        id: item.id,
+        url: item.url,
+        caption: item.caption,
+      }))
+      .reverse()
+      .concat(latestUpload);
 
   const loadImageFromFile = async (file: File) => {
     const objectUrl = URL.createObjectURL(file);
@@ -490,16 +498,24 @@ export default function App() {
         createdAt: serverTimestamp()
       });
 
+      const totalUploadsAfterSave = countTotalUploadsForUser(uid) + 1;
+      if (campaignTarget > 0 && totalUploadsAfterSave % campaignTarget === 0) {
+        setRewardCelebration({
+          items: buildRewardPreviewItems(uid, {
+            id: `reward-${Date.now()}`,
+            url: downloadUrl,
+            caption: normalizeLegacyText(draft.caption, DEFAULT_MEDIA_CAPTION),
+          }),
+          target: campaignTarget,
+        });
+      }
+
       void discardPendingUpload();
       setPendingRedirectUpload(null);
       setUploadStatus(null);
       setUploadProgress(null);
       setIsUploadModalOpen(false);
       resetUploadComposer();
-
-      if (countTotalUploadsForUser(uid) + 1 === campaignTarget) {
-        setShowRewardModal(true);
-      }
 
       return true;
     } catch (error: any) {
@@ -558,6 +574,38 @@ export default function App() {
       streamRef.current = null;
     }
   }, []);
+
+  useEffect(() => {
+    if (!isAuthResolved || !isGoogleRedirectResolved || currentView !== 'app') {
+      return;
+    }
+
+    if (sharePromptScheduledRef.current) {
+      return;
+    }
+
+    if (window.sessionStorage.getItem('share-vibe-promo-seen') === '1') {
+      return;
+    }
+
+    sharePromptScheduledRef.current = true;
+    const timeout = window.setTimeout(() => {
+      window.sessionStorage.setItem('share-vibe-promo-seen', '1');
+      setShowSharePrompt(true);
+    }, 18000 + Math.round(Math.random() * 18000));
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [currentView, isAuthResolved, isGoogleRedirectResolved]);
+
+  useEffect(() => {
+    if (currentView !== 'app' || !isUploadModalOpen) {
+      return;
+    }
+
+    setShowSharePrompt(false);
+  }, [currentView, isUploadModalOpen]);
 
   useEffect(() => {
     const unsubscribeSettings = onSnapshot(doc(db, 'settings', 'global'), (doc) => {
@@ -1016,6 +1064,10 @@ export default function App() {
   const selectedMedia = isAuthenticated && selectedMediaId ? mediaItems.find(m => m.id === selectedMediaId) : null;
   const deferredMediaItems = useDeferredValue(mediaItems);
   const isGuestPreview = !isAuthenticated;
+  const userTotalUploadsCount = currentUserUid ? countTotalUploadsForUser(currentUserUid) : 0;
+  const campaignProgressCount = isAuthenticated ? getCampaignProgressCount(userTotalUploadsCount, campaignTarget) : 0;
+  const campaignRemainingCount = Math.max(campaignTarget - campaignProgressCount, 0);
+  const rewardPreviewItems = rewardCelebration?.items ?? [];
 
   if (!isAuthResolved || !isGoogleRedirectResolved) {
     return (
@@ -1085,7 +1137,6 @@ export default function App() {
 
               <nav className="header-nav-shell" aria-label="Sayfa kısayolları">
                 <a href="#gallery" className="header-nav-link">Galeri</a>
-                <a href="#highlights" className="header-nav-link">Nasıl Paylaşılır</a>
                 <a href="#campaign" className="header-nav-link">Kampanya</a>
               </nav>
 
@@ -1103,18 +1154,10 @@ export default function App() {
                 )}
 
                 <button
-                  onClick={() => setIsThemeModalOpen(true)}
-                  className="icon-button"
-                  aria-label="Tema ayarları"
-                >
-                  <Palette className="w-5 h-5" />
-                </button>
-                <button
                   onClick={() => void handleOpenAdminPanel()}
-                  className="icon-button"
-                  aria-label="Admin paneli"
+                  className="inline-flex items-center justify-center rounded-full border border-transparent px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-cafe-100/62 transition-colors hover:text-cafe-50"
                 >
-                  <Settings className="w-5 h-5" />
+                  Admin girişi
                 </button>
                 {isAuthenticated ? (
                   <>
@@ -1146,7 +1189,7 @@ export default function App() {
         </header>
 
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-10 space-y-8 sm:space-y-10">
-          <section id="experience" className="grid gap-6 xl:grid-cols-[minmax(0,1.45fr),minmax(320px,0.95fr)]">
+          <section id="experience">
             <div className="section-shell relative overflow-hidden">
               <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-r from-[color:var(--color-accent)]/18 via-white/30 to-transparent" />
               <span className="section-pill">Kolay paylaşım</span>
@@ -1179,52 +1222,66 @@ export default function App() {
               </div>
             </div>
 
-            <aside className="space-y-3">
-              <div id="highlights" className="section-shell compact-info-shell scroll-mt-28 lg:scroll-mt-32">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <span className="section-pill">Nasıl paylaşılır</span>
-                    <h3 className="mt-3 text-xl font-semibold text-cafe-50">Üç adımda paylaş</h3>
-                  </div>
-                  <div className="ambient-ring flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12 text-[color:var(--color-accent)]">
-                    <Sparkles className="w-4 h-4" />
-                  </div>
-                </div>
+          </section>
 
-                <div className="compact-highlight-grid mt-4">
-                  {EXPERIENCE_HIGHLIGHTS.map(({ title, description, icon: Icon }) => (
-                    <div key={title} className="compact-highlight-card">
-                      <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12 text-[color:var(--color-accent)]">
-                        <Icon className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold text-cafe-50">{title}</p>
-                        <p className="mt-1 text-sm leading-6 text-cafe-100/68">{description}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+          <section id="campaign" className="section-shell scroll-mt-28 lg:scroll-mt-32">
+            <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+              <div className="max-w-2xl space-y-3">
+                <span className="section-pill">Aktif kampanyalar</span>
+                <h2 className="text-3xl sm:text-4xl font-serif font-semibold text-cafe-50">
+                  {campaignTarget} foto paylaş, {campaignReward} kazan
+                </h2>
+                <p className="text-sm sm:text-base leading-7 text-cafe-100/72">
+                  Her yeni anı paylaşımında kahve adımları doluyor. Hedef tamamlandığında ekranda ödül bildirimi açılır.
+                </p>
               </div>
 
-              <div id="campaign" className="reward-card compact-reward-card scroll-mt-28 lg:scroll-mt-32">
+              <div className="rounded-[2rem] border border-white/70 bg-white/80 p-5 shadow-[0_24px_54px_rgba(79,56,41,0.08)] lg:min-w-[360px]">
                 <div className="flex items-center justify-between gap-4">
                   <div>
-                    <p className="text-xs uppercase tracking-[0.22em] text-cafe-100/55">Kampanya</p>
-                    <h4 className="mt-2 text-xl font-semibold text-cafe-50">{campaignTarget} paylaşımda ödül</h4>
+                    <p className="text-xs uppercase tracking-[0.22em] text-cafe-100/55">Kampanya takibi</p>
+                    <p className="mt-2 text-lg font-semibold text-cafe-50">
+                      {campaignProgressCount}/{campaignTarget} kahve adımı dolu
+                    </p>
                   </div>
-                  <div className="rounded-2xl bg-[color:var(--color-accent)]/14 p-3 text-[color:var(--color-accent)]">
+                  <div className="rounded-2xl bg-[color:var(--color-accent)]/12 p-3 text-[color:var(--color-accent)]">
                     <Coffee className="w-5 h-5" />
                   </div>
                 </div>
-                <p className="mt-3 text-sm leading-6 text-cafe-100/72">
-                  Belirlenen paylaşım sayısına ulaşan misafirler <strong className="text-cafe-50">{campaignReward}</strong> kazanır.
-                </p>
-                <div className="mt-4 flex items-center justify-between rounded-2xl border border-white/60 bg-white/75 px-4 py-3 text-sm">
-                  <span className="text-cafe-100/70">Haftalık paylaşım hakkı</span>
-                  <strong className="text-cafe-50">{MAX_WEEKLY_UPLOADS} paylaşım</strong>
+
+                <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  {Array.from({ length: Math.max(campaignTarget, 1) }, (_, index) => {
+                    const isActive = index < campaignProgressCount;
+                    return (
+                      <div
+                        key={`campaign-step-${index}`}
+                        className={`rounded-[1.4rem] border px-3 py-4 text-center transition-all ${
+                          isActive
+                            ? 'border-transparent bg-[color:var(--color-accent)] text-white shadow-[0_16px_34px_rgba(0,0,0,0.14)]'
+                            : 'border-cafe-700/70 bg-white text-cafe-100/55'
+                        }`}
+                      >
+                        <Coffee className="mx-auto h-5 w-5" />
+                        <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.16em]">
+                          {index + 1}. foto
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="mt-5 flex items-center justify-between rounded-2xl border border-cafe-700/70 bg-[color:var(--color-accent)]/7 px-4 py-3 text-sm">
+                  <span className="text-cafe-100/70">
+                    {isAuthenticated
+                      ? campaignRemainingCount === 0
+                        ? 'Hedef tamamlandı'
+                        : `${campaignRemainingCount} foto daha kaldı`
+                      : 'Giriş yapıp ilerlemeni takip et'}
+                  </span>
+                  <strong className="text-cafe-50">Ödül: {campaignReward}</strong>
                 </div>
               </div>
-            </aside>
+            </div>
           </section>
 
           <section id="gallery" className="space-y-5 scroll-mt-28 lg:scroll-mt-32">
@@ -1830,224 +1887,122 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Theme Modal */}
-      <AnimatePresence>
-        {isThemeModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
-              onClick={() => setIsThemeModalOpen(false)}
-            />
-            
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-3xl max-h-[90vh] overflow-y-auto bg-cafe-900 border border-cafe-800 rounded-[2rem] shadow-2xl flex flex-col"
-            >
-              <div className="p-4 sm:p-6 border-b border-cafe-800 flex justify-between items-start gap-4 bg-cafe-800/30">
-                <div>
-                  <h2 className="text-xl sm:text-2xl font-bold text-cafe-50 flex items-center gap-2">
-                    <Palette className="w-5 h-5 text-accent" />
-                    Tema Ayarları
-                  </h2>
-                  <p className="mt-2 text-sm text-cafe-100/65">
-                    Renk, font ve hazır kombinlerle galeri görünümünü hızla şekillendir.
-                  </p>
-                </div>
-                <button
-                  onClick={() => setIsThemeModalOpen(false)}
-                  className="p-2 text-cafe-100/50 hover:text-cafe-50 hover:bg-cafe-800 rounded-full transition-colors"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <div className="p-4 sm:p-6 grid gap-5 xl:grid-cols-[1.15fr,0.85fr]">
-                <div className="space-y-5">
-                  <div className="rounded-[1.75rem] border border-cafe-700 bg-cafe-800/55 p-4 sm:p-5">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <h3 className="text-base font-semibold text-cafe-50">Hazır Tema Kombinleri</h3>
-                        <p className="mt-1 text-sm text-cafe-100/65">Tek dokunuşla dengeli ve daha kaliteli görünüm uygula.</p>
-                      </div>
-                      <button
-                        onClick={() => {
-                          setAccentColor(DEFAULT_ACCENT_COLOR);
-                          setHandwritingFont(DEFAULT_HANDWRITING_FONT);
-                        }}
-                        className="text-xs font-semibold uppercase tracking-[0.18em] text-cafe-100/60 hover:text-cafe-50"
-                      >
-                        Sıfırla
-                      </button>
-                    </div>
-
-                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                      {THEME_PRESETS.map((preset) => (
-                        <button
-                          key={preset.name}
-                          onClick={() => {
-                            setAccentColor(preset.accentColor);
-                            setHandwritingFont(preset.handwritingFont);
-                          }}
-                          className={`rounded-2xl border p-4 text-left transition-all ${
-                            accentColor === preset.accentColor && handwritingFont === preset.handwritingFont
-                              ? 'border-accent bg-accent/10 shadow-[0_16px_36px_rgba(0,0,0,0.08)]'
-                              : 'border-cafe-700 bg-cafe-800/70 hover:border-cafe-600'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className="h-3.5 w-3.5 rounded-full" style={{ backgroundColor: preset.accentColor }} />
-                            <p className="font-semibold text-cafe-50">{preset.name}</p>
-                          </div>
-                          <p className="mt-3 text-2xl text-cafe-50" style={{ fontFamily: preset.handwritingFont }}>
-                            {DEFAULT_MEDIA_CAPTION}
-                          </p>
-                          <p className="mt-2 text-sm leading-6 text-cafe-100/65">
-                            {preset.description}
-                          </p>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="rounded-[1.75rem] border border-cafe-700 bg-cafe-800/55 p-4 sm:p-5">
-                    <h3 className="text-base font-semibold text-cafe-50">Vurgu Rengi</h3>
-                    <div className="mt-4 flex flex-wrap gap-3">
-                      {THEME_COLORS.map(color => (
-                        <button
-                          key={color.value}
-                          onClick={() => setAccentColor(color.value)}
-                          className={`theme-color-swatch ${accentColor === color.value ? 'theme-color-swatch-active' : ''}`}
-                          style={{ backgroundColor: color.value }}
-                          title={color.name}
-                          aria-label={color.name}
-                        />
-                      ))}
-                    </div>
-                    <p className="mt-3 text-sm text-cafe-100/65">
-                      Seçilen vurgu rengi butonlar, aktif durumlar ve kampanya kartında görünür.
-                    </p>
-                  </div>
-
-                  <div className="rounded-[1.75rem] border border-cafe-700 bg-cafe-800/55 p-4 sm:p-5">
-                    <h3 className="text-base font-semibold text-cafe-50">El Yazısı Fontu</h3>
-                    <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                      {THEME_FONTS.map(font => (
-                        <button
-                          key={font.value}
-                          onClick={() => setHandwritingFont(font.value)}
-                          className={`p-3.5 rounded-2xl border transition-all text-lg ${handwritingFont === font.value ? 'border-accent bg-accent/10 text-accent' : 'border-cafe-700 bg-cafe-800 text-cafe-50 hover:border-cafe-600'}`}
-                          style={{ fontFamily: font.value }}
-                        >
-                          {font.name}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-5">
-                  <div className="rounded-[1.75rem] border border-cafe-700 bg-cafe-800/55 p-4 sm:p-5">
-                    <h3 className="text-base font-semibold text-cafe-50">Canlı Önizleme</h3>
-                    <p className="mt-1 text-sm text-cafe-100/65">
-                      Tema seçiminin kartlar ve öne çıkan alanlarda nasıl göründüğünü anında izle.
-                    </p>
-
-                    <div className="mt-4 rounded-[1.8rem] border border-cafe-700 bg-cafe-900/90 p-4 shadow-inner">
-                      <div className="rounded-[1.4rem] bg-cafe-800 p-3 shadow-lg">
-                        <div className="relative aspect-[4/5] overflow-hidden rounded-[1.15rem] bg-gradient-to-br from-cafe-700 to-cafe-900">
-                          <div className="absolute left-3 top-3 rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white" style={{ backgroundColor: accentColor }}>
-                            Masa 7
-                          </div>
-                          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 to-transparent p-4">
-                            <p className="text-[2.35rem] leading-[1.05] text-white sm:text-[2.6rem]" style={{ fontFamily: handwritingFont }}>
-                              {DEFAULT_MEDIA_CAPTION}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="pt-4 space-y-3">
-                          <div className="flex items-center justify-between text-sm text-cafe-100/70">
-                            <span>Kafe adı</span>
-                            <strong className="text-cafe-50">{cafeName}</strong>
-                          </div>
-                          <div className="flex items-center justify-between text-sm text-cafe-100/70">
-                            <span>Ödül akışı</span>
-                            <strong className="text-cafe-50">{campaignTarget} paylaşım</strong>
-                          </div>
-                          <div className="rounded-2xl border border-cafe-700 bg-cafe-800/80 px-4 py-3 text-sm text-cafe-100/75">
-                            Temayı sade tuttuğunda hem mobilde hem masaüstünde daha temiz bir algı oluşur.
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="rounded-[1.75rem] border border-cafe-700 bg-cafe-800/55 p-4 sm:p-5">
-                    <h3 className="text-base font-semibold text-cafe-50">Tasarım Notları</h3>
-                    <ul className="mt-3 space-y-3 text-sm leading-6 text-cafe-100/68">
-                      <li>Kehribar ve adaçayı tonları daha sıcak ve davetkâr görünür.</li>
-                      <li>El yazısı fontu yalnızca dikkat çekmesi gereken noktalarda kullanılmalı.</li>
-                      <li>Dengeli kontrast, özellikle küçük ekranlarda okunabilirliği artırır.</li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
       {/* Reward Modal */}
       <AnimatePresence>
-        {showRewardModal && (
+        {rewardCelebration && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-cafe-900/90 backdrop-blur-md"
-            onClick={() => setShowRewardModal(false)}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-cafe-900/70 backdrop-blur-md"
+            onClick={() => setRewardCelebration(null)}
           >
             <motion.div
-              initial={{ scale: 0.8, y: 50, rotate: -5 }}
-              animate={{ scale: 1, y: 0, rotate: 0 }}
-              exit={{ scale: 0.8, y: 50, rotate: 5 }}
+              initial={{ scale: 0.88, y: 32 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 24, opacity: 0 }}
               transition={{ type: "spring", bounce: 0.5 }}
-              className="bg-gradient-to-br from-accent to-orange-400 p-1 rounded-3xl w-full max-w-sm shadow-2xl"
+              className="w-full max-w-xl rounded-[2rem] border border-white/20 bg-[linear-gradient(160deg,rgba(255,255,255,0.92),rgba(245,236,226,0.95))] p-6 shadow-[0_32px_80px_rgba(33,24,19,0.35)]"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="bg-cafe-900 rounded-[22px] p-8 text-center relative overflow-hidden">
-                {/* Confetti / Sparkles effect */}
-                <div className="absolute top-0 left-0 w-full h-full pointer-events-none opacity-30">
-                  <div className="absolute top-4 left-4 animate-pulse"><Sparkles className="w-6 h-6 text-accent" /></div>
-                  <div className="absolute bottom-8 right-8 animate-pulse delay-150"><Sparkles className="w-8 h-8 text-accent" /></div>
-                  <div className="absolute top-1/2 right-4 animate-pulse delay-300"><Sparkles className="w-5 h-5 text-accent" /></div>
+              <div className="text-center">
+                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-[color:var(--color-accent)]/14 text-[color:var(--color-accent)]">
+                  <Sparkles className="h-8 w-8" />
                 </div>
-
-                <div className="w-20 h-20 bg-accent/20 rounded-full flex items-center justify-center mx-auto mb-6">
-                  <Coffee className="w-10 h-10 text-accent" />
-                </div>
-                
-                <h2 className="text-3xl font-bold text-cafe-50 mb-2 font-handwriting">Tebrikler! 🎉</h2>
-                <p className="text-cafe-100/80 mb-6">
-                  {campaignTarget}. fotoğrafınızı paylaştınız ve bizden <strong className="text-accent">{campaignReward}</strong> kazandınız!
+                <p className="mt-4 text-xs font-semibold uppercase tracking-[0.22em] text-cafe-100/55">Kampanya tamamlandı</p>
+                <h2 className="mt-3 text-3xl font-serif font-semibold text-cafe-50">
+                  Tebrikler, {campaignReward} kazandın
+                </h2>
+                <p className="mt-3 text-sm leading-7 text-cafe-100/72">
+                  {rewardCelebration.target} paylaşımı tamamladın. Son karelerin ve dolan kahve adımların burada.
                 </p>
-                
-                <div className="bg-cafe-800 rounded-xl p-4 mb-6 border border-cafe-700 border-dashed">
-                  <p className="text-xs text-cafe-100/50 mb-1 uppercase tracking-wider">Ödül Kodunuz</p>
-                  <p className="text-2xl font-mono font-bold text-accent tracking-widest">KAFE-5X</p>
-                </div>
-
-                <button
-                  onClick={() => setShowRewardModal(false)}
-                  className="w-full py-4 bg-accent hover:brightness-110 text-cafe-900 font-bold rounded-xl transition-all active:scale-95 shadow-lg shadow-accent/20"
-                >
-                  Harika, Teşekkürler!
-                </button>
               </div>
+
+              <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {Array.from({ length: rewardCelebration.target }, (_, index) => (
+                  <div
+                    key={`reward-step-${index}`}
+                    className="rounded-[1.35rem] bg-[color:var(--color-accent)] px-3 py-4 text-center text-white shadow-[0_16px_34px_rgba(0,0,0,0.14)]"
+                  >
+                    <Coffee className="mx-auto h-5 w-5" />
+                    <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.16em]">
+                      {index + 1}. foto
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-6 grid grid-cols-2 gap-3 rounded-[1.75rem] border border-cafe-700/15 bg-white/78 p-3">
+                {rewardPreviewItems.map((item) => (
+                  <div key={item.id} className="relative aspect-square overflow-hidden rounded-[1.25rem] bg-cafe-800">
+                    <img
+                      src={item.url}
+                      alt={item.caption}
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                      decoding="async"
+                      referrerPolicy="no-referrer"
+                    />
+                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/65 to-transparent p-3">
+                      <p className="line-clamp-2 text-sm text-white" style={{ fontFamily: handwritingFont }}>
+                        {item.caption}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <button
+                onClick={() => setRewardCelebration(null)}
+                className="mt-6 inline-flex w-full items-center justify-center rounded-2xl bg-[color:var(--color-accent)] px-4 py-4 text-sm font-semibold uppercase tracking-[0.16em] text-white shadow-[0_18px_36px_rgba(0,0,0,0.18)] transition-transform hover:-translate-y-0.5"
+              >
+                Tamam
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {showSharePrompt && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[95] flex items-end justify-center bg-cafe-900/45 p-4 backdrop-blur-sm sm:items-center"
+            onClick={() => setShowSharePrompt(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 28, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 24, scale: 0.96 }}
+              className="relative w-full max-w-md overflow-hidden rounded-[2rem] border border-white/55 bg-[linear-gradient(160deg,rgba(255,255,255,0.96),rgba(243,234,223,0.95))] p-6 shadow-[0_28px_80px_rgba(58,41,31,0.22)]"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <button
+                onClick={() => setShowSharePrompt(false)}
+                className="absolute right-4 top-4 rounded-full p-2 text-cafe-100/45 transition-colors hover:bg-white/70 hover:text-cafe-50"
+                aria-label="Bildirim kapat"
+              >
+                <X className="h-5 w-5" />
+              </button>
+
+              <div className="pr-10">
+                <span className="section-pill">Yeni anı zamanı</span>
+                <h3 className="mt-4 text-3xl font-serif font-semibold text-cafe-50">
+                  Bir kare daha bırak, kahve adımın dolsun
+                </h3>
+                <p className="mt-3 text-sm leading-7 text-cafe-100/72">
+                  Şu an yeni bir anı paylaşıp galeriye eklenebilir ve kampanya ilerlemeni artırabilirsin.
+                </p>
+              </div>
+
+              <button
+                onClick={() => void handleOpenComposer()}
+                className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-5 py-4 text-sm font-semibold uppercase tracking-[0.16em] text-white shadow-[0_18px_36px_rgba(0,0,0,0.14)] transition-transform hover:-translate-y-0.5"
+              >
+                <Camera className="h-4 w-4" />
+                Anı paylaş
+              </button>
             </motion.div>
           </motion.div>
         )}

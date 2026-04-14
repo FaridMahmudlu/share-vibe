@@ -95,6 +95,7 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [tableFilter, setTableFilter] = useState('all');
   const [sortMode, setSortMode] = useState<'newest' | 'likes'>('newest');
+  const [activeView, setActiveView] = useState<'dashboard' | 'brand'>('dashboard');
 
   const [settings, setSettings] = useState(DEFAULT_ADMIN_SETTINGS);
   const [savedSettings, setSavedSettings] = useState(DEFAULT_ADMIN_SETTINGS);
@@ -282,6 +283,7 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
       settings.campaignReward !== savedSettings.campaignReward,
     [savedSettings, settings]
   );
+  const isBrandView = activeView === 'brand';
 
   const handleLogin = async () => {
     try {
@@ -293,6 +295,16 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
 
   const handleLogout = async () => {
     await signOut(auth);
+  };
+
+  const openBrandView = () => {
+    setActiveView('brand');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const openDashboardView = () => {
+    setActiveView('dashboard');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleSave = async () => {
@@ -407,7 +419,9 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
             </button>
             <div>
               <span className="section-pill">Yönetim Merkezi</span>
-              <h1 className="mt-2 text-2xl sm:text-3xl font-semibold text-cafe-50">Admin Paneli</h1>
+              <h1 className="mt-2 text-2xl sm:text-3xl font-semibold text-cafe-50">
+                {isBrandView ? 'Marka Ayarları' : 'Admin Paneli'}
+              </h1>
             </div>
           </div>
 
@@ -438,6 +452,121 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-10 space-y-6">
+        {isBrandView ? (
+          <section className="section-shell space-y-6">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <span className="section-pill">Marka Kimliği</span>
+                <h2 className="mt-3 text-3xl font-serif font-semibold text-cafe-50">Mekanın vitrini ve dili</h2>
+                <p className="mt-3 max-w-3xl text-sm leading-7 text-cafe-100/72">
+                  Kafe adı, el yazısı stili, vurgu rengi ve hazır kombinler galerinin tamamında kullanılır.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={openDashboardView}
+                className="inline-flex items-center gap-2 self-start rounded-full border border-cafe-700/80 bg-white/80 px-4 py-2.5 text-sm font-medium text-cafe-50 transition-colors hover:border-accent/40"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Panele dön
+              </button>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div className="glass-card">
+                <label className="block text-sm font-medium text-cafe-100/70 mb-2">Kafe adı</label>
+                <input
+                  type="text"
+                  value={settings.cafeName}
+                  onChange={(event) => setSettings({ ...settings, cafeName: event.target.value })}
+                  className="w-full rounded-2xl border border-cafe-700/80 bg-white/80 px-4 py-3 text-cafe-50 outline-none transition-colors focus:border-accent/60"
+                />
+              </div>
+
+              <div className="glass-card">
+                <label className="block text-sm font-medium text-cafe-100/70 mb-3">El yazısı stili</label>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {THEME_FONTS.map((font) => (
+                    <button
+                      key={font.value}
+                      type="button"
+                      onClick={() => setSettings({ ...settings, handwritingFont: font.value })}
+                      className={`rounded-2xl border px-3 py-3 text-lg transition-colors ${
+                        settings.handwritingFont === font.value
+                          ? 'border-accent/30 bg-[color:var(--color-accent)]/10 text-[color:var(--color-accent)]'
+                          : 'border-cafe-700/80 bg-white/80 text-cafe-50 hover:border-accent/30'
+                      }`}
+                      style={{ fontFamily: font.value }}
+                    >
+                      {font.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="glass-card">
+              <label className="block text-sm font-medium text-cafe-100/70 mb-3">Vurgu rengi</label>
+              <div className="flex flex-wrap gap-3">
+                {THEME_COLORS.map((color) => (
+                  <button
+                    key={color.value}
+                    type="button"
+                    onClick={() => setSettings({ ...settings, accentColor: color.value })}
+                    className={`h-12 w-12 rounded-full border-4 transition-transform ${
+                      settings.accentColor === color.value
+                        ? 'scale-110 border-white shadow-[0_0_0_4px_rgba(255,255,255,0.5)]'
+                        : 'border-transparent hover:scale-105'
+                    }`}
+                    style={{ backgroundColor: color.value }}
+                    title={color.name}
+                    aria-label={color.name}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div className="glass-card">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-cafe-100/70">Hazır tema kombinleri</label>
+                  <p className="mt-1 text-sm text-cafe-100/68">Hızlıca dengeli bir görünüm seçebilirsiniz.</p>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                {THEME_PRESETS.map((preset) => (
+                  <button
+                    key={preset.name}
+                    type="button"
+                    onClick={() =>
+                      setSettings({
+                        ...settings,
+                        accentColor: preset.accentColor,
+                        handwritingFont: preset.handwritingFont,
+                      })
+                    }
+                    className={`rounded-2xl border p-4 text-left transition-colors ${
+                      settings.accentColor === preset.accentColor && settings.handwritingFont === preset.handwritingFont
+                        ? 'border-accent/30 bg-[color:var(--color-accent)]/10'
+                        : 'border-cafe-700/80 bg-white/80 hover:border-accent/30'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="h-3 w-3 rounded-full" style={{ backgroundColor: preset.accentColor }} />
+                      <p className="text-sm font-semibold text-cafe-50">{preset.name}</p>
+                    </div>
+                    <p className="mt-3 text-lg text-cafe-50" style={{ fontFamily: preset.handwritingFont }}>
+                      {DEFAULT_MEDIA_CAPTION}
+                    </p>
+                    <p className="mt-2 text-sm leading-6 text-cafe-100/68">{preset.description}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </section>
+        ) : (
+          <>
         <section className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr),360px]">
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <div className="stat-card">
@@ -474,13 +603,17 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
             </div>
 
             <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
-              <a href="#admin-brand" className="compact-highlight-card transition-transform hover:-translate-y-0.5">
+              <button
+                type="button"
+                onClick={openBrandView}
+                className="compact-highlight-card text-left transition-transform hover:-translate-y-0.5"
+              >
                 <Palette className="mt-1 w-4 h-4 text-[color:var(--color-accent)]" />
                 <div>
                   <p className="text-sm font-semibold text-cafe-50">Marka ayarları</p>
                   <p className="mt-1 text-sm leading-6 text-cafe-100/68">Kafe adı, renk ve font düzenleyin.</p>
                 </div>
-              </a>
+              </button>
               <a href="#admin-campaign" className="compact-highlight-card transition-transform hover:-translate-y-0.5">
                 <Gift className="mt-1 w-4 h-4 text-[color:var(--color-accent)]" />
                 <div>
@@ -505,144 +638,6 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
               <p className="mt-2 text-sm leading-6 text-cafe-100/70">
                 {topTable ? `${topTable[1]} paylaşım ile bugün öne çıkıyor.` : 'Paylaşım geldikçe burada öne çıkan masa görünür.'}
               </p>
-            </div>
-          </aside>
-        </section>
-
-        <section id="admin-brand" className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr),minmax(360px,0.9fr)] scroll-mt-28 lg:scroll-mt-32">
-          <div className="section-shell space-y-6">
-            <div>
-              <span className="section-pill">Marka Kimliği</span>
-              <h2 className="mt-3 text-3xl font-serif font-semibold text-cafe-50">Mekânın vitrini ve dili</h2>
-              <p className="mt-3 max-w-2xl text-sm leading-7 text-cafe-100/72">
-                Kafe adı, vurgu rengi ve el yazısı stili galerinin tüm görünümünü belirler. Bu alanı marka karakterinize göre düzenleyin.
-              </p>
-            </div>
-
-            <div className="grid gap-4 lg:grid-cols-2">
-              <div className="glass-card">
-                <label className="block text-sm font-medium text-cafe-100/70 mb-2">Kafe adı</label>
-                <input
-                  type="text"
-                  value={settings.cafeName}
-                  onChange={(event) => setSettings({ ...settings, cafeName: event.target.value })}
-                  className="w-full rounded-2xl border border-cafe-700/80 bg-white/80 px-4 py-3 text-cafe-50 outline-none transition-colors focus:border-accent/60"
-                />
-              </div>
-
-              <div className="glass-card">
-                <label className="block text-sm font-medium text-cafe-100/70 mb-2">El yazısı stili</label>
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  {THEME_FONTS.map((font) => (
-                    <button
-                      key={font.value}
-                      onClick={() => setSettings({ ...settings, handwritingFont: font.value })}
-                      className={`rounded-2xl border px-3 py-3 text-lg transition-colors ${
-                        settings.handwritingFont === font.value
-                          ? 'border-accent/30 bg-[color:var(--color-accent)]/10 text-[color:var(--color-accent)]'
-                          : 'border-cafe-700/80 bg-white/80 text-cafe-50 hover:border-accent/30'
-                      }`}
-                      style={{ fontFamily: font.value }}
-                    >
-                      {font.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="glass-card">
-              <label className="block text-sm font-medium text-cafe-100/70 mb-3">Vurgu rengi</label>
-              <div className="flex flex-wrap gap-3">
-                {THEME_COLORS.map((color) => (
-                  <button
-                    key={color.value}
-                    onClick={() => setSettings({ ...settings, accentColor: color.value })}
-                    className={`h-12 w-12 rounded-full border-4 transition-transform ${
-                      settings.accentColor === color.value
-                        ? 'scale-110 border-white shadow-[0_0_0_4px_rgba(255,255,255,0.5)]'
-                        : 'border-transparent hover:scale-105'
-                    }`}
-                    style={{ backgroundColor: color.value }}
-                    title={color.name}
-                    aria-label={color.name}
-                  />
-                ))}
-              </div>
-            </div>
-
-            <div className="glass-card">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-cafe-100/70">Hazır tema kombinleri</label>
-                  <p className="mt-1 text-sm text-cafe-100/68">Hızlıca dengeli bir görünüm seçebilirsiniz.</p>
-                </div>
-              </div>
-              <div className="mt-4 grid gap-3 md:grid-cols-2">
-                {THEME_PRESETS.map((preset) => (
-                  <button
-                    key={preset.name}
-                    onClick={() =>
-                      setSettings({
-                        ...settings,
-                        accentColor: preset.accentColor,
-                        handwritingFont: preset.handwritingFont,
-                      })
-                    }
-                    className={`rounded-2xl border p-4 text-left transition-colors ${
-                      settings.accentColor === preset.accentColor && settings.handwritingFont === preset.handwritingFont
-                        ? 'border-accent/30 bg-[color:var(--color-accent)]/10'
-                        : 'border-cafe-700/80 bg-white/80 hover:border-accent/30'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="h-3 w-3 rounded-full" style={{ backgroundColor: preset.accentColor }} />
-                      <p className="text-sm font-semibold text-cafe-50">{preset.name}</p>
-                    </div>
-                    <p className="mt-3 text-lg text-cafe-50" style={{ fontFamily: preset.handwritingFont }}>
-                      {DEFAULT_MEDIA_CAPTION}
-                    </p>
-                    <p className="mt-2 text-sm leading-6 text-cafe-100/68">{preset.description}</p>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <aside className="section-shell">
-            <span className="section-pill">Canlı Önizleme</span>
-            <div className="mt-5 rounded-[2rem] border border-white/65 bg-white/85 p-5 shadow-[0_24px_60px_rgba(79,56,41,0.1)]">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.22em] text-cafe-100/55">Kapak</p>
-                  <h3 className="mt-2 text-3xl font-serif font-semibold text-cafe-50">{settings.cafeName}</h3>
-                </div>
-                <div
-                  className="flex h-12 w-12 items-center justify-center rounded-2xl text-white"
-                  style={{ backgroundColor: settings.accentColor }}
-                >
-                  <Sparkles className="w-5 h-5" />
-                </div>
-              </div>
-
-              <div className="mt-6 rounded-[1.6rem] border border-cafe-700/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.96),rgba(247,240,229,0.88))] p-5">
-                <p
-                  className="text-[1.7rem] leading-tight text-cafe-50"
-                  style={{ fontFamily: settings.handwritingFont }}
-                >
-                  {DEFAULT_MEDIA_CAPTION}
-                </p>
-                <div className="mt-5 flex items-center justify-between text-sm text-cafe-100/70">
-                  <span className="inline-flex items-center gap-2">
-                    <MapPin className="w-4 h-4" />
-                    Masa 7
-                  </span>
-                  <span className="inline-flex items-center gap-2">
-                    <Clock className="w-4 h-4" />
-                    19:45
-                  </span>
-                </div>
-              </div>
             </div>
           </aside>
         </section>
@@ -862,6 +857,8 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
             </div>
           )}
         </section>
+          </>
+        )}
       </main>
 
       {mediaToDelete && (
