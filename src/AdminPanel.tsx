@@ -532,7 +532,7 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
 
               <div className="glass-card">
                 <label className="block text-sm font-medium text-cafe-100/70 mb-2">El yazısı stili</label>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                   {THEME_FONTS.map((font) => (
                     <button
                       key={font.value}
@@ -627,7 +627,7 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
 
               <div className="mt-6 rounded-[1.6rem] border border-cafe-700/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.96),rgba(247,240,229,0.88))] p-5">
                 <p
-                  className="text-[2rem] leading-tight text-cafe-50"
+                  className="text-[1.7rem] leading-tight text-cafe-50"
                   style={{ fontFamily: settings.handwritingFont }}
                 >
                   {DEFAULT_MEDIA_CAPTION}
@@ -829,7 +829,7 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
 
                   <div className="p-4">
                     <div className="flex items-start justify-between gap-3">
-                      <p className="text-[1.9rem] leading-tight text-cafe-50" style={{ fontFamily: settings.handwritingFont }}>
+                      <p className="text-[1.55rem] leading-tight text-cafe-50" style={{ fontFamily: settings.handwritingFont }}>
                         {item.caption}
                       </p>
                       <span className="rounded-full border border-cafe-700/80 bg-white/75 px-2.5 py-1 text-xs font-semibold text-cafe-100/70">

@@ -4,6 +4,12 @@ export const THEME_COLORS = [
   { name: 'Gece Mavisi', value: '#355c7d' },
   { name: 'Gül Kurusu', value: '#b56576' },
   { name: 'Kiremit', value: '#c56a4b' },
+  { name: 'Safran', value: '#d39b2a' },
+  { name: 'Zeytin', value: '#687a4e' },
+  { name: 'Mercan', value: '#d86f5b' },
+  { name: 'Turkuaz', value: '#2f8f9d' },
+  { name: 'Mürdüm', value: '#7c5c9e' },
+  { name: 'Koyu Kiraz', value: '#8b3d52' },
 ];
 
 export const THEME_FONTS = [
@@ -11,6 +17,10 @@ export const THEME_FONTS = [
   { name: 'Caveat', value: '"Caveat", cursive' },
   { name: 'Patrick Hand', value: '"Patrick Hand", cursive' },
   { name: 'Shantell Sans', value: '"Shantell Sans", cursive' },
+  { name: 'Satisfy', value: '"Satisfy", cursive' },
+  { name: 'Handlee', value: '"Handlee", cursive' },
+  { name: 'Marck Script', value: '"Marck Script", cursive' },
+  { name: 'Nothing You Could Do', value: '"Nothing You Could Do", cursive' },
 ];
 
 export const THEME_PRESETS = [
@@ -37,6 +47,30 @@ export const THEME_PRESETS = [
     accentColor: '#b56576',
     handwritingFont: '"Shantell Sans", cursive',
     description: 'Daha yumuşak ve butik bir sunum sağlar.',
+  },
+  {
+    name: 'Tatlı Molası',
+    accentColor: '#d39b2a',
+    handwritingFont: '"Satisfy", cursive',
+    description: 'Daha enerjik ve dikkat çeken bir sıcaklık sunar.',
+  },
+  {
+    name: 'Bahçe Defteri',
+    accentColor: '#687a4e',
+    handwritingFont: '"Handlee", cursive',
+    description: 'Doğal ve rahat mekanlarda yumuşak bir his bırakır.',
+  },
+  {
+    name: 'Kıyı Notları',
+    accentColor: '#2f8f9d',
+    handwritingFont: '"Marck Script", cursive',
+    description: 'Ferah, açık ve biraz daha canlı görünümler için.',
+  },
+  {
+    name: 'Şehir Gecesi',
+    accentColor: '#7c5c9e',
+    handwritingFont: '"Nothing You Could Do", cursive',
+    description: 'Daha karakterli ve fark edilir bir gece teması verir.',
   },
 ];
 

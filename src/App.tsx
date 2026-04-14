@@ -1252,17 +1252,13 @@ export default function App() {
                 </p>
               </div>
             ) : (
-              <div className="masonry-grid">
+              <div className="gallery-grid">
                 {deferredMediaItems.map((item) => {
                   const isLiked = Boolean(currentUserUid && item.likedBy.includes(currentUserUid));
                   const canDelete = currentUserUid === item.authorUid && isDeletable(item);
 
                   return (
-                    <article
-                      key={item.id}
-                      className="masonry-item"
-                      style={{ transform: `rotate(${item.rotation * 0.35}deg)` }}
-                    >
+                    <article key={item.id} className="gallery-grid-item">
                       <div className="gallery-card group">
                         <button
                           type="button"
@@ -1283,47 +1279,36 @@ export default function App() {
                             />
                           )}
 
-                          <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-3 p-3">
-                            <span className="rounded-full border border-white/40 bg-white/85 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-cafe-50 shadow-sm">
+                          <div className="gallery-card-topbar">
+                            <span className="gallery-chip gallery-chip--light">
                               {item.tableNumber}
                             </span>
-                            <span className="rounded-full bg-black/45 px-3 py-1.5 text-[11px] font-medium text-white backdrop-blur-sm">
+                            <span className="gallery-chip gallery-chip--dark">
                               {item.date}
                             </span>
                           </div>
 
-                          <div className={`absolute inset-0 bg-gradient-to-t from-black/45 via-black/5 to-transparent ${isGuestPreview ? 'opacity-40' : 'opacity-90'}`} />
+                          <div className={`gallery-media-overlay ${isGuestPreview ? 'is-guest' : ''}`} />
                           {!isGuestPreview && (
-                            <div className="absolute inset-x-0 bottom-0 flex items-center justify-center p-4">
-                              <span className="rounded-full border border-white/30 bg-white/18 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-white backdrop-blur-md transition-transform duration-300 group-hover:-translate-y-1">
+                            <div className="gallery-card-cta-wrap">
+                              <span className="gallery-card-cta">
                                 Yakından Bak
                               </span>
                             </div>
                           )}
                         </button>
 
-                        <div className="px-2 pt-4 pb-2">
-                          <p className="font-handwriting text-[2rem] leading-tight text-cafe-50">
+                        <div className="gallery-card-body">
+                          <p className="gallery-caption">
                             {item.caption}
                           </p>
 
-                          <div className="mt-4 flex items-end justify-between gap-3 border-t border-cafe-700/70 pt-4">
-                            <div className="space-y-1.5 text-sm text-cafe-100/72">
-                              <div className="flex items-center gap-2">
-                                <MapPin className="w-3.5 h-3.5 text-[color:var(--color-accent)]" />
-                                <span className="font-medium text-cafe-50">{item.tableNumber}</span>
-                              </div>
-                              <div className="flex items-center gap-2 text-cafe-100/60">
-                                <Clock className="w-3.5 h-3.5" />
-                                <span>{item.date}</span>
-                              </div>
-                            </div>
-
-                            <div className="flex items-center gap-2">
+                          <div className="gallery-card-footer">
+                            <div className="gallery-card-actions">
                               {canDelete && (
                                 <button
                                   onClick={(event) => handleDelete(item.id, event)}
-                                  className="icon-button text-red-500 hover:border-red-200 hover:bg-red-50"
+                                  className="icon-button gallery-action-button text-red-500 hover:border-red-200 hover:bg-red-50"
                                   aria-label="Anıyı sil"
                                 >
                                   <Trash2 className="w-4 h-4" />
@@ -1334,18 +1319,14 @@ export default function App() {
                                   event.stopPropagation();
                                   setShareMediaId(item.id);
                                 }}
-                                className="icon-button"
+                                className="icon-button gallery-action-button"
                                 aria-label="Paylaş"
                               >
                                 <Share2 className="w-4 h-4" />
                               </button>
                               <button
                                 onClick={(event) => toggleLike(item.id, event)}
-                                className={`inline-flex items-center gap-2 rounded-full border px-3.5 py-2 text-sm font-semibold transition-colors ${
-                                  isLiked
-                                    ? 'border-accent/25 bg-[color:var(--color-accent)]/12 text-[color:var(--color-accent)]'
-                                    : 'border-cafe-700/80 bg-white/80 text-cafe-100 hover:border-accent/30 hover:text-cafe-50'
-                                }`}
+                                className={`gallery-like-button ${isLiked ? 'is-liked' : ''}`}
                               >
                                 <Heart className={`w-4 h-4 ${isLiked ? 'fill-current' : ''}`} />
                                 <span>{item.likesCount}</span>
@@ -1991,7 +1972,7 @@ export default function App() {
 
                   <div className="rounded-[1.75rem] border border-cafe-700 bg-cafe-800/55 p-4 sm:p-5">
                     <h3 className="text-base font-semibold text-cafe-50">El Yazısı Fontu</h3>
-                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                       {THEME_FONTS.map(font => (
                         <button
                           key={font.value}
@@ -2020,7 +2001,7 @@ export default function App() {
                             Masa 7
                           </div>
                           <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 to-transparent p-4">
-                            <p className="text-3xl text-white" style={{ fontFamily: handwritingFont }}>
+                            <p className="text-[2.35rem] leading-[1.05] text-white sm:text-[2.6rem]" style={{ fontFamily: handwritingFont }}>
                               {DEFAULT_MEDIA_CAPTION}
                             </p>
                           </div>
