@@ -872,6 +872,8 @@ export default function App() {
       return;
     }
 
+    ctx.translate(canvas.width, 0);
+    ctx.scale(-1, 1);
     ctx.drawImage(videoRef.current, 0, 0);
     canvas.toBlob((blob) => {
       if (!blob) {
@@ -1563,7 +1565,7 @@ export default function App() {
                       autoPlay
                       playsInline
                       muted
-                      className="w-full h-full object-cover"
+                      className="w-full h-full object-cover [transform:scaleX(-1)]"
                     />
                   </div>
 
