@@ -180,6 +180,8 @@ export default function App() {
   const streamRef = useRef<MediaStream | null>(null);
   const resumedPendingUploadRef = useRef(false);
   const sharePromptScheduledRef = useRef(false);
+  const hiddenAdminTapCountRef = useRef(0);
+  const hiddenAdminTapTimeoutRef = useRef<number | null>(null);
   const isAuthenticated = Boolean(currentUserUid);
 
   const syncCurrentUser = (user: User | null) => {
@@ -310,6 +312,26 @@ export default function App() {
     if (user) {
       setCurrentView('admin');
     }
+  };
+
+  const handleHiddenAdminTrigger = () => {
+    if (hiddenAdminTapTimeoutRef.current) {
+      window.clearTimeout(hiddenAdminTapTimeoutRef.current);
+    }
+
+    hiddenAdminTapCountRef.current += 1;
+
+    if (hiddenAdminTapCountRef.current >= 5) {
+      hiddenAdminTapCountRef.current = 0;
+      hiddenAdminTapTimeoutRef.current = null;
+      void handleOpenAdminPanel();
+      return;
+    }
+
+    hiddenAdminTapTimeoutRef.current = window.setTimeout(() => {
+      hiddenAdminTapCountRef.current = 0;
+      hiddenAdminTapTimeoutRef.current = null;
+    }, 2500);
   };
 
   const handleMediaSelection = async (mediaId: string) => {
@@ -572,6 +594,10 @@ export default function App() {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
+    }
+    if (hiddenAdminTapTimeoutRef.current) {
+      window.clearTimeout(hiddenAdminTapTimeoutRef.current);
+      hiddenAdminTapTimeoutRef.current = null;
     }
   }, []);
 
@@ -1116,9 +1142,14 @@ export default function App() {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
             <div className="header-bar">
               <div className="header-brand">
-                <div className="ambient-ring flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12 text-[color:var(--color-accent)] shadow-inner">
+                <button
+                  type="button"
+                  onClick={handleHiddenAdminTrigger}
+                  className="ambient-ring flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12 text-[color:var(--color-accent)] shadow-inner cursor-default"
+                  aria-label="Kafe logosu"
+                >
                   <Coffee className="w-5 h-5" />
-                </div>
+                </button>
 
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
@@ -1153,12 +1184,6 @@ export default function App() {
                   </div>
                 )}
 
-                <button
-                  onClick={() => void handleOpenAdminPanel()}
-                  className="inline-flex items-center justify-center rounded-full border border-transparent px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-cafe-100/62 transition-colors hover:text-cafe-50"
-                >
-                  Admin girişi
-                </button>
                 {isAuthenticated ? (
                   <>
                     <button
