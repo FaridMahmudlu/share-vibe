@@ -1015,22 +1015,6 @@ export default function App() {
 
   const selectedMedia = isAuthenticated && selectedMediaId ? mediaItems.find(m => m.id === selectedMediaId) : null;
   const deferredMediaItems = useDeferredValue(mediaItems);
-  const totalLikes = useMemo(
-    () => mediaItems.reduce((sum, item) => sum + item.likesCount, 0),
-    [mediaItems]
-  );
-  const todayMomentsCount = useMemo(() => {
-    const today = new Date();
-
-    return mediaItems.filter((item) => {
-      const mediaDate = getMediaDate(item.createdAt);
-      if (!mediaDate) {
-        return false;
-      }
-
-      return mediaDate.toDateString() === today.toDateString();
-    }).length;
-  }, [mediaItems]);
   const isGuestPreview = !isAuthenticated;
 
   if (!isAuthResolved || !isGoogleRedirectResolved) {
@@ -1192,23 +1176,6 @@ export default function App() {
                   </a>
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <div className="stat-card">
-                    <span className="stat-label">Toplam Anı</span>
-                    <strong className="stat-value">{mediaItems.length}</strong>
-                    <p className="stat-note">Galeride yer alan tüm fotoğraflar</p>
-                  </div>
-                  <div className="stat-card">
-                    <span className="stat-label">Bugün</span>
-                    <strong className="stat-value">{todayMomentsCount}</strong>
-                    <p className="stat-note">Bugün paylaşılan yeni anlar</p>
-                  </div>
-                  <div className="stat-card">
-                    <span className="stat-label">Toplam Beğeni</span>
-                    <strong className="stat-value">{totalLikes}</strong>
-                    <p className="stat-note">Misafirlerin verdiği toplam beğeni</p>
-                  </div>
-                </div>
               </div>
             </div>
 
