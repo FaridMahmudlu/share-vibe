@@ -533,6 +533,25 @@ export default function App() {
     };
   }, [previewUrl]);
 
+  useEffect(() => {
+    if (!isDesktopCameraOpen || !videoRef.current || !streamRef.current) {
+      return;
+    }
+
+    const videoElement = videoRef.current;
+    videoElement.srcObject = streamRef.current;
+
+    const ensurePlayback = async () => {
+      try {
+        await videoElement.play();
+      } catch (error) {
+        console.error('Desktop camera playback failed:', error);
+      }
+    };
+
+    void ensurePlayback();
+  }, [isDesktopCameraOpen]);
+
   useEffect(() => () => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
@@ -788,7 +807,6 @@ export default function App() {
       stopDesktopCamera();
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
-          facingMode: 'environment',
           width: { ideal: 1920 },
           height: { ideal: 1080 },
         },
@@ -796,9 +814,6 @@ export default function App() {
       });
 
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
       setIsDesktopCameraOpen(true);
     } catch (error) {
       console.error('Desktop camera access failed:', error);
