@@ -1,5 +1,5 @@
 import React, { Suspense, startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { Camera, Upload, Heart, X, Sparkles, MapPin, Clock, Instagram, Twitter, Facebook, Share2, Copy, Check, Trash2, Palette, RefreshCw, RotateCw, Sun, Contrast, ChevronLeft, ChevronRight, Coffee, Settings, ImageOff } from 'lucide-react';
+import { Camera, Upload, Heart, X, Sparkles, MapPin, Clock, Instagram, Twitter, Facebook, Share2, Copy, Check, Trash2, Palette, RotateCw, Sun, Contrast, Coffee, Settings, ImageOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db, auth, storage, waitForAuthInitialization } from './firebase';
 import { collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc, serverTimestamp, arrayUnion, arrayRemove } from 'firebase/firestore';
@@ -62,26 +62,9 @@ const BrokenMediaPlaceholder = ({
   </div>
 );
 
-const CAMERA_FILTERS = [
-  { name: 'Normal', value: 'none' },
-  { name: 'Siyah Beyaz', value: 'grayscale(100%)' },
-  { name: 'Sepya', value: 'sepia(100%)' },
-  { name: 'Canlı', value: 'saturate(200%)' },
-  { name: 'Soğuk', value: 'hue-rotate(180deg)' },
-  { name: 'Nostalji', value: 'contrast(150%) sepia(50%)' },
-  { name: 'Bulanık', value: 'blur(4px)' },
-  { name: 'Negatif', value: 'invert(100%)' },
-  { name: 'Siberpunk', value: 'hue-rotate(270deg) saturate(300%) contrast(150%)' },
-  { name: 'Gün Batımı', value: 'sepia(30%) saturate(150%) hue-rotate(-30deg)' },
-  { name: 'Sinematik', value: 'saturate(120%) contrast(110%) hue-rotate(15deg) brightness(90%)' },
-  { name: 'Dramatik', value: 'contrast(200%) grayscale(20%)' },
-  { name: 'Soluk Film', value: 'contrast(80%) brightness(120%) saturate(80%)' },
-  { name: 'Pop Art', value: 'saturate(400%) contrast(150%)' },
-];
-
 const MAX_WEEKLY_UPLOADS = 2;
-const MAX_UPLOAD_IMAGE_DIMENSION = 2048;
-const MAX_UPLOAD_IMAGE_SIZE = 3_500_000;
+const MAX_UPLOAD_IMAGE_DIMENSION = 4096;
+const MAX_UPLOAD_IMAGE_SIZE = 8_000_000;
 const AdminPanel = React.lazy(() => import('./AdminPanel'));
 
 const EXPERIENCE_HIGHLIGHTS = [
@@ -152,9 +135,6 @@ export default function App() {
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [isCameraOpen, setIsCameraOpen] = useState(false);
-  const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
-  const [activeFilter, setActiveFilter] = useState<string>('none');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [caption, setCaption] = useState('');
   const [currentTable, setCurrentTable] = useState('Masa 12');
@@ -201,25 +181,15 @@ export default function App() {
     return diffMinutes <= 30;
   };
 
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const filterScrollRef = useRef<HTMLDivElement>(null);
+  const rearCameraInputRef = useRef<HTMLInputElement>(null);
+  const frontCameraInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
   const resumedPendingUploadRef = useRef(false);
   const isAuthenticated = Boolean(currentUserUid);
 
   const syncCurrentUser = (user: User | null) => {
     setCurrentUserUid(user?.uid ?? null);
     setCurrentUserEmail(user?.email ?? null);
-  };
-
-  const scrollFilters = (direction: 'left' | 'right') => {
-    if (filterScrollRef.current) {
-      const scrollAmount = filterScrollRef.current.clientWidth / 2;
-      filterScrollRef.current.scrollBy({
-        left: direction === 'left' ? -scrollAmount : scrollAmount,
-        behavior: 'smooth'
-      });
-    }
   };
 
   const discardPendingUpload = async () => {
@@ -234,6 +204,14 @@ export default function App() {
     setFailedMediaIds((current) => (current[id] ? current : { ...current, [id]: true }));
   };
 
+  const clearUploadInputValues = () => {
+    for (const input of [rearCameraInputRef.current, frontCameraInputRef.current, galleryInputRef.current]) {
+      if (input) {
+        input.value = '';
+      }
+    }
+  };
+
   const resetUploadComposer = () => {
     setPreviewUrl(null);
     setSelectedFile(null);
@@ -244,6 +222,7 @@ export default function App() {
     setEditRotation(0);
     setEditBrightness(100);
     setEditContrast(100);
+    clearUploadInputValues();
   };
 
   const ensureGoogleUser = async ({
@@ -562,12 +541,6 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (isCameraOpen && videoRef.current && streamRef.current) {
-      videoRef.current.srcObject = streamRef.current;
-    }
-  }, [isCameraOpen]);
-
-  useEffect(() => {
     let isCancelled = false;
 
     const resolveGoogleRedirect = async () => {
@@ -773,88 +746,47 @@ export default function App() {
     await performUpload(draft, uid);
   };
 
-  const stopCamera = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
+  const openUploadSource = (source: 'environment' | 'user' | 'gallery') => {
+    setUploadError(null);
+    setUploadStatus(null);
+    setUploadProgress(null);
+
+    const targetInput =
+      source === 'environment'
+        ? rearCameraInputRef.current
+        : source === 'user'
+          ? frontCameraInputRef.current
+          : galleryInputRef.current;
+
+    targetInput?.click();
+  };
+
+  const handleSelectedFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+
+    if (!file) {
+      return;
     }
-    setIsCameraOpen(false);
-  };
 
-  const startCamera = async (mode: 'environment' | 'user' = facingMode) => {
-    try {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
-      }
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: mode }
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
-      setIsCameraOpen(true);
-      setFacingMode(mode);
-    } catch (err) {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: true
-        });
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        }
-        setIsCameraOpen(true);
-      } catch (fallbackErr) {
-        console.error("Kamera erişim hatası:", fallbackErr);
-        setUploadError("Kameraya erişilemedi. Lütfen izinleri kontrol edin.");
-      }
+    if (!file.type.startsWith('image/')) {
+      setUploadError('Yalnız fotoğraf yükleyebilirsiniz.');
+      return;
     }
-  };
 
-  const toggleCamera = () => {
-    const newMode = facingMode === 'environment' ? 'user' : 'environment';
-    startCamera(newMode);
-  };
-
-  const capturePhoto = () => {
-    if (videoRef.current) {
-      const canvas = document.createElement('canvas');
-      canvas.width = videoRef.current.videoWidth;
-      canvas.height = videoRef.current.videoHeight;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.filter = activeFilter;
-        if (facingMode === 'user') {
-          ctx.translate(canvas.width, 0);
-          ctx.scale(-1, 1);
-        }
-        ctx.drawImage(videoRef.current, 0, 0);
-        canvas.toBlob((blob) => {
-          if (blob) {
-            const file = new File([blob], `photo_${Date.now()}.jpg`, { type: 'image/jpeg' });
-            setSelectedFile(file);
-            setPreviewUrl(URL.createObjectURL(file));
-            stopCamera();
-            setActiveFilter('none');
-          }
-        }, 'image/jpeg', 0.8);
-      }
-    }
-  };
-
-  const cancelUpload = () => {
-    setIsUploadModalOpen(false);
-    setPreviewUrl(null);
-    setSelectedFile(null);
-    setCaption('');
+    setSelectedFile(file);
+    setPreviewUrl(URL.createObjectURL(file));
     setUploadError(null);
     setUploadStatus(null);
     setUploadProgress(null);
     setEditRotation(0);
     setEditBrightness(100);
     setEditContrast(100);
-    stopCamera();
+  };
+
+  const cancelUpload = () => {
+    setIsUploadModalOpen(false);
+    resetUploadComposer();
   };
 
   const toggleLike = async (id: string, e?: React.MouseEvent) => {
@@ -1497,111 +1429,89 @@ export default function App() {
                 </button>
               </div>
               
-              {!previewUrl && !isCameraOpen ? (
+              <input
+                ref={rearCameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={handleSelectedFileChange}
+              />
+              <input
+                ref={frontCameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="user"
+                className="hidden"
+                onChange={handleSelectedFileChange}
+              />
+              <input
+                ref={galleryInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleSelectedFileChange}
+              />
+
+              {!previewUrl ? (
                 <div className="p-6 sm:p-8 flex flex-col gap-4">
-                  <button
-                    onClick={startCamera}
-                    className="flex items-center justify-center gap-3 w-full py-4 bg-cafe-700 hover:bg-cafe-600 text-cafe-50 rounded-xl transition-colors shadow-lg"
-                  >
-                    <Camera className="w-6 h-6 text-accent" />
-                    <span className="font-medium text-lg">Kamera ile Çek</span>
-                  </button>
-                </div>
-              ) : isCameraOpen ? (
-                <div className="p-4 sm:p-5 flex flex-col items-center gap-4">
-                  <div className="relative w-full rounded-xl overflow-hidden bg-black aspect-[3/4] sm:aspect-video flex items-center justify-center shadow-inner border border-cafe-700">
-                    <video
-                      ref={videoRef}
-                      autoPlay
-                      playsInline
-                      muted
-                      className="w-full h-full object-cover"
-                      style={{ 
-                        filter: activeFilter,
-                        transform: facingMode === 'user' ? 'scaleX(-1)' : 'none'
-                      }}
-                    />
-                    <button
-                      onClick={toggleCamera}
-                      className="absolute top-4 right-4 bg-black/40 hover:bg-black/60 text-white p-2 rounded-full backdrop-blur-md transition-colors"
-                      title="Kamerayı Çevir"
-                    >
-                      <RefreshCw className="w-5 h-5" />
-                    </button>
+                  <div className="rounded-2xl border border-cafe-700 bg-cafe-800/55 p-4 text-sm leading-6 text-cafe-100/70">
+                    Mobil cihazlarda bu seçimler telefonun kendi kamera uygulamasını açar. Böylece cihazın HDR, portre, gece modu ve daha yüksek kaliteli orijinal çekimi kullanılabilir.
                   </div>
-                  
-                  {/* Filters Carousel */}
-                  <div className="relative w-full group/carousel">
-                    {/* Left Scroll Button */}
-                    <button 
-                      onClick={() => scrollFilters('left')}
-                      className="absolute left-0 top-1/2 -translate-y-1/2 z-10 bg-black/50 hover:bg-black/70 text-white p-1.5 rounded-r-xl backdrop-blur-sm opacity-0 group-hover/carousel:opacity-100 transition-opacity disabled:opacity-0 hidden sm:block"
+
+                  <div className="grid gap-3">
+                    <button
+                      onClick={() => openUploadSource('environment')}
+                      className="flex items-center justify-center gap-3 w-full py-4 bg-cafe-700 hover:bg-cafe-600 text-cafe-50 rounded-xl transition-colors shadow-lg"
                     >
-                      <ChevronLeft className="w-5 h-5" />
+                      <Camera className="w-6 h-6 text-accent" />
+                      <span className="font-medium text-lg">Cihaz Kamerası ile Çek</span>
                     </button>
-
-                    <div 
-                      ref={filterScrollRef}
-                      className="w-full overflow-x-auto pb-4 pt-4 scrollbar-hide snap-x flex gap-3 sm:gap-4 px-4 sm:px-8 scroll-smooth"
+                    <button
+                      onClick={() => openUploadSource('user')}
+                      className="flex items-center justify-center gap-3 w-full py-4 border border-cafe-700 bg-cafe-800/70 hover:bg-cafe-700 text-cafe-50 rounded-xl transition-colors"
                     >
-                      {CAMERA_FILTERS.map(filter => (
-                        <button
-                          key={filter.name}
-                          onClick={() => setActiveFilter(filter.value)}
-                          className="flex flex-col items-center gap-2 snap-center group outline-none shrink-0"
-                        >
-                          <div 
-                            className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full overflow-hidden transition-all duration-300 shadow-lg relative ${
-                              activeFilter === filter.value 
-                                ? 'ring-4 ring-accent ring-offset-2 ring-offset-cafe-900 scale-110' 
-                                : 'opacity-70 group-hover:opacity-100 group-hover:scale-105 border-2 border-cafe-700'
-                            }`}
-                          >
-                            <div 
-                              className="absolute inset-0 bg-gradient-to-tr from-pink-500 via-purple-500 to-blue-500"
-                              style={{ filter: filter.value }}
-                            />
-                            {/* Inner ring for professional look */}
-                            <div className="absolute inset-0 rounded-full border border-white/20" />
-                          </div>
-                          <span className={`text-[10px] sm:text-xs font-medium transition-colors ${
-                            activeFilter === filter.value ? 'text-accent font-bold' : 'text-cafe-100/70 group-hover:text-cafe-100'
-                          }`}>
-                            {filter.name}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Right Scroll Button */}
-                    <button 
-                      onClick={() => scrollFilters('right')}
-                      className="absolute right-0 top-1/2 -translate-y-1/2 z-10 bg-black/50 hover:bg-black/70 text-white p-1.5 rounded-l-xl backdrop-blur-sm opacity-0 group-hover/carousel:opacity-100 transition-opacity disabled:opacity-0 hidden sm:block"
+                      <Camera className="w-5 h-5 text-accent" />
+                      <span className="font-medium">Ön Kamera / Selfie</span>
+                    </button>
+                    <button
+                      onClick={() => openUploadSource('gallery')}
+                      className="flex items-center justify-center gap-3 w-full py-4 border border-cafe-700 bg-cafe-800/70 hover:bg-cafe-700 text-cafe-50 rounded-xl transition-colors"
                     >
-                      <ChevronRight className="w-5 h-5" />
+                      <Upload className="w-5 h-5 text-accent" />
+                      <span className="font-medium">Galeriden Seç</span>
                     </button>
                   </div>
 
-                  <div className="flex gap-3 w-full">
-                    <button
-                      onClick={stopCamera}
-                      className="flex-1 px-4 py-3 rounded-xl font-medium text-cafe-100 hover:bg-cafe-700 transition-colors"
-                    >
-                      İptal
-                    </button>
-                    <button
-                      onClick={capturePhoto}
-                      className="flex-1 px-4 py-3 rounded-xl font-medium bg-accent hover:brightness-110 text-cafe-900 shadow-lg shadow-accent/20 transition-colors flex items-center justify-center gap-2"
-                    >
-                      <Camera className="w-5 h-5" />
-                      Kamera ile Çek
-                    </button>
-                  </div>
+                  <p className="text-xs text-center text-cafe-100/55">
+                    Tarayıcı `capture` özelliğini desteklemiyorsa normal dosya seçici açılır.
+                  </p>
                 </div>
               ) : (
                 <>
                   {/* Modal Body (Scrollable) */}
                   <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-5">
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <button
+                    onClick={() => openUploadSource('environment')}
+                    className="rounded-xl border border-cafe-700 bg-cafe-800/65 px-3 py-2.5 text-sm font-medium text-cafe-50 transition-colors hover:bg-cafe-700"
+                  >
+                    Yeniden Çek
+                  </button>
+                  <button
+                    onClick={() => openUploadSource('user')}
+                    className="rounded-xl border border-cafe-700 bg-cafe-800/65 px-3 py-2.5 text-sm font-medium text-cafe-50 transition-colors hover:bg-cafe-700"
+                  >
+                    Selfie Kamera
+                  </button>
+                  <button
+                    onClick={() => openUploadSource('gallery')}
+                    className="rounded-xl border border-cafe-700 bg-cafe-800/65 px-3 py-2.5 text-sm font-medium text-cafe-50 transition-colors hover:bg-cafe-700"
+                  >
+                    Galeriden Değiştir
+                  </button>
+                </div>
+
                 {/* Media Preview Container */}
                 <div className="relative w-full h-48 sm:h-64 rounded-xl overflow-hidden bg-cafe-900 border border-cafe-700 shadow-inner shrink-0 flex items-center justify-center">
                   <img
