@@ -8,16 +8,21 @@ import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
 import { getGoogleSignInErrorMessage, resolveGoogleSignInRedirect, signInWithGoogle } from './googleAuth';
 import { deleteMediaRecord } from './mediaStorage';
 import { clearPendingUpload, getPendingUpload, savePendingUpload, type PendingUploadDraft } from './pendingUpload';
-import DropdownSelect from './DropdownSelect';
+import MainPage from './MainPage';
 import {
+  buildCafePublicLink,
+  DEFAULT_CAFE_SLUG,
   DEFAULT_ACCENT_COLOR,
   DEFAULT_CAFE_NAME,
   DEFAULT_CAMPAIGN_REWARD,
   DEFAULT_CAMPAIGN_TARGET,
+  DEFAULT_DEMO_TABLE,
   DEFAULT_HANDWRITING_FONT,
   DEFAULT_MEDIA_CAPTION,
+  normalizeCafeSlug,
   normalizeHandwritingFont,
   normalizeLegacyText,
+  normalizeTableLabel,
 } from './uiConfig';
 
 type MediaType = 'image';
@@ -32,6 +37,7 @@ type MediaItem = {
   rotation: number;
   date: string;
   tableNumber: string;
+  cafeSlug: string;
   authorUid: string;
   createdAt: any;
 };
@@ -69,29 +75,6 @@ const MAX_UPLOAD_IMAGE_DIMENSION = 4096;
 const MAX_UPLOAD_IMAGE_SIZE = 8_000_000;
 const AdminPanel = React.lazy(() => import('./AdminPanel'));
 
-const TABLE_OPTIONS = [
-  ...Array.from({ length: 20 }, (_, index) => ({
-    value: `Masa ${index + 1}`,
-    label: `Masa ${index + 1}`,
-    hint: 'Paylaşım bu masa altında görünsün',
-  })),
-  {
-    value: 'Bar',
-    label: 'Bar',
-    hint: 'Bar alanındaki paylaşımlar',
-  },
-  {
-    value: 'Bahçe',
-    label: 'Bahçe',
-    hint: 'Açık alan paylaşımları',
-  },
-  {
-    value: 'Teras',
-    label: 'Teras',
-    hint: 'Teras masaları için seçim',
-  },
-];
-
 const getMediaDate = (value: MediaItem['createdAt']) => {
   if (!value) {
     return null;
@@ -114,13 +97,45 @@ const getCampaignProgressCount = (totalUploads: number, campaignTarget: number) 
   return remainder === 0 ? campaignTarget : remainder;
 };
 
+const getInitialQueryParams = () => {
+  if (typeof window === 'undefined') {
+    return new URLSearchParams();
+  }
+
+  return new URLSearchParams(window.location.search);
+};
+
+const getInitialCafeSlug = () =>
+  normalizeCafeSlug(
+    getInitialQueryParams().get('cafe') ?? getInitialQueryParams().get('kafe') ?? DEFAULT_CAFE_SLUG
+  );
+
+const getInitialTableLabel = () =>
+  normalizeTableLabel(
+    getInitialQueryParams().get('table') ?? getInitialQueryParams().get('masa'),
+    ''
+  );
+
+const getInitialView = (): 'landing' | 'app' | 'admin' => {
+  const params = getInitialQueryParams();
+  const requestedScreen = params.get('screen');
+
+  if (requestedScreen === 'app' || params.has('media') || params.has('cafe') || params.has('table') || params.has('masa')) {
+    return 'app';
+  }
+
+  return 'landing';
+};
+
 export default function App() {
-  const [currentView, setCurrentView] = useState<'app' | 'admin'>('app');
+  const [currentView, setCurrentView] = useState<'landing' | 'app' | 'admin'>(getInitialView);
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [accentColor, setAccentColor] = useState(DEFAULT_ACCENT_COLOR);
   const [handwritingFont, setHandwritingFont] = useState(DEFAULT_HANDWRITING_FONT);
   const [cafeName, setCafeName] = useState(DEFAULT_CAFE_NAME);
+  const [activeCafeSlug, setActiveCafeSlug] = useState(getInitialCafeSlug);
+  const [resolvedTableLabel, setResolvedTableLabel] = useState(getInitialTableLabel);
   const [campaignTarget, setCampaignTarget] = useState(DEFAULT_CAMPAIGN_TARGET);
   const [campaignReward, setCampaignReward] = useState(DEFAULT_CAMPAIGN_REWARD);
   const [isSaving, setIsSaving] = useState(false);
@@ -130,7 +145,6 @@ export default function App() {
   const [isDesktopCameraOpen, setIsDesktopCameraOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [caption, setCaption] = useState('');
-  const [currentTable, setCurrentTable] = useState('Masa 12');
   const [selectedMediaId, setSelectedMediaId] = useState<string | null>(null);
   const [shareMediaId, setShareMediaId] = useState<string | null>(null);
   const [mediaToDelete, setMediaToDelete] = useState<string | null>(null);
@@ -158,13 +172,13 @@ export default function App() {
     oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
     
     return mediaItems.filter(item => {
-      if (item.authorUid !== currentUserUid) return false;
+      if (item.authorUid !== currentUserUid || item.cafeSlug !== activeCafeSlug) return false;
       if (!item.createdAt) return true; // If just uploaded and timestamp is pending, count it
       const itemDate = getMediaDate(item.createdAt);
       if (!itemDate) return false;
       return itemDate > oneWeekAgo;
     }).length;
-  }, [mediaItems, currentUserUid]);
+  }, [mediaItems, currentUserUid, activeCafeSlug]);
 
   const isDeletable = (item: MediaItem) => {
     if (!item.createdAt) return true;
@@ -290,6 +304,10 @@ export default function App() {
 
   const handleOpenComposer = async () => {
     setShowSharePrompt(false);
+    setCurrentView('app');
+    setSelectedMediaId(null);
+    setUploadError(null);
+    setUploadStatus(null);
 
     if (auth.currentUser) {
       setIsUploadModalOpen(true);
@@ -312,6 +330,20 @@ export default function App() {
     if (user) {
       setCurrentView('admin');
     }
+  };
+
+  const openCafeExperience = ({
+    cafeSlug = activeCafeSlug,
+    tableLabel = resolvedTableLabel || DEFAULT_DEMO_TABLE,
+  }: {
+    cafeSlug?: string;
+    tableLabel?: string;
+  } = {}) => {
+    setActiveCafeSlug(normalizeCafeSlug(cafeSlug));
+    setResolvedTableLabel(normalizeTableLabel(tableLabel, ''));
+    setCurrentView('app');
+    setSelectedMediaId(null);
+    setShareMediaId(null);
   };
 
   const handleHiddenAdminTrigger = () => {
@@ -346,14 +378,15 @@ export default function App() {
   };
 
   const buildUploadDraft = (): UploadDraft | null => {
-    if (!selectedFile) {
+    if (!selectedFile || !resolvedTableLabel) {
       return null;
     }
 
     return {
       file: selectedFile,
       caption,
-      tableNumber: currentTable,
+      cafeSlug: activeCafeSlug,
+      tableNumber: resolvedTableLabel,
       editRotation,
       editBrightness,
       editContrast,
@@ -365,7 +398,7 @@ export default function App() {
     oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
 
     return mediaItems.filter(item => {
-      if (item.authorUid !== uid) return false;
+      if (item.authorUid !== uid || item.cafeSlug !== activeCafeSlug) return false;
       if (!item.createdAt) return true;
       const itemDate = getMediaDate(item.createdAt);
       if (!itemDate) return false;
@@ -374,11 +407,11 @@ export default function App() {
   };
 
   const countTotalUploadsForUser = (uid: string) =>
-    mediaItems.filter(item => item.authorUid === uid).length;
+    mediaItems.filter(item => item.authorUid === uid && item.cafeSlug === activeCafeSlug).length;
 
   const buildRewardPreviewItems = (uid: string, latestUpload: RewardPreviewItem) =>
     mediaItems
-      .filter((item) => item.authorUid === uid)
+      .filter((item) => item.authorUid === uid && item.cafeSlug === activeCafeSlug)
       .slice(0, Math.max(0, campaignTarget - 1))
       .map((item) => ({
         id: item.id,
@@ -516,6 +549,8 @@ export default function App() {
         rotation: Math.random() * 6 - 3,
         date: timeString,
         tableNumber: draft.tableNumber,
+        cafeSlug: draft.cafeSlug,
+        cafeName,
         authorUid: uid,
         createdAt: serverTimestamp()
       });
@@ -602,7 +637,40 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!isAuthResolved || !isGoogleRedirectResolved || currentView !== 'app') {
+    const url = new URL(window.location.href);
+
+    if (currentView === 'landing') {
+      url.searchParams.delete('screen');
+      url.searchParams.delete('cafe');
+      url.searchParams.delete('table');
+      url.searchParams.delete('masa');
+      url.searchParams.delete('media');
+      window.history.replaceState({}, '', url);
+      return;
+    }
+
+    if (currentView === 'app') {
+      url.searchParams.set('screen', 'app');
+      url.searchParams.set('cafe', activeCafeSlug);
+
+      if (resolvedTableLabel) {
+        url.searchParams.set('table', resolvedTableLabel);
+      } else {
+        url.searchParams.delete('table');
+      }
+
+      if (selectedMediaId) {
+        url.searchParams.set('media', selectedMediaId);
+      } else {
+        url.searchParams.delete('media');
+      }
+
+      window.history.replaceState({}, '', url);
+    }
+  }, [activeCafeSlug, currentView, resolvedTableLabel, selectedMediaId]);
+
+  useEffect(() => {
+    if (!isAuthResolved || !isGoogleRedirectResolved || currentView !== 'app' || !resolvedTableLabel) {
       return;
     }
 
@@ -623,7 +691,7 @@ export default function App() {
     return () => {
       window.clearTimeout(timeout);
     };
-  }, [currentView, isAuthResolved, isGoogleRedirectResolved]);
+  }, [currentView, isAuthResolved, isGoogleRedirectResolved, resolvedTableLabel]);
 
   useEffect(() => {
     if (currentView !== 'app' || !isUploadModalOpen) {
@@ -634,26 +702,37 @@ export default function App() {
   }, [currentView, isUploadModalOpen]);
 
   useEffect(() => {
-    const unsubscribeSettings = onSnapshot(doc(db, 'settings', 'global'), (doc) => {
-      if (doc.exists()) {
-        const data = doc.data();
-        if (typeof data.accentColor === 'string' && data.accentColor) {
-          setAccentColor(data.accentColor);
-        }
-
-        setHandwritingFont(normalizeHandwritingFont(data.handwritingFont));
-        setCafeName(normalizeLegacyText(data.cafeName, DEFAULT_CAFE_NAME));
-
-        if (typeof data.campaignTarget === 'number' && Number.isFinite(data.campaignTarget)) {
-          setCampaignTarget(data.campaignTarget);
-        }
-
-        setCampaignReward(normalizeLegacyText(data.campaignReward, DEFAULT_CAMPAIGN_REWARD));
+    const unsubscribeSettings = onSnapshot(doc(db, 'cafes', activeCafeSlug), (snapshot) => {
+      if (!snapshot.exists()) {
+        setAccentColor(DEFAULT_ACCENT_COLOR);
+        setHandwritingFont(DEFAULT_HANDWRITING_FONT);
+        setCafeName(DEFAULT_CAFE_NAME);
+        setCampaignTarget(DEFAULT_CAMPAIGN_TARGET);
+        setCampaignReward(DEFAULT_CAMPAIGN_REWARD);
+        return;
       }
+
+      const data = snapshot.data();
+      if (typeof data.accentColor === 'string' && data.accentColor) {
+        setAccentColor(data.accentColor);
+      } else {
+        setAccentColor(DEFAULT_ACCENT_COLOR);
+      }
+
+      setHandwritingFont(normalizeHandwritingFont(data.handwritingFont));
+      setCafeName(normalizeLegacyText(data.cafeName, DEFAULT_CAFE_NAME));
+
+      if (typeof data.campaignTarget === 'number' && Number.isFinite(data.campaignTarget)) {
+        setCampaignTarget(data.campaignTarget);
+      } else {
+        setCampaignTarget(DEFAULT_CAMPAIGN_TARGET);
+      }
+
+      setCampaignReward(normalizeLegacyText(data.campaignReward, DEFAULT_CAMPAIGN_REWARD));
     });
 
     return () => unsubscribeSettings();
-  }, []);
+  }, [activeCafeSlug]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -740,7 +819,8 @@ export default function App() {
             : [],
           rotation: typeof data.rotation === 'number' ? data.rotation : 0,
           date: normalizeLegacyText(data.date, '--:--'),
-          tableNumber: normalizeLegacyText(data.tableNumber, 'Masa'),
+          tableNumber: normalizeTableLabel(data.tableNumber, 'Masa'),
+          cafeSlug: normalizeCafeSlug(data.cafeSlug ?? DEFAULT_CAFE_SLUG),
           authorUid: typeof data.authorUid === 'string' ? data.authorUid : '',
           createdAt: data.createdAt
         });
@@ -771,11 +851,13 @@ export default function App() {
     }
 
     resumedPendingUploadRef.current = true;
+    setActiveCafeSlug(normalizeCafeSlug(pendingRedirectUpload.cafeSlug, activeCafeSlug));
+    setResolvedTableLabel(normalizeTableLabel(pendingRedirectUpload.tableNumber, ''));
+    setCurrentView('app');
     setIsUploadModalOpen(true);
     setSelectedFile(pendingRedirectUpload.file);
     setPreviewUrl(URL.createObjectURL(pendingRedirectUpload.file));
     setCaption(pendingRedirectUpload.caption);
-    setCurrentTable(pendingRedirectUpload.tableNumber);
     setEditRotation(pendingRedirectUpload.editRotation);
     setEditBrightness(pendingRedirectUpload.editBrightness);
     setEditContrast(pendingRedirectUpload.editContrast);
@@ -794,41 +876,31 @@ export default function App() {
     currentUserUid,
     mediaItems,
     campaignTarget,
+    activeCafeSlug,
   ]);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const masaParam = params.get('masa');
-    if (masaParam) {
-      setCurrentTable(`Masa ${masaParam}`);
-    }
-  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const mediaParam = params.get('media');
 
-    if (mediaParam && mediaItems.some(item => item.id === mediaParam)) {
+    if (mediaParam && mediaItems.some(item => item.id === mediaParam && item.cafeSlug === activeCafeSlug)) {
       setSelectedMediaId(mediaParam);
     }
-  }, [mediaItems]);
+  }, [activeCafeSlug, mediaItems]);
 
   useEffect(() => {
-    const url = new URL(window.location.href);
-
-    if (selectedMediaId) {
-      url.searchParams.set('media', selectedMediaId);
-    } else {
-      url.searchParams.delete('media');
+    if (selectedMediaId && !mediaItems.some((item) => item.id === selectedMediaId && item.cafeSlug === activeCafeSlug)) {
+      setSelectedMediaId(null);
     }
-
-    window.history.replaceState({}, '', url);
-  }, [selectedMediaId]);
+  }, [activeCafeSlug, mediaItems, selectedMediaId]);
 
   const handleUpload = async () => {
     const draft = buildUploadDraft();
 
     if (!draft) {
+      if (!resolvedTableLabel) {
+        setUploadError('Paylaşım üçün masa QR kodu ilə daxil olmaq lazımdır.');
+      }
       return;
     }
 
@@ -900,6 +972,11 @@ export default function App() {
     setUploadError(null);
     setUploadStatus(null);
     setUploadProgress(null);
+
+    if (!resolvedTableLabel) {
+      setUploadError('Paylaşım üçün masa QR kodu ilə daxil olmaq lazımdır.');
+      return;
+    }
 
     if (isMobileCameraDevice()) {
       cameraInputRef.current?.click();
@@ -1033,15 +1110,22 @@ export default function App() {
   };
 
   const handleCopyLink = async (id: string) => {
-    const url = `${window.location.origin}?media=${id}`;
+    const item = mediaItems.find((entry) => entry.id === id);
+    const url = buildCafePublicLink({
+      origin: window.location.origin,
+      cafeSlug: item?.cafeSlug ?? activeCafeSlug,
+      tableLabel: item?.tableNumber ?? resolvedTableLabel,
+    });
+    const shareUrl = new URL(url);
+    shareUrl.searchParams.set('media', id);
 
     try {
-      await navigator.clipboard.writeText(url);
+      await navigator.clipboard.writeText(shareUrl.toString());
       setIsCopied(true);
       setTimeout(() => setIsCopied(false), 2000);
     } catch (error) {
       console.error('Kopyalama hatası:', error);
-      window.prompt('Bağlantıyı kopyalayın:', url);
+      window.prompt('Bağlantıyı kopyalayın:', shareUrl.toString());
     }
   };
 
@@ -1074,7 +1158,18 @@ export default function App() {
         await navigator.share({
           title: 'Anı',
           text: item.caption || 'Bu harika anıya göz at!',
-          url: `${window.location.origin}?media=${mediaId}`
+          url: (() => {
+            const shareItem = mediaItems.find((entry) => entry.id === mediaId);
+            const shareUrl = new URL(
+              buildCafePublicLink({
+                origin: window.location.origin,
+                cafeSlug: shareItem?.cafeSlug ?? activeCafeSlug,
+                tableLabel: shareItem?.tableNumber ?? resolvedTableLabel,
+              })
+            );
+            shareUrl.searchParams.set('media', mediaId);
+            return shareUrl.toString();
+          })()
         });
       } else {
         // Fallback if Web Share API is not supported
@@ -1087,15 +1182,19 @@ export default function App() {
     }
   };
 
-  const selectedMedia = isAuthenticated && selectedMediaId ? mediaItems.find(m => m.id === selectedMediaId) : null;
-  const deferredMediaItems = useDeferredValue(mediaItems);
+  const cafeMediaItems = useMemo(
+    () => mediaItems.filter((item) => item.cafeSlug === activeCafeSlug),
+    [mediaItems, activeCafeSlug]
+  );
+  const selectedMedia = isAuthenticated && selectedMediaId ? cafeMediaItems.find(m => m.id === selectedMediaId) : null;
+  const deferredMediaItems = useDeferredValue(cafeMediaItems);
   const isGuestPreview = !isAuthenticated;
   const userTotalUploadsCount = currentUserUid ? countTotalUploadsForUser(currentUserUid) : 0;
   const campaignProgressCount = isAuthenticated ? getCampaignProgressCount(userTotalUploadsCount, campaignTarget) : 0;
   const campaignRemainingCount = Math.max(campaignTarget - campaignProgressCount, 0);
   const rewardPreviewItems = rewardCelebration?.items ?? [];
 
-  if (!isAuthResolved || !isGoogleRedirectResolved) {
+  if (currentView !== 'landing' && (!isAuthResolved || !isGoogleRedirectResolved)) {
     return (
       <div className="min-h-screen flex items-center justify-center px-4 text-cafe-50">
         <div className="section-shell max-w-md text-center">
@@ -1128,8 +1227,31 @@ export default function App() {
           </div>
         }
       >
-        <AdminPanel onBack={() => setCurrentView('app')} />
+        <AdminPanel
+          cafeSlug={activeCafeSlug}
+          onCafeSlugChange={setActiveCafeSlug}
+          onBack={() => setCurrentView('app')}
+        />
       </Suspense>
+    );
+  }
+
+  if (currentView === 'landing') {
+    return (
+      <div className="min-h-screen pb-20 font-sans selection:bg-accent/20 relative text-cafe-50">
+        <AnimatedBackground />
+        <div className="relative z-10">
+          <MainPage
+            onOpenExperience={() =>
+              openCafeExperience({
+                cafeSlug: activeCafeSlug,
+                tableLabel: resolvedTableLabel || DEFAULT_DEMO_TABLE,
+              })
+            }
+            onHiddenAdminTrigger={handleHiddenAdminTrigger}
+          />
+        </div>
+      </div>
     );
   }
 
@@ -1598,12 +1720,21 @@ export default function App() {
 
               {!previewUrl && !isDesktopCameraOpen ? (
                 <div className="p-6 sm:p-8 flex flex-col gap-4">
+                  <div className="rounded-xl border border-cafe-700 bg-cafe-900/55 px-4 py-4 text-sm text-cafe-100/72">
+                    <p className="font-semibold text-cafe-50">Kafe: {cafeName}</p>
+                    <p className="mt-1">
+                      {resolvedTableLabel
+                        ? `QR ilə tanınan masa: ${resolvedTableLabel}`
+                        : 'Paylaşım üçün masa QR kodu ilə açılmış link tələb olunur.'}
+                    </p>
+                  </div>
                   <button
                     onClick={openUploadSource}
-                    className="flex items-center justify-center gap-3 w-full py-4 bg-cafe-700 hover:bg-cafe-600 text-cafe-50 rounded-xl transition-colors shadow-lg"
+                    disabled={!resolvedTableLabel}
+                    className="flex items-center justify-center gap-3 w-full py-4 bg-cafe-700 hover:bg-cafe-600 text-cafe-50 rounded-xl transition-colors shadow-lg disabled:cursor-not-allowed disabled:opacity-45"
                   >
                     <Camera className="w-6 h-6 text-accent" />
-                    <span className="font-medium text-lg">Kamera ile Çek</span>
+                    <span className="font-medium text-lg">Kamera ilə Çək</span>
                   </button>
                 </div>
               ) : isDesktopCameraOpen ? (
@@ -1712,17 +1843,13 @@ export default function App() {
                   </div>
                 
                 <div className="space-y-4 shrink-0">
-                  <div className="space-y-2">
-                    <div className="block text-sm font-medium text-cafe-100/70">
-                      Hangi Masadasınız?
+                  <div className="rounded-xl border border-cafe-700 bg-cafe-900/55 px-4 py-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cafe-100/50">QR məlumatı</p>
+                    <div className="mt-2 flex items-center gap-2 text-sm text-cafe-100/72">
+                      <MapPin className="h-4 w-4 text-[color:var(--color-accent)]" />
+                      <span>{resolvedTableLabel || 'Masa tanınmadı'}</span>
                     </div>
-                    <DropdownSelect
-                      value={currentTable}
-                      onChange={setCurrentTable}
-                      options={TABLE_OPTIONS}
-                      ariaLabel="Masa seçimi"
-                      icon={MapPin}
-                    />
+                    <p className="mt-2 text-sm text-cafe-100/60">{cafeName}</p>
                   </div>
 
                   <div className="space-y-2">

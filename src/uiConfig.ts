@@ -77,9 +77,21 @@ export const THEME_PRESETS = [
 export const DEFAULT_ACCENT_COLOR = '#c97a43';
 export const DEFAULT_HANDWRITING_FONT = THEME_FONTS[0].value;
 export const DEFAULT_CAFE_NAME = 'Lumina Konsept Kafe';
+export const DEFAULT_CAFE_SLUG = 'ava-coffee';
+export const DEFAULT_DEMO_TABLE = 'Masa 12';
 export const DEFAULT_CAMPAIGN_TARGET = 4;
 export const DEFAULT_CAMPAIGN_REWARD = 'ücretsiz bir kahve';
 export const DEFAULT_MEDIA_CAPTION = 'İsimsiz anı ✨';
+
+export type CafeSettings = {
+  cafeSlug: string;
+  cafeName: string;
+  accentColor: string;
+  handwritingFont: string;
+  campaignTarget: number;
+  campaignReward: string;
+  ownerEmail?: string;
+};
 
 const LEGACY_TEXT_REPLACEMENTS: Array<[string, string]> = [
   ['İ', 'İ'],
@@ -121,3 +133,67 @@ export const normalizeHandwritingFont = (value: unknown) =>
   typeof value === 'string' && SUPPORTED_HANDWRITING_FONTS.has(value)
     ? value
     : DEFAULT_HANDWRITING_FONT;
+
+export const normalizeCafeSlug = (value: unknown, fallback = DEFAULT_CAFE_SLUG) => {
+  if (typeof value !== 'string') {
+    return fallback;
+  }
+
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  return normalized || fallback;
+};
+
+export const normalizeOptionalCafeSlug = (value: unknown) => {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  return normalizeCafeSlug(value, '');
+};
+
+export const normalizeTableLabel = (value: unknown, fallback = '') => {
+  const normalized = normalizeLegacyText(value, '');
+  if (!normalized) {
+    return fallback;
+  }
+
+  if (/^\d+$/.test(normalized)) {
+    return `Masa ${normalized}`;
+  }
+
+  if (/^(masa|table)\s*\d+$/i.test(normalized)) {
+    const digits = normalized.match(/\d+/)?.[0];
+    return digits ? `Masa ${digits}` : normalized;
+  }
+
+  return normalized;
+};
+
+export const buildCafePublicLink = ({
+  origin,
+  cafeSlug,
+  tableLabel,
+}: {
+  origin: string;
+  cafeSlug: string;
+  tableLabel?: string;
+}) => {
+  const url = new URL(origin);
+  url.searchParams.set('screen', 'app');
+  url.searchParams.set('cafe', normalizeCafeSlug(cafeSlug));
+
+  if (tableLabel) {
+    url.searchParams.set('table', normalizeTableLabel(tableLabel));
+  } else {
+    url.searchParams.delete('table');
+  }
+
+  return url.toString();
+};

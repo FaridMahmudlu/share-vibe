@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { db, auth } from './firebase';
-import { collection, doc, getDoc, onSnapshot, orderBy, query, setDoc } from 'firebase/firestore';
+import { collection, doc, onSnapshot, orderBy, query, setDoc } from 'firebase/firestore';
 import {
   ArrowLeft,
   ArrowUpDown,
@@ -22,23 +22,30 @@ import { signInWithGoogle } from './googleAuth';
 import { deleteMediaRecord } from './mediaStorage';
 import DropdownSelect from './DropdownSelect';
 import {
+  buildCafePublicLink,
   DEFAULT_ACCENT_COLOR,
   DEFAULT_CAFE_NAME,
+  DEFAULT_CAFE_SLUG,
   DEFAULT_CAMPAIGN_REWARD,
   DEFAULT_CAMPAIGN_TARGET,
+  DEFAULT_DEMO_TABLE,
   DEFAULT_HANDWRITING_FONT,
   DEFAULT_MEDIA_CAPTION,
   THEME_COLORS,
   THEME_FONTS,
   THEME_PRESETS,
+  normalizeCafeSlug,
   normalizeHandwritingFont,
   normalizeLegacyText,
+  normalizeOptionalCafeSlug,
+  normalizeTableLabel,
 } from './uiConfig';
 
 type AdminMediaItem = {
   id: string;
   url: string;
   caption: string;
+  cafeSlug: string;
   tableNumber: string;
   date: string;
   likesCount: number;
@@ -84,8 +91,15 @@ const getMediaDate = (value: AdminMediaItem['createdAt']) => {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
-export default function AdminPanel({ onBack }: { onBack: () => void }) {
-  const [isAdmin, setIsAdmin] = useState(false);
+export default function AdminPanel({
+  cafeSlug,
+  onCafeSlugChange,
+  onBack,
+}: {
+  cafeSlug: string;
+  onCafeSlugChange: (slug: string) => void;
+  onBack: () => void;
+}) {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeletingId, setIsDeletingId] = useState<string | null>(null);
@@ -96,31 +110,18 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
   const [tableFilter, setTableFilter] = useState('all');
   const [sortMode, setSortMode] = useState<'newest' | 'likes'>('newest');
   const [activeView, setActiveView] = useState<'dashboard' | 'brand'>('dashboard');
+  const [workspaceSlug, setWorkspaceSlug] = useState(() => normalizeCafeSlug(cafeSlug, DEFAULT_CAFE_SLUG));
+  const [workspaceSlugDraft, setWorkspaceSlugDraft] = useState(() => normalizeCafeSlug(cafeSlug, DEFAULT_CAFE_SLUG));
+  const [workspaceOwnerEmail, setWorkspaceOwnerEmail] = useState<string | null>(null);
 
   const [settings, setSettings] = useState(DEFAULT_ADMIN_SETTINGS);
   const [savedSettings, setSavedSettings] = useState(DEFAULT_ADMIN_SETTINGS);
 
   useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       if (user) {
         setUserEmail(user.email);
-
-        if (user.email && ADMIN_EMAILS.has(user.email)) {
-          setIsAdmin(true);
-          setIsLoading(false);
-          return;
-        }
-
-        try {
-          const userDoc = await getDoc(doc(db, 'users', user.uid));
-          const hasAdminRole = userDoc.exists() && userDoc.data().role === 'admin';
-          setIsAdmin(hasAdminRole);
-        } catch (error) {
-          console.error('Admin role check failed:', error);
-          setIsAdmin(false);
-        }
       } else {
-        setIsAdmin(false);
         setUserEmail(null);
       }
 
@@ -131,17 +132,37 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
   }, []);
 
   useEffect(() => {
-    if (!isAdmin) {
+    const nextSlug = normalizeCafeSlug(cafeSlug, DEFAULT_CAFE_SLUG);
+    setWorkspaceSlug(nextSlug);
+    setWorkspaceSlugDraft(nextSlug);
+  }, [cafeSlug]);
+
+  useEffect(() => {
+    if (!userEmail) {
       setMediaItems([]);
+      setWorkspaceOwnerEmail(null);
       return;
     }
 
-    const unsubscribeSettings = onSnapshot(doc(db, 'settings', 'global'), (snapshot) => {
+    const unsubscribeSettings = onSnapshot(doc(db, 'cafes', workspaceSlug), (snapshot) => {
       if (!snapshot.exists()) {
+        setWorkspaceOwnerEmail(null);
+        const emptySettings = {
+          ...DEFAULT_ADMIN_SETTINGS,
+          cafeName:
+            workspaceSlug
+              .split('-')
+              .filter(Boolean)
+              .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+              .join(' ') || DEFAULT_ADMIN_SETTINGS.cafeName,
+        };
+        setSettings(emptySettings);
+        setSavedSettings(emptySettings);
         return;
       }
 
       const data = snapshot.data();
+      setWorkspaceOwnerEmail(normalizeLegacyText(data.ownerEmail, ''));
       const nextSettings = {
         cafeName: normalizeLegacyText(data.cafeName, DEFAULT_ADMIN_SETTINGS.cafeName),
         accentColor:
@@ -175,7 +196,8 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
             id: entry.id,
             url: typeof data.url === 'string' ? data.url : '',
             caption: normalizeLegacyText(data.caption, DEFAULT_MEDIA_CAPTION),
-            tableNumber: normalizeLegacyText(data.tableNumber, 'Masa'),
+            cafeSlug: normalizeCafeSlug(data.cafeSlug ?? DEFAULT_CAFE_SLUG),
+            tableNumber: normalizeTableLabel(data.tableNumber, 'Masa'),
             date: normalizeLegacyText(data.date, '--:--'),
             likesCount: typeof data.likesCount === 'number' ? data.likesCount : 0,
             createdAt: data.createdAt,
@@ -193,51 +215,55 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
       unsubscribeSettings();
       unsubscribeMedia();
     };
-  }, [isAdmin]);
+  }, [userEmail, workspaceSlug]);
 
+  const workspaceMediaItems = useMemo(
+    () => mediaItems.filter((item) => item.cafeSlug === workspaceSlug),
+    [mediaItems, workspaceSlug]
+  );
   const totalLikes = useMemo(
-    () => mediaItems.reduce((sum, item) => sum + item.likesCount, 0),
-    [mediaItems]
+    () => workspaceMediaItems.reduce((sum, item) => sum + item.likesCount, 0),
+    [workspaceMediaItems]
   );
 
   const todayUploadsCount = useMemo(() => {
     const today = new Date();
 
-    return mediaItems.filter((item) => {
+    return workspaceMediaItems.filter((item) => {
       const itemDate = getMediaDate(item.createdAt);
       return itemDate ? itemDate.toDateString() === today.toDateString() : false;
     }).length;
-  }, [mediaItems]);
+  }, [workspaceMediaItems]);
 
   const uniqueTables = useMemo(
     () =>
       Array.from(
         new Set<string>(
-          mediaItems
+          workspaceMediaItems
             .map((item) => item.tableNumber)
             .filter((value) => value && value.trim().length > 0)
         )
       ).sort((left, right) => left.localeCompare(right, 'tr')),
-    [mediaItems]
+    [workspaceMediaItems]
   );
 
   const topTable = useMemo(() => {
-    if (mediaItems.length === 0) {
+    if (workspaceMediaItems.length === 0) {
       return null;
     }
 
     const counters = new Map<string, number>();
-    for (const item of mediaItems) {
+    for (const item of workspaceMediaItems) {
       counters.set(item.tableNumber, (counters.get(item.tableNumber) ?? 0) + 1);
     }
 
     return Array.from(counters.entries()).sort((left, right) => right[1] - left[1])[0] ?? null;
-  }, [mediaItems]);
+  }, [workspaceMediaItems]);
 
   const filteredMediaItems = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLocaleLowerCase('tr');
 
-    return [...mediaItems]
+    return [...workspaceMediaItems]
       .filter((item) => tableFilter === 'all' || item.tableNumber === tableFilter)
       .filter((item) => {
         if (!normalizedSearch) {
@@ -256,7 +282,7 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
         const rightDate = getMediaDate(right.createdAt)?.getTime() ?? 0;
         return rightDate - leftDate;
       });
-  }, [mediaItems, searchTerm, sortMode, tableFilter]);
+  }, [workspaceMediaItems, searchTerm, sortMode, tableFilter]);
 
   const tableOptions = useMemo(
     () => [
@@ -284,6 +310,22 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
     [savedSettings, settings]
   );
   const isBrandView = activeView === 'brand';
+  const isSuperAdmin = Boolean(userEmail && ADMIN_EMAILS.has(userEmail));
+  const canManageWorkspace =
+    Boolean(userEmail) && (!workspaceOwnerEmail || workspaceOwnerEmail === userEmail || isSuperAdmin);
+  const publicGalleryLink = useMemo(
+    () => buildCafePublicLink({ origin: window.location.origin, cafeSlug: workspaceSlug }),
+    [workspaceSlug]
+  );
+  const publicQrExampleLink = useMemo(
+    () =>
+      buildCafePublicLink({
+        origin: window.location.origin,
+        cafeSlug: workspaceSlug,
+        tableLabel: DEFAULT_DEMO_TABLE,
+      }),
+    [workspaceSlug]
+  );
 
   const handleLogin = async () => {
     try {
@@ -297,6 +339,15 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
     await signOut(auth);
   };
 
+  const applyWorkspaceSlug = () => {
+    const nextSlug = normalizeOptionalCafeSlug(workspaceSlugDraft) || DEFAULT_CAFE_SLUG;
+    setWorkspaceSlug(nextSlug);
+    setWorkspaceSlugDraft(nextSlug);
+    onCafeSlugChange(nextSlug);
+    setActiveView('brand');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const openBrandView = () => {
     setActiveView('brand');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -308,17 +359,30 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
   };
 
   const handleSave = async () => {
+    if (!userEmail) {
+      return;
+    }
+
+    if (!canManageWorkspace) {
+      alert('Bu kafe alanı başqa bir hesaba aittir.');
+      return;
+    }
+
     setIsSaving(true);
 
     try {
-      await setDoc(doc(db, 'settings', 'global'), {
+      await setDoc(doc(db, 'cafes', workspaceSlug), {
         ...settings,
+        cafeSlug: workspaceSlug,
         cafeName: normalizeLegacyText(settings.cafeName, DEFAULT_CAFE_NAME),
         accentColor: settings.accentColor || DEFAULT_ACCENT_COLOR,
         handwritingFont: normalizeHandwritingFont(settings.handwritingFont),
         campaignTarget: Math.max(1, settings.campaignTarget),
         campaignReward: normalizeLegacyText(settings.campaignReward, DEFAULT_CAMPAIGN_REWARD),
+        ownerEmail: workspaceOwnerEmail || userEmail,
       });
+      onCafeSlugChange(workspaceSlug);
+      setWorkspaceOwnerEmail(workspaceOwnerEmail || userEmail);
       alert('Ayarlar başarıyla kaydedildi.');
     } catch (error) {
       console.error('Error saving settings:', error);
@@ -363,7 +427,7 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
     );
   }
 
-  if (!isAdmin) {
+  if (!userEmail) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4 text-cafe-50">
         <div className="section-shell max-w-md w-full text-center">
@@ -373,29 +437,15 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
           <span className="section-pill">Yönetim Erişimi</span>
           <h1 className="mt-4 text-3xl font-semibold text-cafe-50">Admin Paneli</h1>
           <p className="mt-3 text-sm leading-7 text-cafe-100/72">
-            Bu alana yalnızca yetkili kafe yöneticileri erişebilir. Google hesabınızla giriş yaparak yetkiniz doğrulanır.
+            Kafe ayarlarını qurmaq üçün Google hesabı ilə giriş et. Giriş etdikdən sonra öz kafe iş sahəni yarada və idarə edə biləcəksən.
           </p>
 
-          {userEmail ? (
-            <div className="mt-6 space-y-4">
-              <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-                <strong className="font-semibold">{userEmail}</strong> hesabının admin yetkisi bulunmuyor.
-              </div>
-              <button
-                onClick={handleLogout}
-                className="w-full rounded-2xl border border-cafe-700/80 bg-white/80 px-4 py-3 font-medium text-cafe-50 transition-colors hover:border-accent/40"
-              >
-                Farklı hesapla giriş yap
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={handleLogin}
-              className="mt-6 w-full rounded-2xl bg-[color:var(--color-accent)] px-4 py-3 font-semibold text-white shadow-[0_20px_40px_rgba(0,0,0,0.12)] transition-transform hover:-translate-y-0.5"
-            >
-              Google ile giriş yap
-            </button>
-          )}
+          <button
+            onClick={handleLogin}
+            className="mt-6 w-full rounded-2xl bg-[color:var(--color-accent)] px-4 py-3 font-semibold text-white shadow-[0_20px_40px_rgba(0,0,0,0.12)] transition-transform hover:-translate-y-0.5"
+          >
+            Google ile giriş yap
+          </button>
 
           <button
             onClick={onBack}
@@ -441,7 +491,7 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
             </button>
             <button
               onClick={handleSave}
-              disabled={isSaving || !settingsDirty}
+              disabled={isSaving || !settingsDirty || !canManageWorkspace}
               className="inline-flex items-center gap-2 rounded-full bg-[color:var(--color-accent)] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_18px_36px_rgba(0,0,0,0.12)] transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Save className="w-4 h-4" />
@@ -452,6 +502,66 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-10 space-y-6">
+        <section className="section-shell space-y-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <span className="section-pill">Kafe İş Sahəsi</span>
+              <h2 className="mt-3 text-2xl font-semibold text-cafe-50">Çoxlu kafe üçün ayrıca workspace</h2>
+              <p className="mt-2 max-w-3xl text-sm leading-7 text-cafe-100/72">
+                Hər kafe öz kodu ilə ayrılır. Public qalereya, QR linkləri, paylaşımlar və dizayn ayarları bu koda görə ayrıca işləyir.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-cafe-700/75 bg-white/78 px-4 py-3 text-sm text-cafe-100/70">
+              Aktiv kod: <strong className="text-cafe-50">{workspaceSlug}</strong>
+            </div>
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr),minmax(340px,0.9fr)]">
+            <div className="glass-card space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-cafe-100/70 mb-2">Kafe kodu</label>
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <input
+                    type="text"
+                    value={workspaceSlugDraft}
+                    onChange={(event) => setWorkspaceSlugDraft(normalizeOptionalCafeSlug(event.target.value))}
+                    placeholder="örn: ava-coffee"
+                    className="w-full rounded-2xl border border-cafe-700/80 bg-white/80 px-4 py-3 text-cafe-50 outline-none transition-colors focus:border-accent/60"
+                  />
+                  <button
+                    type="button"
+                    onClick={applyWorkspaceSlug}
+                    className="inline-flex items-center justify-center rounded-2xl bg-[color:var(--color-accent)] px-5 py-3 font-semibold text-white shadow-[0_18px_36px_rgba(0,0,0,0.12)] transition-transform hover:-translate-y-0.5"
+                  >
+                    Aç
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-cafe-700/70 bg-cafe-900/45 px-4 py-3 text-sm text-cafe-100/68">
+                Bu kodu dəyişib yeni kafe workspace aça bilərsən. Eyni sistemdə istədiyin sayda kafe ayrı-ayrı idarə olunur.
+              </div>
+
+              {!canManageWorkspace && workspaceOwnerEmail && (
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+                  Bu workspace <strong>{workspaceOwnerEmail}</strong> hesabına bağlıdır. Yalnız sahibi və ya super admin dəyişiklik edə bilər.
+                </div>
+              )}
+            </div>
+
+            <div className="glass-card space-y-3">
+              <div>
+                <p className="text-sm font-semibold text-cafe-50">Public qalereya linki</p>
+                <p className="mt-1 break-all text-sm text-cafe-100/68">{publicGalleryLink}</p>
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-cafe-50">QR üçün örnək masa linki</p>
+                <p className="mt-1 break-all text-sm text-cafe-100/68">{publicQrExampleLink}</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
         {isBrandView ? (
           <section className="section-shell space-y-6">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -571,7 +681,7 @@ export default function AdminPanel({ onBack }: { onBack: () => void }) {
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <div className="stat-card">
               <span className="stat-label">Toplam Paylaşım</span>
-              <strong className="stat-value">{mediaItems.length}</strong>
+              <strong className="stat-value">{workspaceMediaItems.length}</strong>
               <p className="stat-note">Galeride yer alan tüm fotoğraflar</p>
             </div>
             <div className="stat-card">

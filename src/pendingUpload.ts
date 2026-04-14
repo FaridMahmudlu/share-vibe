@@ -6,6 +6,7 @@ const MAX_PENDING_UPLOAD_AGE_MS = 30 * 60 * 1000;
 export type PendingUploadDraft = {
   file: File;
   caption: string;
+  cafeSlug: string;
   tableNumber: string;
   editRotation: number;
   editBrightness: number;
@@ -15,6 +16,7 @@ export type PendingUploadDraft = {
 type PendingUploadRecord = {
   key: typeof PENDING_UPLOAD_KEY;
   caption: string;
+  cafeSlug: string;
   tableNumber: string;
   editRotation: number;
   editBrightness: number;
@@ -55,6 +57,7 @@ export const savePendingUpload = async (draft: PendingUploadDraft) => {
     const record: PendingUploadRecord = {
       key: PENDING_UPLOAD_KEY,
       caption: draft.caption,
+      cafeSlug: draft.cafeSlug,
       tableNumber: draft.tableNumber,
       editRotation: draft.editRotation,
       editBrightness: draft.editBrightness,
@@ -132,6 +135,7 @@ export const getPendingUpload = async (): Promise<PendingUploadDraft | null> => 
   return {
     file,
     caption: record.caption,
+    cafeSlug: record.cafeSlug,
     tableNumber: record.tableNumber,
     editRotation: record.editRotation,
     editBrightness: record.editBrightness,
