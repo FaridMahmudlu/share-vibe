@@ -331,6 +331,18 @@ export default function App() {
     }
   };
 
+  const handleSwitchOwnerAccount = async () => {
+    try {
+      await signOut(auth);
+      syncCurrentUser(null);
+      setOwnerAccessError(null);
+    } catch (error) {
+      console.error('Owner account switch logout error:', error);
+    }
+
+    await handleOpenOwnerPortal();
+  };
+
   const handleOpenComposer = async () => {
     setShowSharePrompt(false);
     setCurrentView('app');
@@ -1408,6 +1420,7 @@ export default function App() {
               })
             }
             onOpenOwnerPortal={() => void handleOpenOwnerPortal()}
+            onSwitchOwnerAccount={() => void handleSwitchOwnerAccount()}
             onHiddenAdminTrigger={handleHiddenAdminTrigger}
             ownerEmail={currentUserEmail}
             ownerAccessError={ownerAccessError}

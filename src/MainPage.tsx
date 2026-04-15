@@ -3,6 +3,7 @@ import { ArrowRight, Camera, Coffee, Palette, QrCode, ShieldCheck, Sparkles, Sto
 type MainPageProps = {
   onOpenExperience: () => void;
   onOpenOwnerPortal: () => void;
+  onSwitchOwnerAccount: () => void;
   onHiddenAdminTrigger: () => void;
   ownerEmail: string | null;
   ownerAccessError: string | null;
@@ -36,6 +37,7 @@ const STEP_ITEMS = [
 export default function MainPage({
   onOpenExperience,
   onOpenOwnerPortal,
+  onSwitchOwnerAccount,
   onHiddenAdminTrigger,
   ownerEmail,
   ownerAccessError,
@@ -163,6 +165,16 @@ export default function MainPage({
                     <div className="mt-4 rounded-[1.4rem] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
                       {ownerAccessError}
                     </div>
+                  )}
+
+                  {ownerEmail && !hasOwnerAccess && (
+                    <button
+                      type="button"
+                      onClick={onSwitchOwnerAccount}
+                      className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full border border-cafe-700/75 bg-white/82 px-5 py-3 text-sm font-semibold text-cafe-50 transition-colors hover:border-accent/45"
+                    >
+                      Başka hesapla giriş yap
+                    </button>
                   )}
 
                   <button

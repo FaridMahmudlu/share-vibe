@@ -43,12 +43,25 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == resource.data.authorUid;
     }
 
+    function hasPrivilegedEmail() {
+      return isAuthenticated() &&
+        request.auth.token.email_verified == true &&
+        (
+          request.auth.token.email == "fariddmahmudlu2008@gmail.com" ||
+          request.auth.token.email == "aslankerem182@gmail.com"
+        );
+    }
+
     function isAdmin() {
       return isAuthenticated() &&
         (
           (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
-          ((request.auth.token.email == "fariddmahmudlu2008@gmail.com" || request.auth.token.email == "aslankerem182@gmail.com") && request.auth.token.email_verified == true)
+          hasPrivilegedEmail()
         );
+    }
+
+    function isOwnerPortalAccount() {
+      return hasPrivilegedEmail();
     }
     
     function isValidUrl(url) {
@@ -64,8 +77,8 @@ service cloud.firestore {
     }
     
     function isValidMediaItem(data) {
-      return hasRequiredFields(['url', 'type', 'caption', 'likedBy', 'likesCount', 'rotation', 'date', 'tableNumber', 'authorUid', 'createdAt']) &&
-             hasOnlyAllowedFields(['url', 'type', 'caption', 'likedBy', 'likesCount', 'rotation', 'date', 'tableNumber', 'authorUid', 'createdAt']) &&
+      return hasRequiredFields(['url', 'type', 'caption', 'likedBy', 'likesCount', 'rotation', 'date', 'tableNumber', 'cafeSlug', 'cafeName', 'authorUid', 'createdAt']) &&
+             hasOnlyAllowedFields(['url', 'type', 'caption', 'likedBy', 'likesCount', 'rotation', 'date', 'tableNumber', 'cafeSlug', 'cafeName', 'authorUid', 'createdAt']) &&
              isValidUrl(data.url) &&
              data.type == 'image' &&
              data.caption is string && data.caption.size() <= 100 &&
@@ -73,9 +86,23 @@ service cloud.firestore {
              data.likesCount is number && data.likesCount >= 0 &&
              data.rotation is number &&
              data.date is string && data.date.size() <= 20 &&
-             data.tableNumber is string && data.tableNumber.size() <= 20 &&
+             data.tableNumber is string && data.tableNumber.size() <= 40 &&
+             data.cafeSlug is string && data.cafeSlug.size() <= 80 &&
+             data.cafeName is string && data.cafeName.size() <= 120 &&
              data.authorUid is string && data.authorUid == request.auth.uid &&
              data.createdAt is timestamp;
+    }
+
+    function isValidCafeSettings(data, cafeId) {
+      return data.keys().hasAll(['cafeSlug', 'cafeName', 'accentColor', 'handwritingFont', 'campaignTarget', 'campaignReward', 'ownerEmail']) &&
+             data.keys().hasOnly(['cafeSlug', 'cafeName', 'accentColor', 'handwritingFont', 'campaignTarget', 'campaignReward', 'ownerEmail']) &&
+             data.cafeSlug is string && data.cafeSlug == cafeId && data.cafeSlug.size() <= 80 &&
+             data.cafeName is string && data.cafeName.size() <= 120 &&
+             data.accentColor is string && data.accentColor.matches("^#[0-9A-Fa-f]{6}$") &&
+             data.handwritingFont is string && data.handwritingFont.size() <= 120 &&
+             data.campaignTarget is number && data.campaignTarget >= 1 && data.campaignTarget <= 20 &&
+             data.campaignReward is string && data.campaignReward.size() <= 120 &&
+             data.ownerEmail is string && data.ownerEmail.size() <= 160;
     }
 
     function isLikeToggle() {
@@ -111,6 +138,28 @@ service cloud.firestore {
       
       // Only the owner or admin can delete
       allow delete: if isOwner() || isAdmin();
+    }
+
+    match /cafes/{cafeId} {
+      allow read: if true;
+
+      allow create: if
+        isOwnerPortalAccount() &&
+        isValidCafeSettings(request.resource.data, cafeId) &&
+        request.resource.data.ownerEmail == request.auth.token.email;
+
+      allow update: if
+        isValidCafeSettings(request.resource.data, cafeId) &&
+        (
+          isAdmin() ||
+          (
+            isOwnerPortalAccount() &&
+            resource.data.ownerEmail == request.auth.token.email &&
+            request.resource.data.ownerEmail == resource.data.ownerEmail
+          )
+        );
+
+      allow delete: if isAdmin();
     }
 
     match /settings/{document=**} {

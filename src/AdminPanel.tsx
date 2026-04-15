@@ -95,6 +95,11 @@ const getMediaDate = (value: AdminMediaItem['createdAt']) => {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
+const getErrorCode = (error: unknown) =>
+  typeof error === 'object' && error !== null && 'code' in error
+    ? String(error.code)
+    : '';
+
 export default function AdminPanel({
   cafeSlug,
   onCafeSlugChange,
@@ -422,6 +427,20 @@ export default function AdminPanel({
     await signOut(auth);
   };
 
+  const handleSwitchAccount = async () => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error('Account switch logout error:', error);
+    }
+
+    try {
+      await signInWithGoogle();
+    } catch (error) {
+      console.error('Account switch login error:', error);
+    }
+  };
+
   const applyWorkspaceSlug = () => {
     const nextSlug = effectiveWorkspaceSlug;
     setWorkspaceSlug(nextSlug);
@@ -495,7 +514,11 @@ export default function AdminPanel({
       return nextWorkspaceSlug;
     } catch (error) {
       console.error('Error saving settings:', error);
-      alert('Ayarlar kaydedilirken bir hata oluştu.');
+      alert(
+        getErrorCode(error) === 'permission-denied'
+          ? 'Kaydetme izni reddedildi. Firestore kuralları kafe sahiplerinin `cafes` koleksiyonuna yazmasına izin vermelidir.'
+          : 'Ayarlar kaydedilirken bir hata oluştu.'
+      );
       return null;
     } finally {
       setIsSaving(false);
@@ -589,10 +612,16 @@ export default function AdminPanel({
             Giriş yapan hesap: <strong className="text-cafe-50">{userEmail}</strong>
           </div>
           <button
-            onClick={handleLogout}
+            onClick={handleSwitchAccount}
             className="mt-6 w-full rounded-2xl bg-[color:var(--color-accent)] px-4 py-3 font-semibold text-white shadow-[0_20px_40px_rgba(0,0,0,0.12)] transition-transform hover:-translate-y-0.5"
           >
             Farklı hesapla tekrar giriş yap
+          </button>
+          <button
+            onClick={handleLogout}
+            className="mt-3 w-full rounded-2xl border border-cafe-700/80 bg-white/80 px-4 py-3 font-semibold text-cafe-50 transition-colors hover:border-accent/30"
+          >
+            Sadece çıkış yap
           </button>
           <button
             onClick={onBack}
