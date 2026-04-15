@@ -474,12 +474,31 @@ export default function AdminPanel({
       return null;
     }
 
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      alert('Google oturumu bulunamadı. Lütfen tekrar giriş yapın.');
+      return null;
+    }
+
     const nextWorkspaceSlug = effectiveWorkspaceSlug;
     let targetOwnerEmail = workspaceOwnerEmail;
 
     setIsSaving(true);
 
     try {
+      const tokenResult = await currentUser.getIdTokenResult(true);
+      const authenticatedEmail = normalizeAccessEmail(tokenResult.claims.email ?? currentUser.email ?? userEmail);
+
+      if (!authenticatedEmail) {
+        alert('Google hesabı doğrulanamadı. Lütfen tekrar giriş yapın.');
+        return null;
+      }
+
+      if (tokenResult.claims.email_verified !== true) {
+        alert('Google hesabınız doğrulanmış görünmüyor. Lütfen doğrulanmış hesapla tekrar giriş yapın.');
+        return null;
+      }
+
       if (nextWorkspaceSlug !== workspaceSlug) {
         const targetSnapshot = await getDoc(doc(db, 'cafes', nextWorkspaceSlug));
         targetOwnerEmail = targetSnapshot.exists()
@@ -489,7 +508,7 @@ export default function AdminPanel({
 
       if (
         targetOwnerEmail &&
-        normalizeAccessEmail(targetOwnerEmail) !== normalizeAccessEmail(userEmail) &&
+        normalizeAccessEmail(targetOwnerEmail) !== authenticatedEmail &&
         !isSuperAdmin
       ) {
         alert('Bu kafe alanı başka bir hesaba aittir.');
@@ -504,12 +523,12 @@ export default function AdminPanel({
         handwritingFont: normalizeHandwritingFont(settings.handwritingFont),
         campaignTarget: Math.max(1, settings.campaignTarget),
         campaignReward: normalizeLegacyText(settings.campaignReward, DEFAULT_CAMPAIGN_REWARD),
-        ownerEmail: normalizeAccessEmail(targetOwnerEmail || userEmail),
+        ownerEmail: normalizeAccessEmail(targetOwnerEmail || authenticatedEmail),
       });
       setWorkspaceSlug(nextWorkspaceSlug);
       setWorkspaceSlugDraft(nextWorkspaceSlug);
       onCafeSlugChange(nextWorkspaceSlug);
-      setWorkspaceOwnerEmail(normalizeAccessEmail(targetOwnerEmail || userEmail));
+      setWorkspaceOwnerEmail(normalizeAccessEmail(targetOwnerEmail || authenticatedEmail));
       alert(isOwnerPortal ? 'Kafe ortamı başarıyla oluşturuldu.' : 'Ayarlar başarıyla kaydedildi.');
       return nextWorkspaceSlug;
     } catch (error) {

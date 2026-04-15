@@ -1,45 +1,176 @@
-# Kafe Ani
+# Share Vibe
 
-Firebase tabanli React/Vite uygulamasidir. Musteriler ani paylasabilir, icerikleri begenebilir ve yoneticiler tema ile kampanya ayarlarini yonetebilir.
+Share Vibe, kafeler için tasarlanmış QR tabanlı bir paylaşım ve kampanya deneyimidir. Misafirler masa üzerindeki QR kodu okutarak doğrudan ilgili kafenin akışına girer, fotoğraf paylaşır, içerikleri beğenir ve kampanya akışına katılır. Kafe sahipleri ise kendi çalışma alanlarından marka görünümünü, kampanya kurgusunu ve medya akışını yönetir.
 
-## Yerelde Calistirma
+Proje React ve Vite üzerinde çalışır; kimlik doğrulama, veritabanı, depolama ve yetkilendirme katmanında Firebase kullanır. Uygulama çoklu kafe yapısına göre tasarlanmıştır; her kafe kendi `cafeSlug` değeri üzerinden ayrışır ve kendi galerisi, QR akışı, tema ayarları ile kampanya kurgusuna sahip olur.
 
-Gereksinimler:
+## Öne Çıkan Yetenekler
+
+- QR ile masa tanıma: Misafir bağlantıya masa ve kafe bilgisiyle girer, doğru akış otomatik açılır.
+- Çoklu kafe desteği: Tek uygulama içinde birden fazla kafe için ayrı çalışma alanı oluşturulabilir.
+- Kafe sahibi paneli: Kafe adı, vurgu rengi, el yazısı stili ve kampanya ayarları panel üzerinden yönetilir.
+- Medya akışı: Fotoğraf yükleme, beğeni, paylaşım ve içerik yönetimi Firebase üzerinden çalışır.
+- Kampanya kurgusu: Belirli paylaşım sayısına ulaşıldığında ödül deneyimi ve teşvik mesajı gösterilir.
+- Google ile giriş: Yönetici ve kafe sahibi erişimi Google Authentication ile sınırlandırılmıştır.
+- Güvenli Firestore kurgusu: Yazma izinleri Firestore Rules ile denetlenir; named Firestore database hedefi deploy sırasında otomatik seçilir.
+
+## Kullanıcı Akışları
+
+### Misafir Akışı
+
+1. Misafir masa üzerindeki QR kodu açar.
+2. Uygulama ilgili `cafe` ve `table` bilgisini URL üzerinden çözer.
+3. Misafir fotoğraf yükler, açıklama ekler ve paylaşımını tamamlar.
+4. Diğer içerikleri beğenebilir ve sosyal paylaşım bağlantılarını kullanabilir.
+5. Kampanya hedefi tamamlandığında ödül akışı gösterilir.
+
+### Kafe Sahibi Akışı
+
+1. Tanımlı Google hesabı ile giriş yapılır.
+2. Yeni bir kafe çalışma alanı oluşturulur veya mevcut çalışma alanı seçilir.
+3. Kafe adı, renk, tipografi ve kampanya ayarları kaydedilir.
+4. Uygulama ilgili `cafes/{cafeSlug}` kaydını oluşturarak bağımsız kafe ortamını hazırlar.
+5. Genel galeri bağlantısı ve örnek masa QR bağlantısı panel üzerinden alınır.
+
+### Yönetici Akışı
+
+1. Yetkili hesap ile giriş yapılır.
+2. Tüm medya akışı filtrelenir, sıralanır ve gerektiğinde silinir.
+3. Marka ve kampanya ayarları merkezi olarak güncellenir.
+4. Çoklu kafe yapısı içinde farklı çalışma alanları arasında geçiş yapılır.
+
+## Teknoloji Yığını
+
+- Arayüz: React 19, TypeScript, Vite
+- Stil: Tailwind tabanlı yapı ve proje özel CSS katmanı
+- Animasyon: Motion
+- Kimlik doğrulama: Firebase Authentication
+- Veritabanı: Cloud Firestore
+- Dosya depolama: Firebase Storage
+- İkonlar: Lucide React
+
+## Proje Yapısı
+
+Temel dosyalar ve sorumlulukları:
+
+- [src/App.tsx](./src/App.tsx): Misafir deneyimi, galeri akışı, yükleme modalı, paylaşım ve kampanya görünümü.
+- [src/MainPage.tsx](./src/MainPage.tsx): Ana sayfa ve ürün tanıtım akışı.
+- [src/AdminPanel.tsx](./src/AdminPanel.tsx): Yönetici ve kafe sahibi paneli.
+- [src/accessConfig.ts](./src/accessConfig.ts): Uygulama tarafındaki erişim kontrol yardımcıları.
+- [access-emails.mjs](./access-emails.mjs): Kafe sahibi ve süper yönetici e-posta listelerinin tek kaynak dosyası.
+- [src/googleAuth.ts](./src/googleAuth.ts): Google giriş akışı ve hata mesajları.
+- [src/firebase.ts](./src/firebase.ts): Firebase başlatma ve servis bağlantıları.
+- [firestore.rules.template](./firestore.rules.template): Firestore kurallarının şablonu.
+- [scripts/generate-firestore-rules.mjs](./scripts/generate-firestore-rules.mjs): E-posta listelerinden güncel `firestore.rules` dosyasını üretir.
+- [scripts/firebase-deploy.mjs](./scripts/firebase-deploy.mjs): Doğru Firestore database hedefini seçerek deploy komutunu çalıştırır.
+
+## Yerel Geliştirme
+
+### Gereksinimler
 
 - Node.js 20+
-- Yapilandirilmis Firebase projesine internet erisimi
+- Firebase projesine erişim
+- Google Authentication ve Firestore kuralları için yetkili proje yapılandırması
 
-Adimlar:
+### Kurulum
 
-1. Bagimliliklari kurun:
+1. Bağımlılıkları kurun:
    `npm install`
-2. Gelistirme sunucusunu baslatin:
+2. Geliştirme sunucusunu başlatın:
    `npm run dev`
-3. Uygulamayi su adresten acin:
+3. Uygulamayı şu adreste açın:
    `http://localhost:3000`
 
-## Kontroller
+### Kontrol Komutları
 
-- Prod build:
-  `npm run build`
-- TypeScript kontrolu:
+- Tip kontrolü:
   `npm run lint`
-
-## Firebase Deploy
-
-- Hosting ve Firestore deploy yapilandirmasi repo icinde tutulur:
-  [`firebase.json`](./firebase.json)
-  [`firestore.rules`](./firestore.rules)
-  [`firestore.indexes.json`](./firestore.indexes.json)
-  [`.firebaserc`](./.firebaserc)
-- Canli deploy oncesi bir kez Firebase CLI login gerekir:
-  `firebase login`
-- Ardindan canli deploy:
+- Production build:
   `npm run build`
-  `firebase deploy --only "hosting,firestore:rules" --project gen-lang-client-0200945474`
+- Firestore kurallarını üretmek:
+  `npm run generate:rules`
 
-## Notlar
+## NPM Scriptleri
 
-- Firebase web yapilandirmasi [`firebase-applet-config.json`](./firebase-applet-config.json) icinde tutulur.
-- Uygulama yalnizca Google ile giris kullanir; anonim giris kaldirilmistir.
-- Admin yetkileri Firestore kurallari ve [`src/AdminPanel.tsx`](./src/AdminPanel.tsx) icinden kontrol edilir.
+- `npm run dev`: Yerel geliştirme sunucusunu `localhost:3000` üzerinde başlatır.
+- `npm run build`: Production build üretir.
+- `npm run preview`: Build çıktısını önizleme modunda açar.
+- `npm run clean`: `dist` klasörünü temizler.
+- `npm run lint`: TypeScript tip kontrolü yapar.
+- `npm run generate:rules`: `access-emails.mjs` ve `firestore.rules.template` üzerinden güncel Firestore kural dosyasını üretir.
+- `npm run deploy:hosting`: Sadece Firebase Hosting tarafını deploy eder.
+- `npm run deploy:rules`: Named Firestore database için kurallar ve indeksleri deploy eder.
+- `npm run deploy:prod`: Build alır, ardından hosting ve named Firestore deploy işlemini birlikte çalıştırır.
+
+## Firebase Yapılandırması
+
+Bu repo, Firebase web yapılandırmasını ayrı `.env` değişkenlerine taşımadan doğrudan dosya üzerinden kullanır:
+
+- [firebase-applet-config.json](./firebase-applet-config.json)
+
+Bu dosya aşağıdaki kritik bilgileri içerir:
+
+- Firebase proje kimliği
+- Web app yapılandırması
+- Firestore database kimliği
+- Storage bucket bilgisi
+
+Projede named Firestore database kullanıldığı için deploy akışı özellikle önemlidir. Sadece `firestore:rules` komutunu çalıştırmak yeterli değildir. Deploy scripti hedef database kimliğini otomatik okuyarak `firestore:<databaseId>` biçiminde doğru release noktasına yayın yapar.
+
+## Yetkilendirme ve Güvenlik
+
+Uygulamada yetkilendirme iki katmanda ele alınır:
+
+### Uygulama Katmanı
+
+- Kafe sahibi erişimi ve süper yönetici erişimi [src/accessConfig.ts](./src/accessConfig.ts) içinde değerlendirilir.
+- Erişim listeleri [access-emails.mjs](./access-emails.mjs) dosyasından beslenir.
+- Google hesabı olmayan veya yetkili listede bulunmayan kullanıcılar yönetim ekranlarına erişemez.
+
+### Firestore Katmanı
+
+- Kurallar [firestore.rules](./firestore.rules) dosyasında tutulur.
+- Asıl kaynak dosya [firestore.rules.template](./firestore.rules.template) dosyasıdır.
+- Kurallar üretilirken owner ve süper admin listeleri tek kaynaktan enjekte edilir.
+- `cafes` koleksiyonu için yazma yetkisi, doğrulanmış Google hesabı ve uygun owner e-posta eşleşmesi ile sınırlandırılmıştır.
+- Böylece istemci tarafındaki kontrol ile veritabanı tarafındaki gerçek güvenlik modeli uyumlu kalır.
+
+## Deploy Süreci
+
+### İlk Hazırlık
+
+1. Firebase CLI ile giriş yapın:
+   `firebase login`
+2. Gerekirse proje erişim izinlerinizi doğrulayın.
+
+### Production Deploy
+
+Tam deploy için:
+
+`npm run deploy:prod`
+
+Bu komut sırasıyla:
+
+1. Production build üretir.
+2. Firestore kural dosyasını günceller.
+3. Hosting tarafını deploy eder.
+4. Named Firestore database için kurallar ve indeksleri yayınlar.
+
+### Sadece Firestore Kuralları
+
+Yalnızca veritabanı tarafındaki kuralları ve indeksleri yayınlamak için:
+
+`npm run deploy:rules`
+
+## Operasyonel Notlar
+
+- Uygulama anonim giriş kullanmaz; tüm yetkili işlemler Google hesabı ile yapılır.
+- Geliştirme sırasında Google giriş akışı için uygulamayı `http://localhost:3000` üzerinden açmanız gerekir.
+- Firestore rules deploy sürecinde named database hedefi yanlış seçilirse istemci tarafında `permission-denied` hataları görülebilir.
+- Erişim listesi güncellenirse önce `access-emails.mjs`, ardından `npm run deploy:rules` çalıştırılmalıdır.
+
+## Repository
+
+GitHub deposu:
+
+`https://github.com/FaridMahmudlu/share-vibe`

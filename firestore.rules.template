@@ -51,8 +51,7 @@ service cloud.firestore {
       return isAuthenticated() &&
         request.auth.token.email_verified == true &&
         (
-          normalizeEmail(request.auth.token.email) == "fariddmahmudlu2008@gmail.com" ||
-          normalizeEmail(request.auth.token.email) == "aslankerem182@gmail.com"
+__SUPER_ADMIN_EMAIL_CHECK__
         );
     }
 
@@ -68,8 +67,7 @@ service cloud.firestore {
       return isAuthenticated() &&
         request.auth.token.email_verified == true &&
         (
-          normalizeEmail(request.auth.token.email) == "fariddmahmudlu2008@gmail.com" ||
-          normalizeEmail(request.auth.token.email) == "aslankerem182@gmail.com"
+__OWNER_PORTAL_EMAIL_CHECK__
         );
     }
     

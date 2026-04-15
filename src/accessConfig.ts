@@ -1,16 +1,7 @@
+import { OWNER_ACCESS_EMAILS, SUPER_ADMIN_EMAILS } from '../access-emails.mjs';
+
 const normalizeAccessEmail = (value: unknown) =>
   typeof value === 'string' ? value.trim().toLowerCase() : '';
-
-// Yeni kafe sahibi hesaplarını bu listeye ekleyin.
-const OWNER_ACCESS_EMAILS = [
-  'fariddmahmudlu2008@gmail.com',
-  'aslankerem182@gmail.com',
-];
-
-const SUPER_ADMIN_EMAILS = [
-  'fariddmahmudlu2008@gmail.com',
-  'aslankerem182@gmail.com',
-];
 
 const createEmailSet = (emails: string[]) =>
   new Set(emails.map((email) => normalizeAccessEmail(email)).filter(Boolean));
