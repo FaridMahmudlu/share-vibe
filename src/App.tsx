@@ -9,6 +9,7 @@ import { getGoogleSignInErrorMessage, resolveGoogleSignInRedirect, signInWithGoo
 import { deleteMediaRecord } from './mediaStorage';
 import { clearPendingUpload, getPendingUpload, savePendingUpload, type PendingUploadDraft } from './pendingUpload';
 import MainPage from './MainPage';
+import { hasOwnerPortalAccess } from './accessConfig';
 import {
   buildCafePublicLink,
   DEFAULT_CAFE_SLUG,
@@ -74,6 +75,7 @@ const MAX_WEEKLY_UPLOADS = 2;
 const MAX_UPLOAD_IMAGE_DIMENSION = 4096;
 const MAX_UPLOAD_IMAGE_SIZE = 8_000_000;
 const AdminPanel = React.lazy(() => import('./AdminPanel'));
+const OWNER_PORTAL_INTENT_KEY = 'share-vibe-owner-portal-intent';
 
 const getMediaDate = (value: MediaItem['createdAt']) => {
   if (!value) {
@@ -116,9 +118,17 @@ const getInitialTableLabel = () =>
     ''
   );
 
-const getInitialView = (): 'landing' | 'app' | 'admin' => {
+const getInitialView = (): 'landing' | 'app' | 'admin' | 'owner' => {
   const params = getInitialQueryParams();
   const requestedScreen = params.get('screen');
+
+  if (requestedScreen === 'owner') {
+    return 'owner';
+  }
+
+  if (requestedScreen === 'admin') {
+    return 'admin';
+  }
 
   if (requestedScreen === 'app' || params.has('media') || params.has('cafe') || params.has('table') || params.has('masa')) {
     return 'app';
@@ -128,7 +138,7 @@ const getInitialView = (): 'landing' | 'app' | 'admin' => {
 };
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<'landing' | 'app' | 'admin'>(getInitialView);
+  const [currentView, setCurrentView] = useState<'landing' | 'app' | 'admin' | 'owner'>(getInitialView);
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [accentColor, setAccentColor] = useState(DEFAULT_ACCENT_COLOR);
@@ -159,6 +169,7 @@ export default function App() {
   const [pendingRedirectUpload, setPendingRedirectUpload] = useState<UploadDraft | null>(null);
   const [rewardCelebration, setRewardCelebration] = useState<RewardCelebration>(null);
   const [showSharePrompt, setShowSharePrompt] = useState(false);
+  const [ownerAccessError, setOwnerAccessError] = useState<string | null>(null);
   
   // Image editing state
   const [editRotation, setEditRotation] = useState(0);
@@ -197,10 +208,27 @@ export default function App() {
   const hiddenAdminTapCountRef = useRef(0);
   const hiddenAdminTapTimeoutRef = useRef<number | null>(null);
   const isAuthenticated = Boolean(currentUserUid);
+  const hasOwnerAccess = hasOwnerPortalAccess(currentUserEmail);
 
   const syncCurrentUser = (user: User | null) => {
     setCurrentUserUid(user?.uid ?? null);
     setCurrentUserEmail(user?.email ?? null);
+  };
+
+  const rememberOwnerPortalIntent = () => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    window.sessionStorage.setItem(OWNER_PORTAL_INTENT_KEY, '1');
+  };
+
+  const clearOwnerPortalIntent = () => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    window.sessionStorage.removeItem(OWNER_PORTAL_INTENT_KEY);
   };
 
   const discardPendingUpload = async () => {
@@ -292,6 +320,7 @@ export default function App() {
       await signOut(auth);
       syncCurrentUser(null);
       setCurrentView('app');
+      setOwnerAccessError(null);
       setSelectedMediaId(null);
       setShareMediaId(null);
       setMediaToDelete(null);
@@ -321,6 +350,7 @@ export default function App() {
   };
 
   const handleOpenAdminPanel = async () => {
+    setOwnerAccessError(null);
     if (auth.currentUser) {
       setCurrentView('admin');
       return;
@@ -332,6 +362,42 @@ export default function App() {
     }
   };
 
+  const handleOpenOwnerPortal = async () => {
+    setOwnerAccessError(null);
+
+    if (auth.currentUser) {
+      syncCurrentUser(auth.currentUser);
+
+      if (!hasOwnerPortalAccess(auth.currentUser.email)) {
+        setCurrentView('landing');
+        setOwnerAccessError('Bu Google hesabı kafe sahibi erişim listesinde değil.');
+        return;
+      }
+
+      clearOwnerPortalIntent();
+      setCurrentView('owner');
+      return;
+    }
+
+    const user = await ensureGoogleUser({
+      beforeRedirect: () => rememberOwnerPortalIntent(),
+    });
+
+    if (!user) {
+      return;
+    }
+
+    if (!hasOwnerPortalAccess(user.email)) {
+      clearOwnerPortalIntent();
+      setCurrentView('landing');
+      setOwnerAccessError('Bu Google hesabı kafe sahibi erişim listesinde değil.');
+      return;
+    }
+
+    clearOwnerPortalIntent();
+    setCurrentView('owner');
+  };
+
   const openCafeExperience = ({
     cafeSlug = activeCafeSlug,
     tableLabel = resolvedTableLabel || DEFAULT_DEMO_TABLE,
@@ -339,6 +405,7 @@ export default function App() {
     cafeSlug?: string;
     tableLabel?: string;
   } = {}) => {
+    setOwnerAccessError(null);
     setActiveCafeSlug(normalizeCafeSlug(cafeSlug));
     setResolvedTableLabel(normalizeTableLabel(tableLabel, ''));
     setCurrentView('app');
@@ -649,6 +716,16 @@ export default function App() {
       return;
     }
 
+    if (currentView === 'admin' || currentView === 'owner') {
+      url.searchParams.set('screen', currentView);
+      url.searchParams.set('cafe', activeCafeSlug);
+      url.searchParams.delete('table');
+      url.searchParams.delete('masa');
+      url.searchParams.delete('media');
+      window.history.replaceState({}, '', url);
+      return;
+    }
+
     if (currentView === 'app') {
       url.searchParams.set('screen', 'app');
       url.searchParams.set('cafe', activeCafeSlug);
@@ -668,6 +745,48 @@ export default function App() {
       window.history.replaceState({}, '', url);
     }
   }, [activeCafeSlug, currentView, resolvedTableLabel, selectedMediaId]);
+
+  useEffect(() => {
+    if (!isAuthResolved || !isGoogleRedirectResolved) {
+      return;
+    }
+
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    if (window.sessionStorage.getItem(OWNER_PORTAL_INTENT_KEY) !== '1') {
+      return;
+    }
+
+    clearOwnerPortalIntent();
+
+    if (!currentUserEmail) {
+      return;
+    }
+
+    if (hasOwnerPortalAccess(currentUserEmail)) {
+      setOwnerAccessError(null);
+      setCurrentView('owner');
+      return;
+    }
+
+    setCurrentView('landing');
+    setOwnerAccessError('Bu Google hesabı kafe sahibi erişim listesinde değil.');
+  }, [currentUserEmail, isAuthResolved, isGoogleRedirectResolved]);
+
+  useEffect(() => {
+    if (currentView !== 'owner' || !currentUserEmail) {
+      return;
+    }
+
+    if (hasOwnerPortalAccess(currentUserEmail)) {
+      return;
+    }
+
+    setCurrentView('landing');
+    setOwnerAccessError('Bu Google hesabı kafe sahibi erişim listesinde değil.');
+  }, [currentUserEmail, currentView]);
 
   useEffect(() => {
     if (!isAuthResolved || !isGoogleRedirectResolved || currentView !== 'app' || !resolvedTableLabel) {
@@ -1231,6 +1350,46 @@ export default function App() {
           cafeSlug={activeCafeSlug}
           onCafeSlugChange={setActiveCafeSlug}
           onBack={() => setCurrentView('app')}
+          portalMode="admin"
+          onOpenCafeEnvironment={(slug) =>
+            openCafeExperience({
+              cafeSlug: slug,
+              tableLabel: DEFAULT_DEMO_TABLE,
+            })
+          }
+        />
+      </Suspense>
+    );
+  }
+
+  if (currentView === 'owner') {
+    return (
+      <Suspense
+        fallback={
+          <div className="min-h-screen flex items-center justify-center px-4 text-cafe-50">
+            <div className="section-shell max-w-md text-center">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12 text-[color:var(--color-accent)]">
+                <Settings className="w-6 h-6" />
+              </div>
+              <h1 className="text-2xl font-semibold text-cafe-50">Kafe sahibi paneli yükleniyor</h1>
+              <p className="mt-3 text-sm leading-7 text-cafe-100/70">
+                Kafe kurulum modülü hazırlanıyor.
+              </p>
+            </div>
+          </div>
+        }
+      >
+        <AdminPanel
+          cafeSlug={activeCafeSlug}
+          onCafeSlugChange={setActiveCafeSlug}
+          onBack={() => setCurrentView('landing')}
+          portalMode="owner"
+          onOpenCafeEnvironment={(slug) =>
+            openCafeExperience({
+              cafeSlug: slug,
+              tableLabel: DEFAULT_DEMO_TABLE,
+            })
+          }
         />
       </Suspense>
     );
@@ -1248,7 +1407,11 @@ export default function App() {
                 tableLabel: resolvedTableLabel || DEFAULT_DEMO_TABLE,
               })
             }
+            onOpenOwnerPortal={() => void handleOpenOwnerPortal()}
             onHiddenAdminTrigger={handleHiddenAdminTrigger}
+            ownerEmail={currentUserEmail}
+            ownerAccessError={ownerAccessError}
+            hasOwnerAccess={hasOwnerAccess}
           />
         </div>
       </div>

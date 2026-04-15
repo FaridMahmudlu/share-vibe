@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { db, auth } from './firebase';
-import { collection, doc, onSnapshot, orderBy, query, setDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, onSnapshot, orderBy, query, setDoc, where } from 'firebase/firestore';
 import {
   ArrowLeft,
   ArrowUpDown,
   Clock,
+  ExternalLink,
   Gift,
   ImageIcon,
   LogOut,
@@ -19,6 +20,7 @@ import {
 } from 'lucide-react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { signInWithGoogle } from './googleAuth';
+import { hasOwnerPortalAccess, hasSuperAdminAccess, normalizeAccessEmail } from './accessConfig';
 import { deleteMediaRecord } from './mediaStorage';
 import DropdownSelect from './DropdownSelect';
 import {
@@ -52,10 +54,12 @@ type AdminMediaItem = {
   createdAt: any;
 };
 
-const ADMIN_EMAILS = new Set([
-  'fariddmahmudlu2008@gmail.com',
-  'aslankerem182@gmail.com',
-]);
+type PortalMode = 'admin' | 'owner';
+
+type OwnedWorkspace = {
+  slug: string;
+  cafeName: string;
+};
 
 const DEFAULT_ADMIN_SETTINGS = {
   cafeName: DEFAULT_CAFE_NAME,
@@ -95,27 +99,37 @@ export default function AdminPanel({
   cafeSlug,
   onCafeSlugChange,
   onBack,
+  portalMode = 'admin',
+  onOpenCafeEnvironment,
 }: {
   cafeSlug: string;
   onCafeSlugChange: (slug: string) => void;
   onBack: () => void;
+  portalMode?: PortalMode;
+  onOpenCafeEnvironment?: (slug: string) => void;
 }) {
+  const isOwnerPortal = portalMode === 'owner';
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeletingId, setIsDeletingId] = useState<string | null>(null);
   const [mediaToDelete, setMediaToDelete] = useState<AdminMediaItem | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [ownedWorkspaces, setOwnedWorkspaces] = useState<OwnedWorkspace[]>([]);
   const [mediaItems, setMediaItems] = useState<AdminMediaItem[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [tableFilter, setTableFilter] = useState('all');
   const [sortMode, setSortMode] = useState<'newest' | 'likes'>('newest');
-  const [activeView, setActiveView] = useState<'dashboard' | 'brand'>('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'brand'>(isOwnerPortal ? 'brand' : 'dashboard');
   const [workspaceSlug, setWorkspaceSlug] = useState(() => normalizeCafeSlug(cafeSlug, DEFAULT_CAFE_SLUG));
   const [workspaceSlugDraft, setWorkspaceSlugDraft] = useState(() => normalizeCafeSlug(cafeSlug, DEFAULT_CAFE_SLUG));
   const [workspaceOwnerEmail, setWorkspaceOwnerEmail] = useState<string | null>(null);
 
   const [settings, setSettings] = useState(DEFAULT_ADMIN_SETTINGS);
   const [savedSettings, setSavedSettings] = useState(DEFAULT_ADMIN_SETTINGS);
+
+  useEffect(() => {
+    setActiveView(isOwnerPortal ? 'brand' : 'dashboard');
+  }, [isOwnerPortal]);
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
@@ -136,6 +150,57 @@ export default function AdminPanel({
     setWorkspaceSlug(nextSlug);
     setWorkspaceSlugDraft(nextSlug);
   }, [cafeSlug]);
+
+  useEffect(() => {
+    if (!userEmail || !isOwnerPortal) {
+      setOwnedWorkspaces([]);
+      return;
+    }
+
+    const normalizedEmail = normalizeAccessEmail(userEmail);
+    if (!normalizedEmail) {
+      setOwnedWorkspaces([]);
+      return;
+    }
+
+    const unsubscribe = onSnapshot(
+      query(collection(db, 'cafes'), where('ownerEmail', '==', normalizedEmail)),
+      (snapshot) => {
+        const nextWorkspaces = snapshot.docs
+          .map((entry) => {
+            const data = entry.data();
+            return {
+              slug: normalizeCafeSlug(data.cafeSlug ?? entry.id, entry.id),
+              cafeName: normalizeLegacyText(data.cafeName, 'İsimsiz Kafe'),
+            };
+          })
+          .sort((left, right) => left.cafeName.localeCompare(right.cafeName, 'tr'));
+
+        setOwnedWorkspaces(nextWorkspaces);
+      },
+      (error) => {
+        console.error('Owner workspace feed error:', error);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [isOwnerPortal, userEmail]);
+
+  useEffect(() => {
+    if (!isOwnerPortal || ownedWorkspaces.length === 0) {
+      return;
+    }
+
+    const workspaceExistsInOwnedList = ownedWorkspaces.some((workspace) => workspace.slug === workspaceSlug);
+    if (workspaceExistsInOwnedList) {
+      return;
+    }
+
+    const firstWorkspace = ownedWorkspaces[0];
+    setWorkspaceSlug(firstWorkspace.slug);
+    setWorkspaceSlugDraft(firstWorkspace.slug);
+    onCafeSlugChange(firstWorkspace.slug);
+  }, [isOwnerPortal, onCafeSlugChange, ownedWorkspaces, workspaceSlug]);
 
   useEffect(() => {
     if (!userEmail) {
@@ -310,21 +375,39 @@ export default function AdminPanel({
     [savedSettings, settings]
   );
   const isBrandView = activeView === 'brand';
-  const isSuperAdmin = Boolean(userEmail && ADMIN_EMAILS.has(userEmail));
-  const canManageWorkspace =
-    Boolean(userEmail) && (!workspaceOwnerEmail || workspaceOwnerEmail === userEmail || isSuperAdmin);
+  const isSuperAdmin = hasSuperAdminAccess(userEmail);
+  const hasPortalAccess = isOwnerPortal ? hasOwnerPortalAccess(userEmail) : isSuperAdmin;
+  const effectiveWorkspaceSlug = useMemo(
+    () =>
+      normalizeOptionalCafeSlug(workspaceSlugDraft) ||
+      normalizeOptionalCafeSlug(settings.cafeName) ||
+      workspaceSlug ||
+      DEFAULT_CAFE_SLUG,
+    [settings.cafeName, workspaceSlug, workspaceSlugDraft]
+  );
+  const workspaceDraftChanged = effectiveWorkspaceSlug !== workspaceSlug;
+  const canManageActiveWorkspace =
+    Boolean(userEmail) &&
+    (!workspaceOwnerEmail || normalizeAccessEmail(workspaceOwnerEmail) === normalizeAccessEmail(userEmail) || isSuperAdmin);
+  const canManageWorkspace = Boolean(userEmail) && (workspaceDraftChanged || canManageActiveWorkspace);
+  const panelTitle = isBrandView
+    ? (isOwnerPortal ? 'Kafe Kurulum Alanı' : 'Marka Ayarları')
+    : (isOwnerPortal ? 'Kafe Sahibi Paneli' : 'Admin Paneli');
+  const panelPill = isOwnerPortal ? 'Kafe Sahibi Merkezi' : 'Yönetim Merkezi';
+  const loginPill = isOwnerPortal ? 'Kafe Sahibi Erişimi' : 'Yönetim Erişimi';
+  const loginTitle = isOwnerPortal ? 'Kafe Sahibi Girişi' : 'Admin Paneli';
   const publicGalleryLink = useMemo(
-    () => buildCafePublicLink({ origin: window.location.origin, cafeSlug: workspaceSlug }),
-    [workspaceSlug]
+    () => buildCafePublicLink({ origin: window.location.origin, cafeSlug: effectiveWorkspaceSlug }),
+    [effectiveWorkspaceSlug]
   );
   const publicQrExampleLink = useMemo(
     () =>
       buildCafePublicLink({
         origin: window.location.origin,
-        cafeSlug: workspaceSlug,
+        cafeSlug: effectiveWorkspaceSlug,
         tableLabel: DEFAULT_DEMO_TABLE,
       }),
-    [workspaceSlug]
+    [effectiveWorkspaceSlug]
   );
 
   const handleLogin = async () => {
@@ -340,7 +423,16 @@ export default function AdminPanel({
   };
 
   const applyWorkspaceSlug = () => {
-    const nextSlug = normalizeOptionalCafeSlug(workspaceSlugDraft) || DEFAULT_CAFE_SLUG;
+    const nextSlug = effectiveWorkspaceSlug;
+    setWorkspaceSlug(nextSlug);
+    setWorkspaceSlugDraft(nextSlug);
+    onCafeSlugChange(nextSlug);
+    setActiveView('brand');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const selectOwnedWorkspace = (slug: string) => {
+    const nextSlug = normalizeCafeSlug(slug, DEFAULT_CAFE_SLUG);
     setWorkspaceSlug(nextSlug);
     setWorkspaceSlugDraft(nextSlug);
     onCafeSlugChange(nextSlug);
@@ -360,33 +452,51 @@ export default function AdminPanel({
 
   const handleSave = async () => {
     if (!userEmail) {
-      return;
+      return null;
     }
 
-    if (!canManageWorkspace) {
-      alert('Bu kafe alanı başka bir hesaba aittir.');
-      return;
-    }
+    const nextWorkspaceSlug = effectiveWorkspaceSlug;
+    let targetOwnerEmail = workspaceOwnerEmail;
 
     setIsSaving(true);
 
     try {
-      await setDoc(doc(db, 'cafes', workspaceSlug), {
+      if (nextWorkspaceSlug !== workspaceSlug) {
+        const targetSnapshot = await getDoc(doc(db, 'cafes', nextWorkspaceSlug));
+        targetOwnerEmail = targetSnapshot.exists()
+          ? normalizeLegacyText(targetSnapshot.data().ownerEmail, '')
+          : null;
+      }
+
+      if (
+        targetOwnerEmail &&
+        normalizeAccessEmail(targetOwnerEmail) !== normalizeAccessEmail(userEmail) &&
+        !isSuperAdmin
+      ) {
+        alert('Bu kafe alanı başka bir hesaba aittir.');
+        return null;
+      }
+
+      await setDoc(doc(db, 'cafes', nextWorkspaceSlug), {
         ...settings,
-        cafeSlug: workspaceSlug,
+        cafeSlug: nextWorkspaceSlug,
         cafeName: normalizeLegacyText(settings.cafeName, DEFAULT_CAFE_NAME),
         accentColor: settings.accentColor || DEFAULT_ACCENT_COLOR,
         handwritingFont: normalizeHandwritingFont(settings.handwritingFont),
         campaignTarget: Math.max(1, settings.campaignTarget),
         campaignReward: normalizeLegacyText(settings.campaignReward, DEFAULT_CAMPAIGN_REWARD),
-        ownerEmail: workspaceOwnerEmail || userEmail,
+        ownerEmail: normalizeAccessEmail(targetOwnerEmail || userEmail),
       });
-      onCafeSlugChange(workspaceSlug);
-      setWorkspaceOwnerEmail(workspaceOwnerEmail || userEmail);
-      alert('Ayarlar başarıyla kaydedildi.');
+      setWorkspaceSlug(nextWorkspaceSlug);
+      setWorkspaceSlugDraft(nextWorkspaceSlug);
+      onCafeSlugChange(nextWorkspaceSlug);
+      setWorkspaceOwnerEmail(normalizeAccessEmail(targetOwnerEmail || userEmail));
+      alert(isOwnerPortal ? 'Kafe ortamı başarıyla oluşturuldu.' : 'Ayarlar başarıyla kaydedildi.');
+      return nextWorkspaceSlug;
     } catch (error) {
       console.error('Error saving settings:', error);
       alert('Ayarlar kaydedilirken bir hata oluştu.');
+      return null;
     } finally {
       setIsSaving(false);
     }
@@ -418,7 +528,9 @@ export default function AdminPanel({
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12 text-[color:var(--color-accent)]">
             <Settings className="w-6 h-6" />
           </div>
-          <h1 className="text-2xl font-semibold text-cafe-50">Admin paneli hazırlanıyor</h1>
+          <h1 className="text-2xl font-semibold text-cafe-50">
+            {isOwnerPortal ? 'Kafe sahibi alanı hazırlanıyor' : 'Admin paneli hazırlanıyor'}
+          </h1>
           <p className="mt-3 text-sm leading-7 text-cafe-100/70">
             Yetki kontrolü ve yönetim verileri yükleniyor.
           </p>
@@ -434,19 +546,54 @@ export default function AdminPanel({
           <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-[1.6rem] bg-[color:var(--color-accent)]/12 text-[color:var(--color-accent)]">
             <ShieldCheck className="w-7 h-7" />
           </div>
-          <span className="section-pill">Yönetim Erişimi</span>
-          <h1 className="mt-4 text-3xl font-semibold text-cafe-50">Admin Paneli</h1>
+          <span className="section-pill">{loginPill}</span>
+          <h1 className="mt-4 text-3xl font-semibold text-cafe-50">{loginTitle}</h1>
           <p className="mt-3 text-sm leading-7 text-cafe-100/72">
-            Kafe ayarlarını kurmak için Google hesabınızla giriş yapın. Girişten sonra kendi kafe çalışma alanınızı oluşturabilir ve yönetebilirsiniz.
+            {isOwnerPortal
+              ? 'Tanımlı Google hesabınızla giriş yapın. Ardından kendi kafe çalışma alanınızı oluşturup ad, renk, font ve kampanya ayarlarınızı belirleyebilirsiniz.'
+              : 'Kafe ayarlarını kurmak için Google hesabınızla giriş yapın. Girişten sonra kendi kafe çalışma alanınızı oluşturabilir ve yönetebilirsiniz.'}
           </p>
 
           <button
             onClick={handleLogin}
             className="mt-6 w-full rounded-2xl bg-[color:var(--color-accent)] px-4 py-3 font-semibold text-white shadow-[0_20px_40px_rgba(0,0,0,0.12)] transition-transform hover:-translate-y-0.5"
           >
-            Google ile giriş yap
+            {isOwnerPortal ? 'Google ile kafe sahibi girişi yap' : 'Google ile giriş yap'}
           </button>
 
+          <button
+            onClick={onBack}
+            className="mt-6 inline-flex items-center gap-2 text-sm text-cafe-100/65 transition-colors hover:text-cafe-50"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Ana sayfaya dön
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!hasPortalAccess) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4 text-cafe-50">
+        <div className="section-shell max-w-md w-full text-center">
+          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-[1.6rem] bg-red-50 text-red-500">
+            <ShieldCheck className="w-7 h-7" />
+          </div>
+          <span className="section-pill">{loginPill}</span>
+          <h1 className="mt-4 text-3xl font-semibold text-cafe-50">Erişim izni bulunamadı</h1>
+          <p className="mt-3 text-sm leading-7 text-cafe-100/72">
+            Bu Google hesabı kafe sahibi erişim listesinde yer almıyor. Yetkili hesapla giriş yapmanız gerekiyor.
+          </p>
+          <div className="mt-5 rounded-2xl border border-cafe-700/75 bg-cafe-900/45 px-4 py-3 text-sm text-cafe-100/72">
+            Giriş yapan hesap: <strong className="text-cafe-50">{userEmail}</strong>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="mt-6 w-full rounded-2xl bg-[color:var(--color-accent)] px-4 py-3 font-semibold text-white shadow-[0_20px_40px_rgba(0,0,0,0.12)] transition-transform hover:-translate-y-0.5"
+          >
+            Farklı hesapla tekrar giriş yap
+          </button>
           <button
             onClick={onBack}
             className="mt-6 inline-flex items-center gap-2 text-sm text-cafe-100/65 transition-colors hover:text-cafe-50"
@@ -468,9 +615,9 @@ export default function AdminPanel({
               <ArrowLeft className="w-5 h-5" />
             </button>
             <div>
-              <span className="section-pill">Yönetim Merkezi</span>
+              <span className="section-pill">{panelPill}</span>
               <h1 className="mt-2 text-2xl sm:text-3xl font-semibold text-cafe-50">
-                {isBrandView ? 'Marka Ayarları' : 'Admin Paneli'}
+                {panelTitle}
               </h1>
             </div>
           </div>
@@ -480,7 +627,7 @@ export default function AdminPanel({
               <ShieldCheck className="w-4 h-4 text-[color:var(--color-accent)]" />
               <span>{userEmail}</span>
             </div>
-            {settingsDirty && (
+            {(settingsDirty || workspaceDraftChanged) && (
               <div className="hidden xl:flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-700">
                 <Sparkles className="w-4 h-4" />
                 <span>Kaydedilmemiş değişiklikler var</span>
@@ -490,12 +637,14 @@ export default function AdminPanel({
               <LogOut className="w-5 h-5" />
             </button>
             <button
-              onClick={handleSave}
-              disabled={isSaving || !settingsDirty || !canManageWorkspace}
+              onClick={() => {
+                void handleSave();
+              }}
+              disabled={isSaving || (!settingsDirty && !workspaceDraftChanged) || !canManageWorkspace}
               className="inline-flex items-center gap-2 rounded-full bg-[color:var(--color-accent)] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_18px_36px_rgba(0,0,0,0.12)] transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Save className="w-4 h-4" />
-              {isSaving ? 'Kaydediliyor...' : 'Kaydet'}
+              {isSaving ? 'Kaydediliyor...' : isOwnerPortal ? 'Kafe ortamını kaydet' : 'Kaydet'}
             </button>
           </div>
         </div>
@@ -506,26 +655,60 @@ export default function AdminPanel({
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <span className="section-pill">Kafe Çalışma Alanı</span>
-              <h2 className="mt-3 text-2xl font-semibold text-cafe-50">Birden fazla kafe için ayrı çalışma alanı</h2>
+              <h2 className="mt-3 text-2xl font-semibold text-cafe-50">
+                {isOwnerPortal ? 'Kendi kafe ortamını oluştur' : 'Birden fazla kafe için ayrı çalışma alanı'}
+              </h2>
               <p className="mt-2 max-w-3xl text-sm leading-7 text-cafe-100/72">
-                Her kafe kendi koduyla ayrılır. Genel galeri, QR bağlantıları, paylaşımlar ve tasarım ayarları bu koda göre ayrı çalışır.
+                {isOwnerPortal
+                  ? 'Tanımlı hesabınızla giriş yaptıktan sonra kendi kafe adınızı, tasarımınızı ve kampanya ayarlarınızı kaydedin. Sistem aynı anda ayrı bir kafe ortamı üretir.'
+                  : 'Her kafe kendi koduyla ayrılır. Genel galeri, QR bağlantıları, paylaşımlar ve tasarım ayarları bu koda göre ayrı çalışır.'}
               </p>
             </div>
             <div className="rounded-2xl border border-cafe-700/75 bg-white/78 px-4 py-3 text-sm text-cafe-100/70">
-              Aktiv kod: <strong className="text-cafe-50">{workspaceSlug}</strong>
+              {isOwnerPortal ? 'Hazırlanan kod' : 'Aktif kod'}:{' '}
+              <strong className="text-cafe-50">{effectiveWorkspaceSlug}</strong>
             </div>
           </div>
 
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr),minmax(340px,0.9fr)]">
             <div className="glass-card space-y-4">
+              {isOwnerPortal && ownedWorkspaces.length > 0 && (
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-sm font-semibold text-cafe-50">Sana bağlı kafe ortamları</p>
+                    <p className="mt-1 text-sm text-cafe-100/68">
+                      Mevcut kafeler arasında geçiş yapabilir veya yeni bir tane oluşturabilirsin.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {ownedWorkspaces.map((workspace) => (
+                      <button
+                        key={workspace.slug}
+                        type="button"
+                        onClick={() => selectOwnedWorkspace(workspace.slug)}
+                        className={`rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
+                          workspace.slug === workspaceSlug
+                            ? 'border-accent/40 bg-[color:var(--color-accent)]/12 text-[color:var(--color-accent)]'
+                            : 'border-cafe-700/75 bg-white/80 text-cafe-50 hover:border-accent/30'
+                        }`}
+                      >
+                        {workspace.cafeName}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div>
-                <label className="block text-sm font-medium text-cafe-100/70 mb-2">Kafe kodu</label>
+                <label className="block text-sm font-medium text-cafe-100/70 mb-2">
+                  {isOwnerPortal ? 'Kafe bağlantı kodu' : 'Kafe kodu'}
+                </label>
                 <div className="flex flex-col gap-3 sm:flex-row">
                   <input
                     type="text"
                     value={workspaceSlugDraft}
                     onChange={(event) => setWorkspaceSlugDraft(normalizeOptionalCafeSlug(event.target.value))}
-                    placeholder="örn: ava-coffee"
+                    placeholder="örn: lumina-kahve"
                     className="w-full rounded-2xl border border-cafe-700/80 bg-white/80 px-4 py-3 text-cafe-50 outline-none transition-colors focus:border-accent/60"
                   />
                   <button
@@ -539,10 +722,12 @@ export default function AdminPanel({
               </div>
 
               <div className="rounded-2xl border border-cafe-700/70 bg-cafe-900/45 px-4 py-3 text-sm text-cafe-100/68">
-                Bu kodu değiştirerek yeni bir kafe çalışma alanı açabilirsiniz. Aynı sistem içinde istediğiniz kadar kafe ayrı ayrı yönetilebilir.
+                {isOwnerPortal
+                  ? 'Yeni bir kafe adı ve bağlantı kodu girip kaydettiğinde o kafe için ayrı galeri, QR akışı ve kampanya ayarları otomatik oluşur.'
+                  : 'Bu kodu değiştirerek yeni bir kafe çalışma alanı açabilirsiniz. Aynı sistem içinde istediğiniz kadar kafe ayrı ayrı yönetilebilir.'}
               </div>
 
-              {!canManageWorkspace && workspaceOwnerEmail && (
+              {!canManageActiveWorkspace && effectiveWorkspaceSlug === workspaceSlug && workspaceOwnerEmail && (
                 <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
                   Bu çalışma alanı <strong>{workspaceOwnerEmail}</strong> hesabına bağlıdır. Yalnız sahibi veya süper yönetici değişiklik yapabilir.
                 </div>
@@ -558,6 +743,25 @@ export default function AdminPanel({
                 <p className="text-sm font-semibold text-cafe-50">QR için örnek masa bağlantısı</p>
                 <p className="mt-1 break-all text-sm text-cafe-100/68">{publicQrExampleLink}</p>
               </div>
+              {onOpenCafeEnvironment && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const targetSlug =
+                      settingsDirty || workspaceDraftChanged
+                        ? await handleSave()
+                        : effectiveWorkspaceSlug;
+
+                    if (targetSlug) {
+                      onOpenCafeEnvironment(targetSlug);
+                    }
+                  }}
+                  className="mt-2 inline-flex items-center justify-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-4 py-3 text-sm font-semibold text-white shadow-[0_18px_36px_rgba(0,0,0,0.12)] transition-transform hover:-translate-y-0.5"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  Kafe ortamını aç
+                </button>
+              )}
             </div>
           </div>
         </section>

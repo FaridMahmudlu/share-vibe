@@ -1,8 +1,12 @@
-import { ArrowRight, Camera, Coffee, Palette, QrCode, Sparkles, Store } from 'lucide-react';
+import { ArrowRight, Camera, Coffee, Palette, QrCode, ShieldCheck, Sparkles, Store } from 'lucide-react';
 
 type MainPageProps = {
   onOpenExperience: () => void;
+  onOpenOwnerPortal: () => void;
   onHiddenAdminTrigger: () => void;
+  ownerEmail: string | null;
+  ownerAccessError: string | null;
+  hasOwnerAccess: boolean;
 };
 
 const FEATURE_ITEMS = [
@@ -24,16 +28,29 @@ const FEATURE_ITEMS = [
 ];
 
 const STEP_ITEMS = [
-  'Kafe sahibi kendi mekan kodunu ve görsel kimliğini belirler.',
-  'Her masa için ayrı bir QR bağlantısı oluşturulup baskıya gönderilir.',
-  'Misafir QR ile açar, fotoğrafını paylaşır ve kampanya ilerleyişini takip eder.',
+  'Kafe sahibi tanımlı Google hesabıyla giriş yapar ve kendi çalışma alanını açar.',
+  'Kafe adı, renk, font ve kampanya ayarları kaydedilir; sistem yeni kafe ortamını otomatik oluşturur.',
+  'Her masa için ayrı QR bağlantısı kullanılır, misafirler doğrudan doğru galeri akışına girer.',
 ];
 
-export default function MainPage({ onOpenExperience, onHiddenAdminTrigger }: MainPageProps) {
+export default function MainPage({
+  onOpenExperience,
+  onOpenOwnerPortal,
+  onHiddenAdminTrigger,
+  ownerEmail,
+  ownerAccessError,
+  hasOwnerAccess,
+}: MainPageProps) {
+  const ownerButtonLabel = hasOwnerAccess
+    ? 'Çalışma alanına git'
+    : ownerEmail
+      ? 'Kafe sahibi erişimini kontrol et'
+      : 'Kafe sahibi girişi';
+
   return (
     <div className="min-h-screen text-cafe-50">
       <div className="mx-auto flex min-h-screen max-w-7xl flex-col px-4 pb-16 pt-6 sm:px-6 lg:px-8">
-        <header className="flex items-center justify-between gap-4 rounded-[2rem] border border-white/65 bg-white/78 px-5 py-4 shadow-[0_24px_54px_rgba(78,58,42,0.1)] backdrop-blur-2xl">
+        <header className="flex flex-col gap-4 rounded-[2rem] border border-white/65 bg-white/78 px-5 py-4 shadow-[0_24px_54px_rgba(78,58,42,0.1)] backdrop-blur-2xl sm:flex-row sm:items-center sm:justify-between">
           <button
             type="button"
             onClick={onHiddenAdminTrigger}
@@ -49,20 +66,30 @@ export default function MainPage({ onOpenExperience, onHiddenAdminTrigger }: Mai
             </div>
           </button>
 
-          <button
-            type="button"
-            onClick={onOpenExperience}
-            className="inline-flex items-center gap-2 rounded-full bg-[color:var(--color-accent)] px-5 py-3 text-sm font-semibold uppercase tracking-[0.18em] text-white shadow-[0_20px_42px_rgba(0,0,0,0.14)] transition-transform hover:-translate-y-0.5"
-          >
-            Demoyu aç
-            <ArrowRight className="h-4 w-4" />
-          </button>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <button
+              type="button"
+              onClick={onOpenOwnerPortal}
+              className="inline-flex items-center justify-center gap-2 rounded-full border border-cafe-700/75 bg-white/82 px-5 py-3 text-sm font-semibold text-cafe-50 transition-colors hover:border-accent/45"
+            >
+              <ShieldCheck className="h-4 w-4 text-[color:var(--color-accent)]" />
+              {ownerButtonLabel}
+            </button>
+            <button
+              type="button"
+              onClick={onOpenExperience}
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-[color:var(--color-accent)] px-5 py-3 text-sm font-semibold uppercase tracking-[0.18em] text-white shadow-[0_20px_42px_rgba(0,0,0,0.14)] transition-transform hover:-translate-y-0.5"
+            >
+              Demoyu aç
+              <ArrowRight className="h-4 w-4" />
+            </button>
+          </div>
         </header>
 
         <main className="flex-1 space-y-8 pt-8 sm:space-y-10 sm:pt-10">
           <section className="section-shell overflow-hidden">
             <div className="pointer-events-none absolute inset-y-0 right-0 w-1/2 bg-[radial-gradient(circle_at_top,rgba(201,122,67,0.2),transparent_55%)]" />
-            <div className="relative grid gap-8 lg:grid-cols-[minmax(0,1.2fr),minmax(320px,0.8fr)] lg:items-center">
+            <div className="relative grid gap-8 lg:grid-cols-[minmax(0,1.2fr),minmax(340px,0.8fr)] lg:items-center">
               <div className="space-y-5">
                 <span className="section-pill">Ana Sayfa</span>
                 <h2 className="max-w-4xl text-5xl font-serif leading-[0.92] text-cafe-50 sm:text-6xl xl:text-7xl">
@@ -79,15 +106,16 @@ export default function MainPage({ onOpenExperience, onHiddenAdminTrigger }: Mai
                     onClick={onOpenExperience}
                     className="inline-flex items-center gap-2 rounded-full bg-[color:var(--color-accent)] px-6 py-3.5 text-sm font-semibold uppercase tracking-[0.18em] text-white shadow-[0_20px_42px_rgba(0,0,0,0.14)] transition-transform hover:-translate-y-0.5"
                   >
-                    Sistemi aç
+                    Demo galeriyi aç
                     <ArrowRight className="h-4 w-4" />
                   </button>
-                  <a
-                    href="#how-it-works"
+                  <button
+                    type="button"
+                    onClick={onOpenOwnerPortal}
                     className="inline-flex items-center gap-2 rounded-full border border-cafe-700/75 bg-white/80 px-6 py-3.5 text-sm font-semibold text-cafe-50 transition-colors hover:border-accent/45"
                   >
-                    Nasıl çalışır
-                  </a>
+                    Kafe sahibi alanı
+                  </button>
                 </div>
               </div>
 
@@ -105,6 +133,46 @@ export default function MainPage({ onOpenExperience, onHiddenAdminTrigger }: Mai
                   <p className="mt-4 text-sm leading-7 text-cafe-100/72">
                     Her mekan için ayrı kafe kodu, ayrı tasarım, ayrı kampanya ve ayrı paylaşım akışı oluşturulur.
                   </p>
+                </div>
+
+                <div className="rounded-[2rem] border border-white/70 bg-white/84 p-5 shadow-[0_18px_40px_rgba(78,58,42,0.08)]">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12 text-[color:var(--color-accent)]">
+                      <ShieldCheck className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cafe-100/55">Kafe sahibi alanı</p>
+                      <p className="mt-1 text-xl font-semibold text-cafe-50">
+                        {hasOwnerAccess ? 'Çalışma alanın hazır' : 'Tanımlı e-posta ile giriş'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <p className="mt-4 text-sm leading-7 text-cafe-100/72">
+                    Kafe sahibi giriş yaptıktan sonra kafe adını, renklerini, fontlarını ve kampanya kurgusunu
+                    seçer. Kaydettiği anda kendi kafe ortamı otomatik olarak oluşur.
+                  </p>
+
+                  {ownerEmail && (
+                    <div className="mt-4 rounded-[1.4rem] border border-cafe-700/70 bg-cafe-900/45 px-4 py-3 text-sm text-cafe-100/72">
+                      Oturum: <strong className="text-cafe-50">{ownerEmail}</strong>
+                    </div>
+                  )}
+
+                  {ownerAccessError && (
+                    <div className="mt-4 rounded-[1.4rem] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+                      {ownerAccessError}
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={onOpenOwnerPortal}
+                    className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[color:var(--color-accent)] px-5 py-3.5 text-sm font-semibold uppercase tracking-[0.16em] text-white shadow-[0_20px_42px_rgba(0,0,0,0.14)] transition-transform hover:-translate-y-0.5"
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    {ownerButtonLabel}
+                  </button>
                 </div>
 
                 <div className="grid gap-4 sm:grid-cols-2">
@@ -144,7 +212,7 @@ export default function MainPage({ onOpenExperience, onHiddenAdminTrigger }: Mai
                 <h2 className="mt-4 text-4xl font-serif font-semibold text-cafe-50">Kurulum ve kullanım akışı sade kalır</h2>
               </div>
               <div className="rounded-[1.8rem] border border-cafe-700/65 bg-white/76 px-5 py-4 text-sm text-cafe-100/72">
-                Mekan sahibi sistemi kurar, misafir ise sadece QR açıp paylaşım yapar.
+                Ana sayfa sistemi anlatır, kafe sahibi giriş yapar, misafir ise sadece QR açıp paylaşım yapar.
               </div>
             </div>
 
@@ -166,18 +234,28 @@ export default function MainPage({ onOpenExperience, onHiddenAdminTrigger }: Mai
                 <span className="section-pill">Canlı önizleme</span>
                 <h2 className="mt-4 text-4xl font-serif font-semibold text-cafe-50">Mevcut sistemi hemen aç ve test et</h2>
                 <p className="mt-3 text-sm leading-7 text-cafe-100/72">
-                  Demo galeri üzerinden QR akışını, paylaşım modalını, kampanya ilerleyişini ve yönetim panelini inceleyebilirsin.
+                  Demo galeri üzerinden QR akışını, paylaşım modalını, kampanya ilerleyişini ve kafe sahibi panelini inceleyebilirsin.
                 </p>
               </div>
 
-              <button
-                type="button"
-                onClick={onOpenExperience}
-                className="inline-flex items-center justify-center gap-2 rounded-full bg-[color:var(--color-accent)] px-6 py-4 text-sm font-semibold uppercase tracking-[0.18em] text-white shadow-[0_20px_42px_rgba(0,0,0,0.14)] transition-transform hover:-translate-y-0.5"
-              >
-                <Sparkles className="h-4 w-4" />
-                Demo galeriyi aç
-              </button>
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={onOpenOwnerPortal}
+                  className="inline-flex items-center justify-center gap-2 rounded-full border border-cafe-700/75 bg-white/80 px-6 py-4 text-sm font-semibold text-cafe-50 transition-colors hover:border-accent/45"
+                >
+                  <ShieldCheck className="h-4 w-4 text-[color:var(--color-accent)]" />
+                  Kafe sahibi paneli
+                </button>
+                <button
+                  type="button"
+                  onClick={onOpenExperience}
+                  className="inline-flex items-center justify-center gap-2 rounded-full bg-[color:var(--color-accent)] px-6 py-4 text-sm font-semibold uppercase tracking-[0.18em] text-white shadow-[0_20px_42px_rgba(0,0,0,0.14)] transition-transform hover:-translate-y-0.5"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  Demo galeriyi aç
+                </button>
+              </div>
             </div>
           </section>
         </main>
