@@ -364,7 +364,7 @@ export default function AdminPanel({
     }
 
     if (!canManageWorkspace) {
-      alert('Bu kafe alanı başqa bir hesaba aittir.');
+      alert('Bu kafe alanı başka bir hesaba aittir.');
       return;
     }
 
@@ -437,7 +437,7 @@ export default function AdminPanel({
           <span className="section-pill">Yönetim Erişimi</span>
           <h1 className="mt-4 text-3xl font-semibold text-cafe-50">Admin Paneli</h1>
           <p className="mt-3 text-sm leading-7 text-cafe-100/72">
-            Kafe ayarlarını qurmaq üçün Google hesabı ilə giriş et. Giriş etdikdən sonra öz kafe iş sahəni yarada və idarə edə biləcəksən.
+            Kafe ayarlarını kurmak için Google hesabınızla giriş yapın. Girişten sonra kendi kafe çalışma alanınızı oluşturabilir ve yönetebilirsiniz.
           </p>
 
           <button
@@ -505,10 +505,10 @@ export default function AdminPanel({
         <section className="section-shell space-y-5">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <span className="section-pill">Kafe İş Sahəsi</span>
-              <h2 className="mt-3 text-2xl font-semibold text-cafe-50">Çoxlu kafe üçün ayrıca workspace</h2>
+              <span className="section-pill">Kafe Çalışma Alanı</span>
+              <h2 className="mt-3 text-2xl font-semibold text-cafe-50">Birden fazla kafe için ayrı çalışma alanı</h2>
               <p className="mt-2 max-w-3xl text-sm leading-7 text-cafe-100/72">
-                Hər kafe öz kodu ilə ayrılır. Public qalereya, QR linkləri, paylaşımlar və dizayn ayarları bu koda görə ayrıca işləyir.
+                Her kafe kendi koduyla ayrılır. Genel galeri, QR bağlantıları, paylaşımlar ve tasarım ayarları bu koda göre ayrı çalışır.
               </p>
             </div>
             <div className="rounded-2xl border border-cafe-700/75 bg-white/78 px-4 py-3 text-sm text-cafe-100/70">
@@ -539,23 +539,23 @@ export default function AdminPanel({
               </div>
 
               <div className="rounded-2xl border border-cafe-700/70 bg-cafe-900/45 px-4 py-3 text-sm text-cafe-100/68">
-                Bu kodu dəyişib yeni kafe workspace aça bilərsən. Eyni sistemdə istədiyin sayda kafe ayrı-ayrı idarə olunur.
+                Bu kodu değiştirerek yeni bir kafe çalışma alanı açabilirsiniz. Aynı sistem içinde istediğiniz kadar kafe ayrı ayrı yönetilebilir.
               </div>
 
               {!canManageWorkspace && workspaceOwnerEmail && (
                 <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-                  Bu workspace <strong>{workspaceOwnerEmail}</strong> hesabına bağlıdır. Yalnız sahibi və ya super admin dəyişiklik edə bilər.
+                  Bu çalışma alanı <strong>{workspaceOwnerEmail}</strong> hesabına bağlıdır. Yalnız sahibi veya süper yönetici değişiklik yapabilir.
                 </div>
               )}
             </div>
 
             <div className="glass-card space-y-3">
               <div>
-                <p className="text-sm font-semibold text-cafe-50">Public qalereya linki</p>
+                <p className="text-sm font-semibold text-cafe-50">Genel galeri bağlantısı</p>
                 <p className="mt-1 break-all text-sm text-cafe-100/68">{publicGalleryLink}</p>
               </div>
               <div>
-                <p className="text-sm font-semibold text-cafe-50">QR üçün örnək masa linki</p>
+                <p className="text-sm font-semibold text-cafe-50">QR için örnek masa bağlantısı</p>
                 <p className="mt-1 break-all text-sm text-cafe-100/68">{publicQrExampleLink}</p>
               </div>
             </div>

@@ -8,25 +8,25 @@ type MainPageProps = {
 const FEATURE_ITEMS = [
   {
     icon: QrCode,
-    title: 'QR ilə masa tanıma',
-    description: 'Hər vizitkart fərqli QR kodla açılır və sistem masa nömrəsini avtomatik tanıyır.',
+    title: 'QR ile masa tanıma',
+    description: 'Her masa kartı farklı QR kodla açılır ve sistem masa numarasını otomatik olarak algılar.',
   },
   {
     icon: Camera,
-    title: 'Telefonun öz kamerası',
-    description: 'Müştəri şəkli cihazın orijinal kamerası ilə çəkir və daha keyfiyyətli paylaşır.',
+    title: 'Telefonun kendi kamerası',
+    description: 'Misafir fotoğrafı cihazın orijinal kamerasıyla çeker ve daha kaliteli paylaşım yapar.',
   },
   {
     icon: Palette,
-    title: 'Hər kafe üçün özəl görünüş',
-    description: 'Kafe adı, rəng, font və kampaniya axını hər məkan üçün ayrıca qurulur.',
+    title: 'Her kafe için özel görünüm',
+    description: 'Kafe adı, renk, font ve kampanya akışı her mekan için ayrı ayrı yapılandırılır.',
   },
 ];
 
 const STEP_ITEMS = [
-  'Kafe sahibi öz məkan kodunu və görünüşünü qurur.',
-  'Hər masa üçün fərqli QR link çap olunur.',
-  'Müştəri QR ilə açır, şəkil paylaşır və kampaniyada irəliləyir.',
+  'Kafe sahibi kendi mekan kodunu ve görsel kimliğini belirler.',
+  'Her masa için ayrı bir QR bağlantısı oluşturulup baskıya gönderilir.',
+  'Misafir QR ile açar, fotoğrafını paylaşır ve kampanya ilerleyişini takip eder.',
 ];
 
 export default function MainPage({ onOpenExperience, onHiddenAdminTrigger }: MainPageProps) {
@@ -45,7 +45,7 @@ export default function MainPage({ onOpenExperience, onHiddenAdminTrigger }: Mai
             </div>
             <div className="text-left">
               <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cafe-100/55">Share Vibe</p>
-              <h1 className="text-2xl font-serif font-semibold text-cafe-50">Kafeler üçün anı sistemi</h1>
+              <h1 className="text-2xl font-serif font-semibold text-cafe-50">Kafeler için anı sistemi</h1>
             </div>
           </button>
 
@@ -54,7 +54,7 @@ export default function MainPage({ onOpenExperience, onHiddenAdminTrigger }: Mai
             onClick={onOpenExperience}
             className="inline-flex items-center gap-2 rounded-full bg-[color:var(--color-accent)] px-5 py-3 text-sm font-semibold uppercase tracking-[0.18em] text-white shadow-[0_20px_42px_rgba(0,0,0,0.14)] transition-transform hover:-translate-y-0.5"
           >
-            Demo aç
+            Demoyu aç
             <ArrowRight className="h-4 w-4" />
           </button>
         </header>
@@ -64,13 +64,13 @@ export default function MainPage({ onOpenExperience, onHiddenAdminTrigger }: Mai
             <div className="pointer-events-none absolute inset-y-0 right-0 w-1/2 bg-[radial-gradient(circle_at_top,rgba(201,122,67,0.2),transparent_55%)]" />
             <div className="relative grid gap-8 lg:grid-cols-[minmax(0,1.2fr),minmax(320px,0.8fr)] lg:items-center">
               <div className="space-y-5">
-                <span className="section-pill">Main Page</span>
+                <span className="section-pill">Ana Sayfa</span>
                 <h2 className="max-w-4xl text-5xl font-serif leading-[0.92] text-cafe-50 sm:text-6xl xl:text-7xl">
-                  Hər kafe üçün qurulan, QR ilə işləyən paylaşım divarı.
+                  Her kafe için kurulan, QR ile çalışan paylaşım duvarı.
                 </h2>
                 <p className="max-w-2xl text-base leading-8 text-cafe-100/74 sm:text-lg">
-                  Share Vibe müştərinin masa kartındakı QR kodu ilə açılır, masa nömrəsini avtomatik tanıyır,
-                  şəkli qalereyaya göndərir və kampaniya irəliləyişini canlı göstərir.
+                  Share Vibe, müşterinin masa kartındaki QR koduyla açılır, masa numarasını otomatik algılar,
+                  fotoğrafı galeriye gönderir ve kampanya ilerleyişini canlı olarak gösterir.
                 </p>
 
                 <div className="flex flex-wrap gap-3">
@@ -86,7 +86,7 @@ export default function MainPage({ onOpenExperience, onHiddenAdminTrigger }: Mai
                     href="#how-it-works"
                     className="inline-flex items-center gap-2 rounded-full border border-cafe-700/75 bg-white/80 px-6 py-3.5 text-sm font-semibold text-cafe-50 transition-colors hover:border-accent/45"
                   >
-                    Necə işləyir
+                    Nasıl çalışır
                   </a>
                 </div>
               </div>
@@ -98,26 +98,26 @@ export default function MainPage({ onOpenExperience, onHiddenAdminTrigger }: Mai
                       <Store className="h-5 w-5" />
                     </div>
                     <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cafe-100/55">SaaS axını</p>
-                      <p className="mt-1 text-xl font-semibold text-cafe-50">Bir sistem, çoxlu kafe</p>
+                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cafe-100/55">Çoklu kafe yapısı</p>
+                      <p className="mt-1 text-xl font-semibold text-cafe-50">Tek sistem, birden fazla kafe</p>
                     </div>
                   </div>
                   <p className="mt-4 text-sm leading-7 text-cafe-100/72">
-                    Hər məkan üçün ayrıca kafe kodu, ayrıca dizayn, ayrıca kampaniya və ayrıca paylaşım axını qurulur.
+                    Her mekan için ayrı kafe kodu, ayrı tasarım, ayrı kampanya ve ayrı paylaşım akışı oluşturulur.
                   </p>
                 </div>
 
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="rounded-[1.75rem] border border-white/70 bg-white/82 p-5 shadow-[0_18px_40px_rgba(78,58,42,0.08)]">
-                    <p className="text-sm font-semibold text-cafe-50">QR açılış</p>
+                    <p className="text-sm font-semibold text-cafe-50">QR açılışı</p>
                     <p className="mt-2 text-sm leading-7 text-cafe-100/72">
-                      Müştəri birbaşa düzgün masa və düzgün kafe daxilində paylaşım edir.
+                      Misafir doğrudan doğru masanın ve doğru kafenin paylaşım akışına girer.
                     </p>
                   </div>
                   <div className="rounded-[1.75rem] border border-white/70 bg-white/82 p-5 shadow-[0_18px_40px_rgba(78,58,42,0.08)]">
-                    <p className="text-sm font-semibold text-cafe-50">Kampaniya motivasiyası</p>
+                    <p className="text-sm font-semibold text-cafe-50">Kampanya motivasyonu</p>
                     <p className="mt-2 text-sm leading-7 text-cafe-100/72">
-                      Foto sayı artdıqca kofe addımları dolur və mükafat bildirişi avtomatik açılır.
+                      Fotoğraf sayısı arttıkça kahve adımları dolar ve ödül bildirimi otomatik olarak açılır.
                     </p>
                   </div>
                 </div>
@@ -140,11 +140,11 @@ export default function MainPage({ onOpenExperience, onHiddenAdminTrigger }: Mai
           <section id="how-it-works" className="section-shell">
             <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
               <div className="max-w-2xl">
-                <span className="section-pill">Necə işləyir</span>
-                <h2 className="mt-4 text-4xl font-serif font-semibold text-cafe-50">Qurulum və istifadə axını sadə qalır</h2>
+                <span className="section-pill">Nasıl çalışır</span>
+                <h2 className="mt-4 text-4xl font-serif font-semibold text-cafe-50">Kurulum ve kullanım akışı sade kalır</h2>
               </div>
               <div className="rounded-[1.8rem] border border-cafe-700/65 bg-white/76 px-5 py-4 text-sm text-cafe-100/72">
-                Məkan sahibləri dizaynı qurur, müştəri isə sadəcə QR açıb paylaşır.
+                Mekan sahibi sistemi kurar, misafir ise sadece QR açıp paylaşım yapar.
               </div>
             </div>
 
@@ -163,10 +163,10 @@ export default function MainPage({ onOpenExperience, onHiddenAdminTrigger }: Mai
           <section className="section-shell bg-[linear-gradient(160deg,rgba(255,255,255,0.94),rgba(242,232,220,0.92))]">
             <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
               <div className="max-w-2xl">
-                <span className="section-pill">Canlı baxış</span>
-                <h2 className="mt-4 text-4xl font-serif font-semibold text-cafe-50">İndiki sistemi elə indi aç və test et</h2>
+                <span className="section-pill">Canlı önizleme</span>
+                <h2 className="mt-4 text-4xl font-serif font-semibold text-cafe-50">Mevcut sistemi hemen aç ve test et</h2>
                 <p className="mt-3 text-sm leading-7 text-cafe-100/72">
-                  Demo qalereya üzərindən QR axını, paylaşım modalı, kampaniya irəliləyişi və admin quruluşunu yoxlaya bilərsən.
+                  Demo galeri üzerinden QR akışını, paylaşım modalını, kampanya ilerleyişini ve yönetim panelini inceleyebilirsin.
                 </p>
               </div>
 
@@ -176,7 +176,7 @@ export default function MainPage({ onOpenExperience, onHiddenAdminTrigger }: Mai
                 className="inline-flex items-center justify-center gap-2 rounded-full bg-[color:var(--color-accent)] px-6 py-4 text-sm font-semibold uppercase tracking-[0.18em] text-white shadow-[0_20px_42px_rgba(0,0,0,0.14)] transition-transform hover:-translate-y-0.5"
               >
                 <Sparkles className="h-4 w-4" />
-                Demo qalereyanı aç
+                Demo galeriyi aç
               </button>
             </div>
           </section>

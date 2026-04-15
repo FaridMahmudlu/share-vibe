@@ -899,7 +899,7 @@ export default function App() {
 
     if (!draft) {
       if (!resolvedTableLabel) {
-        setUploadError('Paylaşım üçün masa QR kodu ilə daxil olmaq lazımdır.');
+        setUploadError('Paylaşım için masa QR koduyla giriş yapılması gerekir.');
       }
       return;
     }
@@ -974,7 +974,7 @@ export default function App() {
     setUploadProgress(null);
 
     if (!resolvedTableLabel) {
-      setUploadError('Paylaşım üçün masa QR kodu ilə daxil olmaq lazımdır.');
+      setUploadError('Paylaşım için masa QR koduyla giriş yapılması gerekir.');
       return;
     }
 
@@ -1724,8 +1724,8 @@ export default function App() {
                     <p className="font-semibold text-cafe-50">Kafe: {cafeName}</p>
                     <p className="mt-1">
                       {resolvedTableLabel
-                        ? `QR ilə tanınan masa: ${resolvedTableLabel}`
-                        : 'Paylaşım üçün masa QR kodu ilə açılmış link tələb olunur.'}
+                        ? `QR ile tanınan masa: ${resolvedTableLabel}`
+                        : 'Paylaşım için masa QR koduyla açılmış bir bağlantı gerekir.'}
                     </p>
                   </div>
                   <button
@@ -1734,7 +1734,7 @@ export default function App() {
                     className="flex items-center justify-center gap-3 w-full py-4 bg-cafe-700 hover:bg-cafe-600 text-cafe-50 rounded-xl transition-colors shadow-lg disabled:cursor-not-allowed disabled:opacity-45"
                   >
                     <Camera className="w-6 h-6 text-accent" />
-                    <span className="font-medium text-lg">Kamera ilə Çək</span>
+                    <span className="font-medium text-lg">Kamera ile Çek</span>
                   </button>
                 </div>
               ) : isDesktopCameraOpen ? (
@@ -1844,7 +1844,7 @@ export default function App() {
                 
                 <div className="space-y-4 shrink-0">
                   <div className="rounded-xl border border-cafe-700 bg-cafe-900/55 px-4 py-3">
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cafe-100/50">QR məlumatı</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cafe-100/50">QR bilgisi</p>
                     <div className="mt-2 flex items-center gap-2 text-sm text-cafe-100/72">
                       <MapPin className="h-4 w-4 text-[color:var(--color-accent)]" />
                       <span>{resolvedTableLabel || 'Masa tanınmadı'}</span>
