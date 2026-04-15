@@ -100,6 +100,16 @@ const getErrorCode = (error: unknown) =>
     ? String(error.code)
     : '';
 
+const buildWorkspaceDefaults = (slug: string) => ({
+  ...DEFAULT_ADMIN_SETTINGS,
+  cafeName:
+    slug
+      .split('-')
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ') || DEFAULT_ADMIN_SETTINGS.cafeName,
+});
+
 export default function AdminPanel({
   cafeSlug,
   onCafeSlugChange,
@@ -128,6 +138,7 @@ export default function AdminPanel({
   const [workspaceSlug, setWorkspaceSlug] = useState(() => normalizeCafeSlug(cafeSlug, DEFAULT_CAFE_SLUG));
   const [workspaceSlugDraft, setWorkspaceSlugDraft] = useState(() => normalizeCafeSlug(cafeSlug, DEFAULT_CAFE_SLUG));
   const [workspaceOwnerEmail, setWorkspaceOwnerEmail] = useState<string | null>(null);
+  const [workspaceAccessError, setWorkspaceAccessError] = useState<string | null>(null);
 
   const [settings, setSettings] = useState(DEFAULT_ADMIN_SETTINGS);
   const [savedSettings, setSavedSettings] = useState(DEFAULT_ADMIN_SETTINGS);
@@ -211,28 +222,40 @@ export default function AdminPanel({
     if (!userEmail) {
       setMediaItems([]);
       setWorkspaceOwnerEmail(null);
+      setWorkspaceAccessError(null);
       return;
     }
+
+    const canBypassOwnerCheck = hasSuperAdminAccess(userEmail);
 
     const unsubscribeSettings = onSnapshot(doc(db, 'cafes', workspaceSlug), (snapshot) => {
       if (!snapshot.exists()) {
         setWorkspaceOwnerEmail(null);
-        const emptySettings = {
-          ...DEFAULT_ADMIN_SETTINGS,
-          cafeName:
-            workspaceSlug
-              .split('-')
-              .filter(Boolean)
-              .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-              .join(' ') || DEFAULT_ADMIN_SETTINGS.cafeName,
-        };
+        setWorkspaceAccessError(null);
+        const emptySettings = buildWorkspaceDefaults(workspaceSlug);
         setSettings(emptySettings);
         setSavedSettings(emptySettings);
         return;
       }
 
       const data = snapshot.data();
-      setWorkspaceOwnerEmail(normalizeLegacyText(data.ownerEmail, ''));
+      const normalizedOwnerEmail = normalizeAccessEmail(data.ownerEmail);
+      setWorkspaceOwnerEmail(normalizedOwnerEmail);
+
+      if (
+        isOwnerPortal &&
+        normalizedOwnerEmail &&
+        normalizedOwnerEmail !== normalizeAccessEmail(userEmail) &&
+        !canBypassOwnerCheck
+      ) {
+        setWorkspaceAccessError('Bu kafe başka bir owner hesabına bağlı. Sadece kendi kafe alanlarını açabilirsin.');
+        const emptySettings = buildWorkspaceDefaults(workspaceSlug);
+        setSettings(emptySettings);
+        setSavedSettings(emptySettings);
+        return;
+      }
+
+      setWorkspaceAccessError(null);
       const nextSettings = {
         cafeName: normalizeLegacyText(data.cafeName, DEFAULT_ADMIN_SETTINGS.cafeName),
         accentColor:
@@ -285,11 +308,21 @@ export default function AdminPanel({
       unsubscribeSettings();
       unsubscribeMedia();
     };
-  }, [userEmail, workspaceSlug]);
+  }, [isOwnerPortal, userEmail, workspaceSlug]);
+
+  const isBrandView = activeView === 'brand';
+  const isSuperAdmin = hasSuperAdminAccess(userEmail);
+  const hasPortalAccess = isOwnerPortal ? hasOwnerPortalAccess(userEmail) : isSuperAdmin;
+  const normalizedUserEmail = normalizeAccessEmail(userEmail);
+  const canViewActiveWorkspace =
+    !isOwnerPortal ||
+    isSuperAdmin ||
+    !workspaceOwnerEmail ||
+    normalizeAccessEmail(workspaceOwnerEmail) === normalizedUserEmail;
 
   const workspaceMediaItems = useMemo(
-    () => mediaItems.filter((item) => item.cafeSlug === workspaceSlug),
-    [mediaItems, workspaceSlug]
+    () => (canViewActiveWorkspace ? mediaItems.filter((item) => item.cafeSlug === workspaceSlug) : []),
+    [canViewActiveWorkspace, mediaItems, workspaceSlug]
   );
   const totalLikes = useMemo(
     () => workspaceMediaItems.reduce((sum, item) => sum + item.likesCount, 0),
@@ -379,9 +412,6 @@ export default function AdminPanel({
       settings.campaignReward !== savedSettings.campaignReward,
     [savedSettings, settings]
   );
-  const isBrandView = activeView === 'brand';
-  const isSuperAdmin = hasSuperAdminAccess(userEmail);
-  const hasPortalAccess = isOwnerPortal ? hasOwnerPortalAccess(userEmail) : isSuperAdmin;
   const effectiveWorkspaceSlug = useMemo(
     () =>
       normalizeOptionalCafeSlug(workspaceSlugDraft) ||
@@ -393,7 +423,7 @@ export default function AdminPanel({
   const workspaceDraftChanged = effectiveWorkspaceSlug !== workspaceSlug;
   const canManageActiveWorkspace =
     Boolean(userEmail) &&
-    (!workspaceOwnerEmail || normalizeAccessEmail(workspaceOwnerEmail) === normalizeAccessEmail(userEmail) || isSuperAdmin);
+    canViewActiveWorkspace;
   const canManageWorkspace = Boolean(userEmail) && (workspaceDraftChanged || canManageActiveWorkspace);
   const panelTitle = isBrandView
     ? (isOwnerPortal ? 'Kafe Kurulum Alanı' : 'Marka Ayarları')
@@ -441,8 +471,31 @@ export default function AdminPanel({
     }
   };
 
-  const applyWorkspaceSlug = () => {
+  const applyWorkspaceSlug = async () => {
     const nextSlug = effectiveWorkspaceSlug;
+
+    if (!nextSlug) {
+      return;
+    }
+
+    if (isOwnerPortal && !isSuperAdmin) {
+      try {
+        const targetSnapshot = await getDoc(doc(db, 'cafes', nextSlug));
+        if (targetSnapshot.exists()) {
+          const targetOwnerEmail = normalizeAccessEmail(targetSnapshot.data().ownerEmail);
+          if (targetOwnerEmail && targetOwnerEmail !== normalizedUserEmail) {
+            setWorkspaceAccessError('Bu kafe başka bir owner hesabına bağlı. Sadece kendi kafe alanlarını açabilirsin.');
+            return;
+          }
+        }
+      } catch (error) {
+        console.error('Workspace ownership check failed:', error);
+        setWorkspaceAccessError('Kafe alanı doğrulanırken bir hata oluştu. Lütfen tekrar deneyin.');
+        return;
+      }
+    }
+
+    setWorkspaceAccessError(null);
     setWorkspaceSlug(nextSlug);
     setWorkspaceSlugDraft(nextSlug);
     onCafeSlugChange(nextSlug);
@@ -452,6 +505,7 @@ export default function AdminPanel({
 
   const selectOwnedWorkspace = (slug: string) => {
     const nextSlug = normalizeCafeSlug(slug, DEFAULT_CAFE_SLUG);
+    setWorkspaceAccessError(null);
     setWorkspaceSlug(nextSlug);
     setWorkspaceSlugDraft(nextSlug);
     onCafeSlugChange(nextSlug);
@@ -546,6 +600,12 @@ export default function AdminPanel({
 
   const confirmDelete = async () => {
     if (!mediaToDelete) {
+      return;
+    }
+
+    if (!canManageActiveWorkspace) {
+      alert('Yalnızca kendi kafe alanına ait içerikleri yönetebilirsin.');
+      setMediaToDelete(null);
       return;
     }
 
@@ -761,7 +821,7 @@ export default function AdminPanel({
                   />
                   <button
                     type="button"
-                    onClick={applyWorkspaceSlug}
+                    onClick={() => void applyWorkspaceSlug()}
                     className="inline-flex items-center justify-center rounded-2xl bg-[color:var(--color-accent)] px-5 py-3 font-semibold text-white shadow-[0_18px_36px_rgba(0,0,0,0.12)] transition-transform hover:-translate-y-0.5"
                   >
                     Aç
@@ -780,21 +840,39 @@ export default function AdminPanel({
                   Bu çalışma alanı <strong>{workspaceOwnerEmail}</strong> hesabına bağlıdır. Yalnız sahibi veya süper yönetici değişiklik yapabilir.
                 </div>
               )}
+
+              {workspaceAccessError && (
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+                  {workspaceAccessError}
+                </div>
+              )}
             </div>
 
             <div className="glass-card space-y-3">
-              <div>
-                <p className="text-sm font-semibold text-cafe-50">Genel galeri bağlantısı</p>
-                <p className="mt-1 break-all text-sm text-cafe-100/68">{publicGalleryLink}</p>
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-cafe-50">QR için örnek masa bağlantısı</p>
-                <p className="mt-1 break-all text-sm text-cafe-100/68">{publicQrExampleLink}</p>
-              </div>
+              {canViewActiveWorkspace ? (
+                <>
+                  <div>
+                    <p className="text-sm font-semibold text-cafe-50">Genel galeri bağlantısı</p>
+                    <p className="mt-1 break-all text-sm text-cafe-100/68">{publicGalleryLink}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-cafe-50">QR için örnek masa bağlantısı</p>
+                    <p className="mt-1 break-all text-sm text-cafe-100/68">{publicQrExampleLink}</p>
+                  </div>
+                </>
+              ) : (
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+                  Yetkin olmayan bir kafe alanı için bağlantı önizlemesi gösterilmez.
+                </div>
+              )}
               {onOpenCafeEnvironment && (
                 <button
                   type="button"
                   onClick={async () => {
+                    if (isOwnerPortal && !canViewActiveWorkspace) {
+                      return;
+                    }
+
                     const targetSlug =
                       settingsDirty || workspaceDraftChanged
                         ? await handleSave()
@@ -804,7 +882,8 @@ export default function AdminPanel({
                       onOpenCafeEnvironment(targetSlug);
                     }
                   }}
-                  className="mt-2 inline-flex items-center justify-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-4 py-3 text-sm font-semibold text-white shadow-[0_18px_36px_rgba(0,0,0,0.12)] transition-transform hover:-translate-y-0.5"
+                  disabled={isOwnerPortal && !canViewActiveWorkspace}
+                  className="mt-2 inline-flex items-center justify-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-4 py-3 text-sm font-semibold text-white shadow-[0_18px_36px_rgba(0,0,0,0.12)] transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <ExternalLink className="h-4 w-4" />
                   Kafe ortamını aç
@@ -1207,7 +1286,7 @@ export default function AdminPanel({
 
                     <button
                       onClick={() => setMediaToDelete(item)}
-                      disabled={isDeletingId === item.id}
+                      disabled={isDeletingId === item.id || !canManageActiveWorkspace}
                       className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 font-semibold text-red-600 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       <Trash2 className="w-4 h-4" />

@@ -1,14 +1,15 @@
 import React, { Suspense, startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { Camera, Upload, Heart, X, Sparkles, MapPin, Clock, Instagram, Twitter, Facebook, Share2, Copy, Check, Trash2, RotateCw, Sun, Contrast, Coffee, Settings, ImageOff } from 'lucide-react';
+import { Camera, Upload, Heart, X, Sparkles, MapPin, Clock, Instagram, Twitter, Facebook, Share2, Copy, Check, Trash2, RotateCw, Sun, Contrast, Coffee, ImageOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db, auth, storage, waitForAuthInitialization } from './firebase';
-import { collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc, serverTimestamp, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { collection, addDoc, getDocs, onSnapshot, query, orderBy, doc, updateDoc, serverTimestamp, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
 import { getGoogleSignInErrorMessage, resolveGoogleSignInRedirect, signInWithGoogle } from './googleAuth';
 import { deleteMediaRecord } from './mediaStorage';
 import { clearPendingUpload, getPendingUpload, savePendingUpload, type PendingUploadDraft } from './pendingUpload';
 import MainPage from './MainPage';
+import BrandSignature from './BrandSignature';
 import { hasOwnerPortalAccess } from './accessConfig';
 import {
   buildCafePublicLink,
@@ -52,9 +53,9 @@ type RewardCelebration = {
 
 const AnimatedBackground = () => (
   <div className="fixed inset-0 z-[-1] overflow-hidden pointer-events-none">
-    <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-accent/30 blur-[100px] animate-blob" />
-    <div className="absolute top-[20%] right-[-10%] w-[50%] h-[50%] rounded-full bg-purple-400/30 blur-[120px] animate-blob animation-delay-2000" />
-    <div className="absolute bottom-[-20%] left-[20%] w-[60%] h-[60%] rounded-full bg-blue-400/30 blur-[150px] animate-blob animation-delay-4000" />
+    <div className="absolute top-[-10%] left-[-10%] h-[42%] w-[42%] rounded-full bg-accent/30 blur-[110px] animate-blob" />
+    <div className="absolute top-[10%] right-[-10%] h-[50%] w-[50%] rounded-full bg-[#efd2ba]/55 blur-[135px] animate-blob animation-delay-2000" />
+    <div className="absolute bottom-[-22%] left-[14%] h-[56%] w-[56%] rounded-full bg-[#6b4331]/20 blur-[155px] animate-blob animation-delay-4000" />
   </div>
 );
 
@@ -145,6 +146,8 @@ export default function App() {
   const [handwritingFont, setHandwritingFont] = useState(DEFAULT_HANDWRITING_FONT);
   const [cafeName, setCafeName] = useState(DEFAULT_CAFE_NAME);
   const [activeCafeSlug, setActiveCafeSlug] = useState(getInitialCafeSlug);
+  const [demoCafeSlug, setDemoCafeSlug] = useState(DEFAULT_CAFE_SLUG);
+  const [demoCafeName, setDemoCafeName] = useState(DEFAULT_CAFE_NAME);
   const [resolvedTableLabel, setResolvedTableLabel] = useState(getInitialTableLabel);
   const [campaignTarget, setCampaignTarget] = useState(DEFAULT_CAMPAIGN_TARGET);
   const [campaignReward, setCampaignReward] = useState(DEFAULT_CAMPAIGN_REWARD);
@@ -423,6 +426,13 @@ export default function App() {
     setCurrentView('app');
     setSelectedMediaId(null);
     setShareMediaId(null);
+  };
+
+  const openLandingDemo = () => {
+    openCafeExperience({
+      cafeSlug: demoCafeSlug,
+      tableLabel: DEFAULT_DEMO_TABLE,
+    });
   };
 
   const handleHiddenAdminTrigger = () => {
@@ -713,6 +723,47 @@ export default function App() {
       window.clearTimeout(hiddenAdminTapTimeoutRef.current);
       hiddenAdminTapTimeoutRef.current = null;
     }
+  }, []);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    const resolveDemoCafe = async () => {
+      try {
+        const snapshot = await getDocs(collection(db, 'cafes'));
+        if (isCancelled) {
+          return;
+        }
+
+        const cafes = snapshot.docs.map((entry) => {
+          const data = entry.data();
+          return {
+            slug: normalizeCafeSlug(data.cafeSlug ?? entry.id, entry.id),
+            cafeName: normalizeLegacyText(data.cafeName, DEFAULT_CAFE_NAME),
+          };
+        });
+
+        const preferredCafe =
+          cafes.find(({ cafeName, slug }) => /lumina/i.test(`${cafeName} ${slug}`)) ||
+          cafes.find(({ slug }) => slug === DEFAULT_CAFE_SLUG) ||
+          cafes[0];
+
+        if (!preferredCafe) {
+          return;
+        }
+
+        setDemoCafeSlug(preferredCafe.slug);
+        setDemoCafeName(preferredCafe.cafeName);
+      } catch (error) {
+        console.warn('Demo cafe resolve failed:', error);
+      }
+    };
+
+    void resolveDemoCafe();
+
+    return () => {
+      isCancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -1329,9 +1380,7 @@ export default function App() {
     return (
       <div className="min-h-screen flex items-center justify-center px-4 text-cafe-50">
         <div className="section-shell max-w-md text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12 text-[color:var(--color-accent)]">
-            <Coffee className="w-6 h-6" />
-          </div>
+          <BrandSignature className="mx-auto mb-5 justify-center" compact subtitle="giriş hazırlanıyor" />
           <h1 className="text-2xl font-semibold text-cafe-50">Hesap durumu kontrol ediliyor</h1>
           <p className="mt-3 text-sm leading-7 text-cafe-100/70">
             Google oturumun doğrulanıyor. Giriş yaptıysan hesabın otomatik olarak geri yüklenecek.
@@ -1347,9 +1396,7 @@ export default function App() {
         fallback={
           <div className="min-h-screen flex items-center justify-center px-4 text-cafe-50">
             <div className="section-shell max-w-md text-center">
-              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12 text-[color:var(--color-accent)]">
-                <Settings className="w-6 h-6" />
-              </div>
+              <BrandSignature className="mx-auto mb-5 justify-center" compact subtitle="admin modülü yükleniyor" />
               <h1 className="text-2xl font-semibold text-cafe-50">Admin paneli yükleniyor</h1>
               <p className="mt-3 text-sm leading-7 text-cafe-100/70">
                 Yönetim modülü ayrı yüklendiği için açılış performansı korunuyor.
@@ -1380,9 +1427,7 @@ export default function App() {
         fallback={
           <div className="min-h-screen flex items-center justify-center px-4 text-cafe-50">
             <div className="section-shell max-w-md text-center">
-              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12 text-[color:var(--color-accent)]">
-                <Settings className="w-6 h-6" />
-              </div>
+              <BrandSignature className="mx-auto mb-5 justify-center" compact subtitle="owner paneli yükleniyor" />
               <h1 className="text-2xl font-semibold text-cafe-50">Kafe sahibi paneli yükleniyor</h1>
               <p className="mt-3 text-sm leading-7 text-cafe-100/70">
                 Kafe kurulum modülü hazırlanıyor.
@@ -1413,18 +1458,14 @@ export default function App() {
         <AnimatedBackground />
         <div className="relative z-10">
           <MainPage
-            onOpenExperience={() =>
-              openCafeExperience({
-                cafeSlug: activeCafeSlug,
-                tableLabel: resolvedTableLabel || DEFAULT_DEMO_TABLE,
-              })
-            }
+            onOpenDemo={openLandingDemo}
             onOpenOwnerPortal={() => void handleOpenOwnerPortal()}
             onSwitchOwnerAccount={() => void handleSwitchOwnerAccount()}
             onHiddenAdminTrigger={handleHiddenAdminTrigger}
             ownerEmail={currentUserEmail}
             ownerAccessError={ownerAccessError}
             hasOwnerAccess={hasOwnerAccess}
+            demoCafeName={demoCafeName}
           />
         </div>
       </div>
@@ -1443,10 +1484,10 @@ export default function App() {
                 <button
                   type="button"
                   onClick={handleHiddenAdminTrigger}
-                  className="ambient-ring flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12 text-[color:var(--color-accent)] shadow-inner cursor-default"
-                  aria-label="Kafe logosu"
+                  className="brand-signature-button brand-signature-button--app ambient-ring shrink-0 cursor-default"
+                  aria-label="ShareVibe logosu"
                 >
-                  <Coffee className="w-5 h-5" />
+                  <BrandSignature compact subtitle={null} />
                 </button>
 
                 <div className="min-w-0">
@@ -1459,7 +1500,7 @@ export default function App() {
                     </span>
                   </div>
                   <p className="text-xs sm:text-sm text-cafe-100/60">
-                    Fotoğraf paylaş, anını galeride hemen gör.
+                    ShareVibe ile fotoğrafını paylaş, anını galeride anında gör.
                   </p>
                 </div>
               </div>

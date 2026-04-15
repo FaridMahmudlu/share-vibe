@@ -1,15 +1,15 @@
 export const THEME_COLORS = [
-  { name: 'Kehribar', value: '#c97a43' },
-  { name: 'Adaçayı', value: '#5f8d6d' },
-  { name: 'Gece Mavisi', value: '#355c7d' },
-  { name: 'Gül Kurusu', value: '#b56576' },
-  { name: 'Kiremit', value: '#c56a4b' },
-  { name: 'Safran', value: '#d39b2a' },
-  { name: 'Zeytin', value: '#687a4e' },
-  { name: 'Mercan', value: '#d86f5b' },
-  { name: 'Turkuaz', value: '#2f8f9d' },
-  { name: 'Mürdüm', value: '#7c5c9e' },
-  { name: 'Koyu Kiraz', value: '#8b3d52' },
+  { name: 'Bakır Latte', value: '#d48f6b' },
+  { name: 'Tarçın', value: '#c97857' },
+  { name: 'Karamel', value: '#b87352' },
+  { name: 'Fındık', value: '#9d6a4c' },
+  { name: 'Toffee', value: '#bb7658' },
+  { name: 'Sütlü Kakao', value: '#a56f62' },
+  { name: 'Şeftali Köpüğü', value: '#de9d7c' },
+  { name: 'Kum Beji', value: '#c29a74' },
+  { name: 'Mocha', value: '#7f4a36' },
+  { name: 'Kızıl Kil', value: '#aa604e' },
+  { name: 'Espresso', value: '#5d382a' },
 ];
 
 export const THEME_FONTS = [
@@ -25,58 +25,58 @@ export const THEME_FONTS = [
 
 export const THEME_PRESETS = [
   {
-    name: 'Sıcak Karşılama',
-    accentColor: '#c97a43',
+    name: 'Bakır Karşılama',
+    accentColor: '#d48f6b',
     handwritingFont: '"Kalam", cursive',
-    description: 'Sıcak ve tanıdık bir kafe hissi verir.',
+    description: 'Sıcak, rafine ve davetkar bir ilk izlenim oluşturur.',
   },
   {
-    name: 'Doğal Köşe',
-    accentColor: '#5f8d6d',
+    name: 'Tarçın Akışı',
+    accentColor: '#c97857',
     handwritingFont: '"Patrick Hand", cursive',
-    description: 'Bitkili ve sakin konseptler için dengeli görünüm.',
+    description: 'Dinamik ve samimi bir paylaşım alanı hissi verir.',
   },
   {
-    name: 'Gece Servisi',
-    accentColor: '#355c7d',
+    name: 'Fındık Yumuşaklığı',
+    accentColor: '#9d6a4c',
     handwritingFont: '"Caveat", cursive',
-    description: 'Akşam atmosferi ve modern bir vurgu için.',
+    description: 'Yumuşak tonlu ve uzun süre bakılması rahat bir görünüm sağlar.',
   },
   {
-    name: 'Romantik Masa',
-    accentColor: '#b56576',
+    name: 'Kum Işığı',
+    accentColor: '#c29a74',
     handwritingFont: '"Shantell Sans", cursive',
-    description: 'Daha yumuşak ve butik bir sunum sağlar.',
+    description: 'Butik, aydınlık ve premium bir masa deneyimi sunar.',
   },
   {
-    name: 'Tatlı Molası',
-    accentColor: '#d39b2a',
+    name: 'Şeftali Dokunuşu',
+    accentColor: '#de9d7c',
     handwritingFont: '"Satisfy", cursive',
-    description: 'Daha enerjik ve dikkat çeken bir sıcaklık sunar.',
+    description: 'Daha canlı ama yine de marka bütünlüğünü koruyan sıcaklık katar.',
   },
   {
-    name: 'Bahçe Defteri',
-    accentColor: '#687a4e',
+    name: 'Toffee Vurgusu',
+    accentColor: '#bb7658',
     handwritingFont: '"Handlee", cursive',
-    description: 'Doğal ve rahat mekanlarda yumuşak bir his bırakır.',
+    description: 'Paylaşım butonları ve kampanya kartlarında güçlü vurgu üretir.',
   },
   {
-    name: 'Kıyı Notları',
-    accentColor: '#2f8f9d',
+    name: 'Mocha İmzası',
+    accentColor: '#7f4a36',
     handwritingFont: '"Marck Script", cursive',
-    description: 'Ferah, açık ve biraz daha canlı görünümler için.',
+    description: 'Daha karakterli, tok ve premium bir marka hissi bırakır.',
   },
   {
-    name: 'Şehir Gecesi',
-    accentColor: '#7c5c9e',
+    name: 'Espresso Kontrastı',
+    accentColor: '#5d382a',
     handwritingFont: '"Nothing You Could Do", cursive',
-    description: 'Daha karakterli ve fark edilir bir gece teması verir.',
+    description: 'Koyu vurgularla güçlü başlıklar ve net çağrılar üretir.',
   },
 ];
 
-export const DEFAULT_ACCENT_COLOR = '#c97a43';
+export const DEFAULT_ACCENT_COLOR = '#d48f6b';
 export const DEFAULT_HANDWRITING_FONT = THEME_FONTS[0].value;
-export const DEFAULT_CAFE_NAME = 'Lumina Konsept Kafe';
+export const DEFAULT_CAFE_NAME = 'Lumina Coffee';
 export const DEFAULT_CAFE_SLUG = 'ava-coffee';
 export const DEFAULT_DEMO_TABLE = 'Masa 12';
 export const DEFAULT_CAMPAIGN_TARGET = 4;
