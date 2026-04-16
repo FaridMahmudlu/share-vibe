@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { db, auth } from './firebase';
-import { collection, doc, getDoc, onSnapshot, orderBy, query, setDoc, where } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDoc, getDocs, onSnapshot, orderBy, query, setDoc, where } from 'firebase/firestore';
 import {
   ArrowLeft,
   ArrowUpDown,
@@ -23,6 +23,7 @@ import { signInWithGoogle } from './googleAuth';
 import { hasOwnerPortalAccess, hasSuperAdminAccess, normalizeAccessEmail } from './accessConfig';
 import { deleteMediaRecord } from './mediaStorage';
 import DropdownSelect from './DropdownSelect';
+import BrandSignature from './BrandSignature';
 import {
   buildCafePublicLink,
   DEFAULT_ACCENT_COLOR,
@@ -138,7 +139,9 @@ export default function AdminPanel({
   const [workspaceSlug, setWorkspaceSlug] = useState(() => normalizeCafeSlug(cafeSlug, DEFAULT_CAFE_SLUG));
   const [workspaceSlugDraft, setWorkspaceSlugDraft] = useState(() => normalizeCafeSlug(cafeSlug, DEFAULT_CAFE_SLUG));
   const [workspaceOwnerEmail, setWorkspaceOwnerEmail] = useState<string | null>(null);
+  const [workspaceAdminEmails, setWorkspaceAdminEmails] = useState<string[]>([]);
   const [workspaceAccessError, setWorkspaceAccessError] = useState<string | null>(null);
+  const [deletingWorkspaceSlug, setDeletingWorkspaceSlug] = useState<string | null>(null);
 
   const [settings, setSettings] = useState(DEFAULT_ADMIN_SETTINGS);
   const [savedSettings, setSavedSettings] = useState(DEFAULT_ADMIN_SETTINGS);
@@ -222,6 +225,7 @@ export default function AdminPanel({
     if (!userEmail) {
       setMediaItems([]);
       setWorkspaceOwnerEmail(null);
+      setWorkspaceAdminEmails([]);
       setWorkspaceAccessError(null);
       return;
     }
@@ -231,6 +235,7 @@ export default function AdminPanel({
     const unsubscribeSettings = onSnapshot(doc(db, 'cafes', workspaceSlug), (snapshot) => {
       if (!snapshot.exists()) {
         setWorkspaceOwnerEmail(null);
+        setWorkspaceAdminEmails([]);
         setWorkspaceAccessError(null);
         const emptySettings = buildWorkspaceDefaults(workspaceSlug);
         setSettings(emptySettings);
@@ -240,7 +245,16 @@ export default function AdminPanel({
 
       const data = snapshot.data();
       const normalizedOwnerEmail = normalizeAccessEmail(data.ownerEmail);
+      const normalizedAdmins = [
+        ...(Array.isArray(data.adminEmails) ? data.adminEmails : []),
+        ...(Array.isArray(data.admins) ? data.admins : []),
+      ]
+        .filter((entry): entry is string => typeof entry === 'string')
+        .map((entry) => normalizeAccessEmail(entry))
+        .filter(Boolean);
+
       setWorkspaceOwnerEmail(normalizedOwnerEmail);
+      setWorkspaceAdminEmails(Array.from(new Set(normalizedAdmins)));
 
       if (
         isOwnerPortal &&
@@ -312,13 +326,20 @@ export default function AdminPanel({
 
   const isBrandView = activeView === 'brand';
   const isSuperAdmin = hasSuperAdminAccess(userEmail);
-  const hasPortalAccess = isOwnerPortal ? hasOwnerPortalAccess(userEmail) : isSuperAdmin;
   const normalizedUserEmail = normalizeAccessEmail(userEmail);
+  const isWorkspaceAssignedToCurrentUser =
+    Boolean(normalizedUserEmail) &&
+    (normalizeAccessEmail(workspaceOwnerEmail) === normalizedUserEmail ||
+      workspaceAdminEmails.some((email) => normalizeAccessEmail(email) === normalizedUserEmail));
+  const hasPortalAccess = isOwnerPortal
+    ? hasOwnerPortalAccess(userEmail)
+    : isSuperAdmin || isWorkspaceAssignedToCurrentUser;
   const canViewActiveWorkspace =
     !isOwnerPortal ||
     isSuperAdmin ||
     !workspaceOwnerEmail ||
-    normalizeAccessEmail(workspaceOwnerEmail) === normalizedUserEmail;
+    normalizeAccessEmail(workspaceOwnerEmail) === normalizedUserEmail ||
+    workspaceAdminEmails.some((email) => normalizeAccessEmail(email) === normalizedUserEmail);
 
   const workspaceMediaItems = useMemo(
     () => (canViewActiveWorkspace ? mediaItems.filter((item) => item.cafeSlug === workspaceSlug) : []),
@@ -513,6 +534,58 @@ export default function AdminPanel({
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const handleDeleteOwnedWorkspace = async (slug: string) => {
+    if (!userEmail || !isOwnerPortal) {
+      return;
+    }
+
+    const normalizedSlug = normalizeCafeSlug(slug, DEFAULT_CAFE_SLUG);
+    const workspaceInOwnerList = ownedWorkspaces.some((workspace) => workspace.slug === normalizedSlug);
+
+    if (!workspaceInOwnerList && !isSuperAdmin) {
+      alert('Bu kafe alanını silme yetkin bulunmuyor.');
+      return;
+    }
+
+    const confirmation = window.confirm(
+      'Bu kafe alanını silmek üzeresiniz. İlgili galeri paylaşımları da kalıcı olarak silinecek. Devam etmek istiyor musunuz?'
+    );
+
+    if (!confirmation) {
+      return;
+    }
+
+    setDeletingWorkspaceSlug(normalizedSlug);
+
+    try {
+      const relatedMediaSnapshot = await getDocs(
+        query(collection(db, 'media'), where('cafeSlug', '==', normalizedSlug))
+      );
+
+      for (const entry of relatedMediaSnapshot.docs) {
+        const data = entry.data();
+        await deleteMediaRecord(entry.id, typeof data.url === 'string' ? data.url : undefined);
+      }
+
+      await deleteDoc(doc(db, 'cafes', normalizedSlug));
+
+      const remainingWorkspaces = ownedWorkspaces.filter((workspace) => workspace.slug !== normalizedSlug);
+      if (workspaceSlug === normalizedSlug) {
+        const fallbackSlug = remainingWorkspaces[0]?.slug ?? DEFAULT_CAFE_SLUG;
+        setWorkspaceSlug(fallbackSlug);
+        setWorkspaceSlugDraft(fallbackSlug);
+        onCafeSlugChange(fallbackSlug);
+      }
+
+      alert('Kafe alanı silindi.');
+    } catch (error) {
+      console.error('Workspace delete failed:', error);
+      alert('Kafe alanı silinirken bir hata oluştu.');
+    } finally {
+      setDeletingWorkspaceSlug(null);
+    }
+  };
+
   const openBrandView = () => {
     setActiveView('brand');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -685,7 +758,9 @@ export default function AdminPanel({
           <span className="section-pill">{loginPill}</span>
           <h1 className="mt-4 text-3xl font-semibold text-cafe-50">Erişim izni bulunamadı</h1>
           <p className="mt-3 text-sm leading-7 text-cafe-100/72">
-            Bu Google hesabı kafe sahibi erişim listesinde yer almıyor. Yetkili hesapla giriş yapmanız gerekiyor.
+            {isOwnerPortal
+              ? 'Bu Google hesabı kafe sahibi erişim listesinde yer almıyor. Yetkili hesapla giriş yapmanız gerekiyor.'
+                : 'Bu kafe için yönetim izni bulunan owner/admin hesabı ile giriş yapmanız gerekiyor.'}
           </p>
           <div className="mt-5 rounded-2xl border border-cafe-700/75 bg-cafe-900/45 px-4 py-3 text-sm text-cafe-100/72">
             Giriş yapan hesap: <strong className="text-cafe-50">{userEmail}</strong>
@@ -716,9 +791,17 @@ export default function AdminPanel({
 
   return (
     <div className="min-h-screen pb-16 text-cafe-50">
-      <header className="sticky top-0 z-40 border-b border-white/45 bg-white/72 backdrop-blur-2xl shadow-[0_16px_50px_rgba(69,49,35,0.08)]">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between gap-4">
+      <header className="sticky top-0 z-40 border-b border-white/16 bg-[#1a0f0a]/86 backdrop-blur-2xl shadow-[0_16px_50px_rgba(0,0,0,0.24)]">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={onBack}
+              className="brand-signature-button brand-signature-button--app"
+              aria-label="Main page'e dön"
+            >
+              <BrandSignature compact subtitle={null} />
+            </button>
             <button onClick={onBack} className="icon-button" aria-label="Ana sayfaya dön">
               <ArrowLeft className="w-5 h-5" />
             </button>
@@ -731,7 +814,7 @@ export default function AdminPanel({
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            <div className="hidden lg:flex items-center gap-2 rounded-full border border-cafe-700/80 bg-white/75 px-4 py-2 text-sm text-cafe-100/70">
+            <div className="hidden lg:flex items-center gap-2 rounded-full border border-cafe-700/80 bg-cafe-900/72 px-4 py-2 text-sm text-cafe-50/84">
               <ShieldCheck className="w-4 h-4 text-[color:var(--color-accent)]" />
               <span>{userEmail}</span>
             </div>
@@ -772,7 +855,7 @@ export default function AdminPanel({
                   : 'Her kafe kendi koduyla ayrılır. Genel galeri, QR bağlantıları, paylaşımlar ve tasarım ayarları bu koda göre ayrı çalışır.'}
               </p>
             </div>
-            <div className="rounded-2xl border border-cafe-700/75 bg-white/78 px-4 py-3 text-sm text-cafe-100/70">
+            <div className="rounded-2xl border border-cafe-700/80 bg-cafe-900/72 px-4 py-3 text-sm text-cafe-50/84">
               {isOwnerPortal ? 'Hazırlanan kod' : 'Aktif kod'}:{' '}
               <strong className="text-cafe-50">{effectiveWorkspaceSlug}</strong>
             </div>
@@ -788,20 +871,40 @@ export default function AdminPanel({
                       Mevcut kafeler arasında geçiş yapabilir veya yeni bir tane oluşturabilirsin.
                     </p>
                   </div>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="grid gap-2 sm:grid-cols-2">
                     {ownedWorkspaces.map((workspace) => (
-                      <button
+                      <div
                         key={workspace.slug}
-                        type="button"
-                        onClick={() => selectOwnedWorkspace(workspace.slug)}
-                        className={`rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
+                        className={`rounded-2xl border px-4 py-3 text-sm font-medium transition-colors ${
                           workspace.slug === workspaceSlug
-                            ? 'border-accent/40 bg-[color:var(--color-accent)]/12 text-[color:var(--color-accent)]'
-                            : 'border-cafe-700/75 bg-white/80 text-cafe-50 hover:border-accent/30'
+                            ? 'border-accent/40 bg-[color:var(--color-accent)]/12 text-cafe-50'
+                            : 'border-cafe-700/80 bg-cafe-900/72 text-cafe-50'
                         }`}
                       >
-                        {workspace.cafeName}
-                      </button>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold">{workspace.cafeName}</p>
+                            <p className="truncate text-xs text-cafe-100/70">/{workspace.slug}</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => selectOwnedWorkspace(workspace.slug)}
+                              className="rounded-full border border-cafe-700/80 bg-cafe-900/72 px-3 py-1 text-xs font-semibold text-cafe-50 transition-colors hover:border-accent/40"
+                            >
+                              Düzenle
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleDeleteOwnedWorkspace(workspace.slug)}
+                              disabled={deletingWorkspaceSlug === workspace.slug}
+                              className="rounded-full border border-red-300/50 bg-red-500/12 px-3 py-1 text-xs font-semibold text-red-200 transition-colors hover:border-red-300 disabled:cursor-not-allowed disabled:opacity-70"
+                            >
+                              {deletingWorkspaceSlug === workspace.slug ? 'Siliniyor...' : 'Sil'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -817,7 +920,7 @@ export default function AdminPanel({
                     value={workspaceSlugDraft}
                     onChange={(event) => setWorkspaceSlugDraft(normalizeOptionalCafeSlug(event.target.value))}
                     placeholder="örn: lumina-kahve"
-                    className="w-full rounded-2xl border border-cafe-700/80 bg-white/80 px-4 py-3 text-cafe-50 outline-none transition-colors focus:border-accent/60"
+                    className="w-full rounded-2xl border border-cafe-700/80 bg-cafe-900/72 px-4 py-3 text-cafe-50 outline-none transition-colors focus:border-accent/60"
                   />
                   <button
                     type="button"
@@ -907,7 +1010,7 @@ export default function AdminPanel({
               <button
                 type="button"
                 onClick={openDashboardView}
-                className="inline-flex items-center gap-2 self-start rounded-full border border-cafe-700/80 bg-white/80 px-4 py-2.5 text-sm font-medium text-cafe-50 transition-colors hover:border-accent/40"
+                className="inline-flex items-center gap-2 self-start rounded-full border border-cafe-700/80 bg-cafe-900/72 px-4 py-2.5 text-sm font-medium text-cafe-50 transition-colors hover:border-accent/40"
               >
                 <ArrowLeft className="h-4 w-4" />
                 Panele dön
@@ -921,7 +1024,7 @@ export default function AdminPanel({
                   type="text"
                   value={settings.cafeName}
                   onChange={(event) => setSettings({ ...settings, cafeName: event.target.value })}
-                  className="w-full rounded-2xl border border-cafe-700/80 bg-white/80 px-4 py-3 text-cafe-50 outline-none transition-colors focus:border-accent/60"
+                  className="w-full rounded-2xl border border-cafe-700/80 bg-cafe-900/72 px-4 py-3 text-cafe-50 outline-none transition-colors focus:border-accent/60"
                 />
               </div>
 
@@ -936,7 +1039,7 @@ export default function AdminPanel({
                       className={`rounded-2xl border px-3 py-3 text-lg transition-colors ${
                         settings.handwritingFont === font.value
                           ? 'border-accent/30 bg-[color:var(--color-accent)]/10 text-[color:var(--color-accent)]'
-                          : 'border-cafe-700/80 bg-white/80 text-cafe-50 hover:border-accent/30'
+                            : 'border-cafe-700/80 bg-cafe-900/72 text-cafe-50 hover:border-accent/30'
                       }`}
                       style={{ fontFamily: font.value }}
                     >
@@ -990,7 +1093,7 @@ export default function AdminPanel({
                     className={`rounded-2xl border p-4 text-left transition-colors ${
                       settings.accentColor === preset.accentColor && settings.handwritingFont === preset.handwritingFont
                         ? 'border-accent/30 bg-[color:var(--color-accent)]/10'
-                        : 'border-cafe-700/80 bg-white/80 hover:border-accent/30'
+                        : 'border-cafe-700/80 bg-cafe-900/72 hover:border-accent/30'
                     }`}
                   >
                     <div className="flex items-center gap-2">
@@ -1103,7 +1206,7 @@ export default function AdminPanel({
                       campaignTarget: Math.max(1, Number(event.target.value) || 1),
                     })
                   }
-                  className="w-full rounded-2xl border border-cafe-700/80 bg-white/80 px-4 py-3 text-cafe-50 outline-none transition-colors focus:border-accent/60"
+                  className="w-full rounded-2xl border border-cafe-700/80 bg-cafe-900/72 px-4 py-3 text-cafe-50 outline-none transition-colors focus:border-accent/60"
                 />
               </div>
 
@@ -1114,7 +1217,7 @@ export default function AdminPanel({
                   value={settings.campaignReward}
                   onChange={(event) => setSettings({ ...settings, campaignReward: event.target.value })}
                   placeholder="Örn: ücretsiz bir kahve"
-                  className="w-full rounded-2xl border border-cafe-700/80 bg-white/80 px-4 py-3 text-cafe-50 outline-none transition-colors focus:border-accent/60"
+                  className="w-full rounded-2xl border border-cafe-700/80 bg-cafe-900/72 px-4 py-3 text-cafe-50 outline-none transition-colors focus:border-accent/60"
                 />
               </div>
             </div>
@@ -1122,7 +1225,7 @@ export default function AdminPanel({
             <div className="reward-card">
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.22em] text-cafe-100/55">Ödül Önizlemesi</p>
+                  <p className="text-xs uppercase tracking-[0.22em] text-cafe-100/70">Ödül Önizlemesi</p>
                   <h3 className="mt-2 text-2xl font-semibold text-cafe-50">Paylaşımı teşvik eden mesaj</h3>
                 </div>
                 <div className="rounded-2xl bg-[color:var(--color-accent)]/14 p-3 text-[color:var(--color-accent)]">
@@ -1130,18 +1233,37 @@ export default function AdminPanel({
                 </div>
               </div>
 
-              <div className="mt-4 rounded-[1.6rem] border border-white/55 bg-white/80 p-5">
+              <div className="mt-4 rounded-[1.6rem] border border-white/12 bg-[linear-gradient(155deg,rgba(57,34,24,0.92),rgba(32,20,14,0.9))] p-5 shadow-[0_16px_30px_rgba(10,6,4,0.36)]">
                 <h4
                   className="text-3xl text-cafe-50"
                   style={{ fontFamily: settings.handwritingFont }}
                 >
                   Tebrikler! 🎉
                 </h4>
-                <p className="mt-3 text-sm leading-7 text-cafe-100/72">
-                  {settings.campaignTarget}. paylaşımınızı yaptınız ve bizden{' '}
+                <p className="mt-3 text-sm leading-7 text-cafe-100/84">
+                  {settings.campaignTarget}. paylaşımı tamamladın. Bizden{' '}
                   <strong style={{ color: settings.accentColor }}>{settings.campaignReward}</strong>{' '}
-                  kazandınız.
+                  kazandın.
                 </p>
+
+                <div className="mt-4 rounded-2xl border border-white/12 bg-white/8 px-4 py-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cafe-100/86">
+                    Bu mesaj göründüğünde kullanıcının {settings.campaignTarget} fotoğrafı gösterilir
+                  </p>
+                </div>
+
+                <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
+                  {Array.from({ length: Math.min(settings.campaignTarget, 8) }, (_, index) => (
+                    <div
+                      key={`reward-preview-slot-${index}`}
+                      className="aspect-square rounded-xl border border-cafe-700/16 bg-gradient-to-br from-cafe-800/75 to-cafe-700/65 p-2"
+                    >
+                      <div className="flex h-full items-center justify-center rounded-lg border border-white/10 bg-white/10 text-cafe-100/70">
+                        <ImageIcon className="h-5 w-5" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
@@ -1197,7 +1319,7 @@ export default function AdminPanel({
                 Admin olarak tüm fotoğrafları burada görebilir, gerektiğinde tek tıkla kaldırabilirsiniz.
               </p>
             </div>
-            <div className="inline-flex items-center rounded-full border border-cafe-700/80 bg-white/75 px-4 py-2 text-sm text-cafe-100/72">
+            <div className="inline-flex items-center rounded-full border border-cafe-700/80 bg-cafe-900/72 px-4 py-2 text-sm text-cafe-50/84">
               {filteredMediaItems.length} sonuç
             </div>
           </div>
@@ -1268,7 +1390,7 @@ export default function AdminPanel({
                       <p className="text-[1.55rem] leading-tight text-cafe-50" style={{ fontFamily: settings.handwritingFont }}>
                         {item.caption}
                       </p>
-                      <span className="rounded-full border border-cafe-700/80 bg-white/75 px-2.5 py-1 text-xs font-semibold text-cafe-100/70">
+                      <span className="rounded-full border border-cafe-700/80 bg-cafe-900/72 px-2.5 py-1 text-xs font-semibold text-cafe-50/84">
                         {item.likesCount} beğeni
                       </span>
                     </div>
@@ -1322,7 +1444,7 @@ export default function AdminPanel({
             <div className="mt-6 flex gap-3">
               <button
                 onClick={() => setMediaToDelete(null)}
-                className="flex-1 rounded-2xl border border-cafe-700/80 bg-white/80 px-4 py-3 font-medium text-cafe-50 transition-colors hover:border-accent/30"
+                className="flex-1 rounded-2xl border border-cafe-700/80 bg-cafe-900/72 px-4 py-3 font-medium text-cafe-50 transition-colors hover:border-accent/30"
               >
                 Vazgeç
               </button>

@@ -10,7 +10,7 @@ import { deleteMediaRecord } from './mediaStorage';
 import { clearPendingUpload, getPendingUpload, savePendingUpload, type PendingUploadDraft } from './pendingUpload';
 import MainPage from './MainPage';
 import BrandSignature from './BrandSignature';
-import { hasOwnerPortalAccess } from './accessConfig';
+import { hasOwnerPortalAccess, hasSuperAdminAccess, normalizeAccessEmail } from './accessConfig';
 import {
   buildCafePublicLink,
   DEFAULT_CAFE_SLUG,
@@ -50,6 +50,13 @@ type RewardCelebration = {
   items: RewardPreviewItem[];
   target: number;
 } | null;
+type DemoCafeCandidate = {
+  slug: string;
+  cafeName: string;
+  mediaCount: number;
+};
+
+const DEMO_CAFE_MATCHER = /(ava|lumina)/i;
 
 const AnimatedBackground = () => (
   <div className="fixed inset-0 z-[-1] overflow-hidden pointer-events-none">
@@ -138,6 +145,15 @@ const getInitialView = (): 'landing' | 'app' | 'admin' | 'owner' => {
   return 'landing';
 };
 
+const pickPreferredDemoCafe = (cafes: DemoCafeCandidate[]) =>
+  cafes.find(({ slug, mediaCount }) => slug === DEFAULT_CAFE_SLUG && mediaCount > 0) ||
+  cafes.find(({ cafeName, slug, mediaCount }) => DEMO_CAFE_MATCHER.test(`${cafeName} ${slug}`) && mediaCount > 0) ||
+  cafes.find(({ slug }) => slug === DEFAULT_CAFE_SLUG) ||
+  cafes.find(({ cafeName, slug }) => DEMO_CAFE_MATCHER.test(`${cafeName} ${slug}`)) ||
+  cafes.find(({ mediaCount }) => mediaCount > 0) ||
+  cafes[0] ||
+  null;
+
 export default function App() {
   const [currentView, setCurrentView] = useState<'landing' | 'app' | 'admin' | 'owner'>(getInitialView);
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
@@ -173,6 +189,8 @@ export default function App() {
   const [rewardCelebration, setRewardCelebration] = useState<RewardCelebration>(null);
   const [showSharePrompt, setShowSharePrompt] = useState(false);
   const [ownerAccessError, setOwnerAccessError] = useState<string | null>(null);
+  const [activeCafeOwnerEmail, setActiveCafeOwnerEmail] = useState<string | null>(null);
+  const [activeCafeAdminEmails, setActiveCafeAdminEmails] = useState<string[]>([]);
   
   // Image editing state
   const [editRotation, setEditRotation] = useState(0);
@@ -212,6 +230,22 @@ export default function App() {
   const hiddenAdminTapTimeoutRef = useRef<number | null>(null);
   const isAuthenticated = Boolean(currentUserUid);
   const hasOwnerAccess = hasOwnerPortalAccess(currentUserEmail);
+  const canAccessActiveCafeAdmin = useMemo(() => {
+    const normalizedUserEmail = normalizeAccessEmail(currentUserEmail);
+    if (!normalizedUserEmail) {
+      return false;
+    }
+
+    if (hasSuperAdminAccess(normalizedUserEmail)) {
+      return true;
+    }
+
+    if (normalizeAccessEmail(activeCafeOwnerEmail) === normalizedUserEmail) {
+      return true;
+    }
+
+    return activeCafeAdminEmails.some((email) => normalizeAccessEmail(email) === normalizedUserEmail);
+  }, [activeCafeAdminEmails, activeCafeOwnerEmail, currentUserEmail]);
 
   const syncCurrentUser = (user: User | null) => {
     setCurrentUserUid(user?.uid ?? null);
@@ -366,14 +400,31 @@ export default function App() {
 
   const handleOpenAdminPanel = async () => {
     setOwnerAccessError(null);
+
     if (auth.currentUser) {
+      if (!canAccessActiveCafeAdmin) {
+        setUploadError('Bu kafe için admin paneli yetkiniz yok.');
+        return;
+      }
+
       setCurrentView('admin');
       return;
     }
 
     const user = await ensureGoogleUser();
     if (user) {
-      setCurrentView('admin');
+      const normalizedUserEmail = normalizeAccessEmail(user.email);
+      const canAccessAfterSignIn =
+        Boolean(normalizedUserEmail) &&
+        (hasSuperAdminAccess(normalizedUserEmail) ||
+          normalizeAccessEmail(activeCafeOwnerEmail) === normalizedUserEmail ||
+          activeCafeAdminEmails.some((email) => normalizeAccessEmail(email) === normalizedUserEmail));
+
+      if (canAccessAfterSignIn) {
+        setCurrentView('admin');
+      } else {
+        setUploadError('Bu kafe için admin paneli yetkiniz yok.');
+      }
     }
   };
 
@@ -730,23 +781,50 @@ export default function App() {
 
     const resolveDemoCafe = async () => {
       try {
-        const snapshot = await getDocs(collection(db, 'cafes'));
+        const [cafesResult, mediaResult] = await Promise.allSettled([
+          getDocs(collection(db, 'cafes')),
+          getDocs(collection(db, 'media')),
+        ]);
+
         if (isCancelled) {
           return;
         }
 
-        const cafes = snapshot.docs.map((entry) => {
-          const data = entry.data();
-          return {
-            slug: normalizeCafeSlug(data.cafeSlug ?? entry.id, entry.id),
-            cafeName: normalizeLegacyText(data.cafeName, DEFAULT_CAFE_NAME),
-          };
-        });
+        const mediaCountBySlug = new Map<string, number>();
+        if (mediaResult.status === 'fulfilled') {
+          mediaResult.value.docs.forEach((entry) => {
+            const data = entry.data();
+            if (data.type === 'video') {
+              return;
+            }
 
-        const preferredCafe =
-          cafes.find(({ cafeName, slug }) => /lumina/i.test(`${cafeName} ${slug}`)) ||
-          cafes.find(({ slug }) => slug === DEFAULT_CAFE_SLUG) ||
-          cafes[0];
+            const slug = normalizeCafeSlug(data.cafeSlug ?? DEFAULT_CAFE_SLUG);
+            mediaCountBySlug.set(slug, (mediaCountBySlug.get(slug) ?? 0) + 1);
+          });
+        }
+
+        const cafes = new Map<string, DemoCafeCandidate>();
+        if (cafesResult.status === 'fulfilled') {
+          cafesResult.value.docs.forEach((entry) => {
+            const data = entry.data();
+            const slug = normalizeCafeSlug(data.cafeSlug ?? entry.id, entry.id);
+            cafes.set(slug, {
+              slug,
+              cafeName: normalizeLegacyText(data.cafeName, DEFAULT_CAFE_NAME),
+              mediaCount: mediaCountBySlug.get(slug) ?? 0,
+            });
+          });
+        }
+
+        if (mediaCountBySlug.has(DEFAULT_CAFE_SLUG) && !cafes.has(DEFAULT_CAFE_SLUG)) {
+          cafes.set(DEFAULT_CAFE_SLUG, {
+            slug: DEFAULT_CAFE_SLUG,
+            cafeName: DEFAULT_CAFE_NAME,
+            mediaCount: mediaCountBySlug.get(DEFAULT_CAFE_SLUG) ?? 0,
+          });
+        }
+
+        const preferredCafe = pickPreferredDemoCafe([...cafes.values()]);
 
         if (!preferredCafe) {
           return;
@@ -891,10 +969,24 @@ export default function App() {
         setCafeName(DEFAULT_CAFE_NAME);
         setCampaignTarget(DEFAULT_CAMPAIGN_TARGET);
         setCampaignReward(DEFAULT_CAMPAIGN_REWARD);
+        setActiveCafeOwnerEmail(null);
+        setActiveCafeAdminEmails([]);
         return;
       }
 
       const data = snapshot.data();
+      const normalizedOwnerEmail = normalizeAccessEmail(data.ownerEmail);
+      const configuredAdminEmails = [
+        ...(Array.isArray(data.adminEmails) ? data.adminEmails : []),
+        ...(Array.isArray(data.admins) ? data.admins : []),
+      ]
+        .filter((entry): entry is string => typeof entry === 'string')
+        .map((entry) => normalizeAccessEmail(entry))
+        .filter(Boolean);
+
+      setActiveCafeOwnerEmail(normalizedOwnerEmail || null);
+      setActiveCafeAdminEmails(Array.from(new Set(configuredAdminEmails)));
+
       if (typeof data.accentColor === 'string' && data.accentColor) {
         setAccentColor(data.accentColor);
       } else {
@@ -1375,6 +1467,13 @@ export default function App() {
   const campaignProgressCount = isAuthenticated ? getCampaignProgressCount(userTotalUploadsCount, campaignTarget) : 0;
   const campaignRemainingCount = Math.max(campaignTarget - campaignProgressCount, 0);
   const rewardPreviewItems = rewardCelebration?.items ?? [];
+  const rewardShowcaseItems = useMemo(
+    () =>
+      Array.from({ length: Math.max(rewardCelebration?.target ?? 0, 0) }, (_, index) =>
+        rewardPreviewItems[index] ?? null
+      ),
+    [rewardCelebration?.target, rewardPreviewItems]
+  );
 
   if (currentView !== 'landing' && (!isAuthResolved || !isGoogleRedirectResolved)) {
     return (
@@ -1477,14 +1576,14 @@ export default function App() {
       <AnimatedBackground />
 
       <div className="relative z-10">
-        <header className="sticky top-0 z-30 border-b border-white/45 bg-white/80 backdrop-blur-2xl shadow-[0_14px_34px_rgba(69,49,35,0.05)]">
+        <header className="sticky top-0 z-30 border-b border-white/16 bg-[#1a0f0a]/86 backdrop-blur-2xl shadow-[0_14px_34px_rgba(0,0,0,0.28)]">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
             <div className="header-bar">
               <div className="header-brand">
                 <button
                   type="button"
-                  onClick={handleHiddenAdminTrigger}
-                  className="brand-signature-button brand-signature-button--app ambient-ring shrink-0 cursor-default"
+                  onClick={() => setCurrentView('landing')}
+                  className="brand-signature-button brand-signature-button--app shrink-0"
                   aria-label="ShareVibe logosu"
                 >
                   <BrandSignature compact subtitle={null} />
@@ -1495,11 +1594,11 @@ export default function App() {
                     <h1 className="truncate text-xl sm:text-2xl font-serif font-semibold tracking-[0.02em] text-cafe-50">
                       {cafeName}
                     </h1>
-                    <span className="hidden md:inline-flex items-center rounded-full border border-cafe-700/70 bg-white/75 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-cafe-100/62">
+                    <span className="hidden md:inline-flex items-center rounded-full border border-cafe-700/70 bg-cafe-900/72 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-cafe-50/80">
                       Anı Galerisi
                     </span>
                   </div>
-                  <p className="text-xs sm:text-sm text-cafe-100/60">
+                  <p className="text-xs sm:text-sm text-cafe-100/76">
                     ShareVibe ile fotoğrafını paylaş, anını galeride anında gör.
                   </p>
                 </div>
@@ -1513,7 +1612,7 @@ export default function App() {
               <div className="header-actions">
                 {isAuthenticated && (
                   <div
-                    className="hidden lg:flex items-center gap-2 rounded-full border border-cafe-700/70 bg-white/78 px-3 py-2 text-sm text-cafe-100/72 shadow-sm"
+                    className="hidden lg:flex items-center gap-2 rounded-full border border-cafe-700/80 bg-cafe-900/72 px-3 py-2 text-sm text-cafe-50/85 shadow-sm"
                     title={currentUserEmail ?? 'Google hesabı açık'}
                   >
                     <span className={`h-2.5 w-2.5 rounded-full ${userUploadsThisWeekCount >= MAX_WEEKLY_UPLOADS ? 'bg-red-500' : 'bg-accent'}`} />
@@ -1525,6 +1624,14 @@ export default function App() {
 
                 {isAuthenticated ? (
                   <>
+                    {canAccessActiveCafeAdmin && (
+                      <button
+                        onClick={() => void handleOpenAdminPanel()}
+                        className="hidden md:inline-flex items-center justify-center rounded-full border border-cafe-700/80 bg-cafe-900/72 px-4 py-2 text-sm font-semibold text-cafe-50 transition-colors hover:border-accent/40"
+                      >
+                        Admin Paneli
+                      </button>
+                    )}
                     <button
                       onClick={() => void handleOpenComposer()}
                       className="header-primary-action hidden sm:inline-flex"
@@ -1534,7 +1641,7 @@ export default function App() {
                     </button>
                     <button
                       onClick={handleLogout}
-                      className="hidden lg:inline-flex items-center justify-center rounded-full border border-cafe-700/70 bg-white/78 px-4 py-2 text-sm font-semibold text-cafe-50 transition-colors hover:border-accent/40"
+                      className="hidden lg:inline-flex items-center justify-center rounded-full border border-cafe-700/80 bg-cafe-900/72 px-4 py-2 text-sm font-semibold text-cafe-50 transition-colors hover:border-accent/40"
                     >
                       Çıkış
                     </button>
@@ -1577,7 +1684,7 @@ export default function App() {
                   </button>
                   <a
                     href="#gallery"
-                    className="inline-flex items-center gap-2 rounded-full border border-cafe-700/80 bg-white/75 px-5 py-3 text-sm font-semibold text-cafe-100 transition-colors hover:border-accent/50 hover:text-cafe-50"
+                    className="inline-flex items-center gap-2 rounded-full border border-cafe-700/80 bg-cafe-900/72 px-5 py-3 text-sm font-semibold text-cafe-50/88 transition-colors hover:border-accent/50 hover:text-cafe-50"
                   >
                     Galeriyi Gör
                   </a>
@@ -1600,10 +1707,10 @@ export default function App() {
                 </p>
               </div>
 
-              <div className="rounded-[2rem] border border-white/70 bg-white/80 p-5 shadow-[0_24px_54px_rgba(79,56,41,0.08)] lg:min-w-[360px]">
+              <div className="rounded-[2rem] border border-white/22 bg-cafe-900/70 p-5 shadow-[0_24px_54px_rgba(0,0,0,0.24)] lg:min-w-[360px]">
                 <div className="flex items-center justify-between gap-4">
                   <div>
-                    <p className="text-xs uppercase tracking-[0.22em] text-cafe-100/55">Kampanya takibi</p>
+                    <p className="text-xs uppercase tracking-[0.22em] text-cafe-100/78">Kampanya takibi</p>
                     <p className="mt-2 text-lg font-semibold text-cafe-50">
                       {campaignProgressCount}/{campaignTarget} kahve adımı dolu
                     </p>
@@ -1622,7 +1729,7 @@ export default function App() {
                         className={`rounded-[1.4rem] border px-3 py-4 text-center transition-all ${
                           isActive
                             ? 'border-transparent bg-[color:var(--color-accent)] text-white shadow-[0_16px_34px_rgba(0,0,0,0.14)]'
-                            : 'border-cafe-700/70 bg-white text-cafe-100/55'
+                            : 'border-cafe-700/80 bg-cafe-900/72 text-cafe-100/72'
                         }`}
                       >
                         <Coffee className="mx-auto h-5 w-5" />
@@ -1634,8 +1741,8 @@ export default function App() {
                   })}
                 </div>
 
-                <div className="mt-5 flex items-center justify-between rounded-2xl border border-cafe-700/70 bg-[color:var(--color-accent)]/7 px-4 py-3 text-sm">
-                  <span className="text-cafe-100/70">
+                <div className="mt-5 flex items-center justify-between rounded-2xl border border-cafe-700/80 bg-[color:var(--color-accent)]/11 px-4 py-3 text-sm">
+                  <span className="text-cafe-100/82">
                     {isAuthenticated
                       ? campaignRemainingCount === 0
                         ? 'Hedef tamamlandı'
@@ -1661,10 +1768,10 @@ export default function App() {
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <div className="inline-flex items-center rounded-full border border-cafe-700/80 bg-white/75 px-4 py-2 text-sm text-cafe-100/72">
+                <div className="inline-flex items-center rounded-full border border-cafe-700/80 bg-cafe-900/72 px-4 py-2 text-sm text-cafe-50/84">
                   {deferredMediaItems.length} fotoğraf
                 </div>
-                <div className="inline-flex items-center rounded-full border border-cafe-700/80 bg-white/75 px-4 py-2 text-sm text-cafe-100/72">
+                <div className="inline-flex items-center rounded-full border border-cafe-700/80 bg-cafe-900/72 px-4 py-2 text-sm text-cafe-50/84">
                   Ödül: {campaignReward}
                 </div>
               </div>
@@ -1775,7 +1882,7 @@ export default function App() {
 
       <div className="fixed bottom-5 sm:bottom-8 left-1/2 z-40 flex -translate-x-1/2 flex-col items-center gap-3">
         {isAuthenticated && (
-          <div className="rounded-full border border-white/60 bg-white/82 px-4 py-2 text-xs text-cafe-100 shadow-[0_12px_35px_rgba(73,52,38,0.12)] backdrop-blur-xl">
+          <div className="rounded-full border border-cafe-700/80 bg-cafe-900/90 px-4 py-2 text-xs text-cafe-50/88 shadow-[0_14px_32px_rgba(0,0,0,0.3)] backdrop-blur-xl">
             <span className="font-semibold">Haftalık limit:</span> {userUploadsThisWeekCount}/{MAX_WEEKLY_UPLOADS}
           </div>
         )}
@@ -2271,53 +2378,102 @@ export default function App() {
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 24, opacity: 0 }}
               transition={{ type: "spring", bounce: 0.5 }}
-              className="w-full max-w-xl rounded-[2rem] border border-white/20 bg-[linear-gradient(160deg,rgba(255,255,255,0.92),rgba(245,236,226,0.95))] p-6 shadow-[0_32px_80px_rgba(33,24,19,0.35)]"
+              className="relative w-full max-w-2xl overflow-hidden rounded-[2rem] border border-white/24 bg-[linear-gradient(160deg,rgba(255,255,255,0.97),rgba(244,233,220,0.95))] p-6 shadow-[0_32px_80px_rgba(33,24,19,0.35)]"
               onClick={(e) => e.stopPropagation()}
             >
+              <div className="pointer-events-none absolute inset-0 overflow-hidden">
+                {Array.from({ length: 12 }, (_, index) => (
+                  <motion.span
+                    key={`reward-particle-${index}`}
+                    className="absolute h-2.5 w-2.5 rounded-full bg-[color:var(--color-accent)]/35"
+                    style={{
+                      left: `${8 + index * 7}%`,
+                      top: `${6 + (index % 4) * 8}%`,
+                    }}
+                    initial={{ y: -6, opacity: 0.2, scale: 0.8 }}
+                    animate={{ y: [0, -10, 0], opacity: [0.2, 0.75, 0.2], scale: [0.8, 1.05, 0.8] }}
+                    transition={{ duration: 1.8 + (index % 3) * 0.35, repeat: Infinity, ease: 'easeInOut' }}
+                  />
+                ))}
+              </div>
+
               <div className="text-center">
-                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-[color:var(--color-accent)]/14 text-[color:var(--color-accent)]">
-                  <Sparkles className="h-8 w-8" />
+                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-[color:var(--color-accent)]/18 text-[color:var(--color-accent)] shadow-[0_16px_34px_rgba(0,0,0,0.16)]">
+                  <motion.div
+                    initial={{ rotate: -10, scale: 0.8 }}
+                    animate={{ rotate: [0, 10, -8, 0], scale: [0.95, 1.08, 0.95] }}
+                    transition={{ duration: 1.7, repeat: Infinity, ease: 'easeInOut' }}
+                  >
+                    <Sparkles className="h-8 w-8" />
+                  </motion.div>
                 </div>
-                <p className="mt-4 text-xs font-semibold uppercase tracking-[0.22em] text-cafe-100/55">Kampanya tamamlandı</p>
+                <p className="mt-4 text-xs font-semibold uppercase tracking-[0.22em] text-cafe-100/62">Kampanya tamamlandı</p>
                 <h2 className="mt-3 text-3xl font-serif font-semibold text-cafe-50">
-                  Tebrikler, {campaignReward} kazandın
+                  Tebrikler! {campaignReward} kazandın
                 </h2>
-                <p className="mt-3 text-sm leading-7 text-cafe-100/72">
-                  {rewardCelebration.target} paylaşımı tamamladın. Son karelerin ve dolan kahve adımların burada.
+                <p className="mt-3 text-sm leading-7 text-cafe-100/82">
+                  Bu ödül için son <strong>{rewardCelebration.target}</strong> paylaşımın tamamlandı.
+                  Çəkdiyin karelər aşağıda canlı şəkildə göstərilir.
                 </p>
               </div>
 
               <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
                 {Array.from({ length: rewardCelebration.target }, (_, index) => (
-                  <div
+                  <motion.div
                     key={`reward-step-${index}`}
+                    initial={{ opacity: 0, y: 10, scale: 0.92 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{ delay: 0.08 * index, duration: 0.35 }}
                     className="rounded-[1.35rem] bg-[color:var(--color-accent)] px-3 py-4 text-center text-white shadow-[0_16px_34px_rgba(0,0,0,0.14)]"
                   >
                     <Coffee className="mx-auto h-5 w-5" />
                     <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.16em]">
                       {index + 1}. foto
                     </p>
-                  </div>
+                  </motion.div>
                 ))}
               </div>
 
-              <div className="mt-6 grid grid-cols-2 gap-3 rounded-[1.75rem] border border-cafe-700/15 bg-white/78 p-3">
-                {rewardPreviewItems.map((item) => (
-                  <div key={item.id} className="relative aspect-square overflow-hidden rounded-[1.25rem] bg-cafe-800">
-                    <img
-                      src={item.url}
-                      alt={item.caption}
-                      className="h-full w-full object-cover"
-                      loading="lazy"
-                      decoding="async"
-                      referrerPolicy="no-referrer"
-                    />
-                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/65 to-transparent p-3">
-                      <p className="line-clamp-2 text-sm text-white" style={{ fontFamily: handwritingFont }}>
-                        {item.caption}
-                      </p>
-                    </div>
-                  </div>
+              <div className="mt-4 rounded-2xl border border-cafe-700/15 bg-white/78 px-4 py-3 text-center">
+                <p className="text-sm font-semibold text-cafe-50">
+                  Son {rewardCelebration.target} paylaşımından seçilən karelər
+                </p>
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-3 rounded-[1.75rem] border border-cafe-700/15 bg-white/78 p-3 sm:grid-cols-3 md:grid-cols-4">
+                {rewardShowcaseItems.map((item, index) => (
+                  <motion.div
+                    key={item?.id ?? `reward-empty-${index}`}
+                    initial={{ opacity: 0, y: 12, scale: 0.94 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{ delay: 0.1 + 0.06 * index, duration: 0.3 }}
+                    className="relative aspect-square overflow-hidden rounded-[1.25rem] bg-cafe-800"
+                  >
+                    {item ? (
+                      <>
+                        <img
+                          src={item.url}
+                          alt={item.caption}
+                          className="h-full w-full object-cover"
+                          loading="lazy"
+                          decoding="async"
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/65 to-transparent p-3">
+                          <p className="line-clamp-2 text-sm text-white" style={{ fontFamily: handwritingFont }}>
+                            {item.caption}
+                          </p>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-gradient-to-br from-cafe-800 to-cafe-700 text-cafe-100/70">
+                        <Camera className="h-6 w-6 text-cafe-100/55" />
+                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-cafe-100/65">
+                          Foto gözlənilir
+                        </p>
+                      </div>
+                    )}
+                  </motion.div>
                 ))}
               </div>
 
