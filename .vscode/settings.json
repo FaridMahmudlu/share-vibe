@@ -1,0 +1,8 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^cd \"c:\\\\Users\\\\seid2\\\\Desktop\\\\Share Vibe\" ; git push origin main$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}
