@@ -65,6 +65,7 @@ body::before {
 
 .animate-blob {
   animation: blob 14s infinite alternate ease-in-out;
+  will-change: transform;
 }
 
 .animation-delay-2000 {
@@ -549,6 +550,8 @@ body::before {
   transition:
     transform 220ms ease,
     box-shadow 220ms ease;
+  contain: layout style paint;
+  will-change: transform;
 }
 
 .gallery-card:hover {
@@ -568,6 +571,8 @@ body::before {
   border-radius: 1.22rem;
   background: linear-gradient(180deg, rgba(42, 27, 19, 0.8), rgba(20, 10, 5, 0.6));
   cursor: pointer;
+  contain: layout style paint;
+  content-visibility: auto;
 }
 
 .gallery-media:focus-visible {
@@ -691,6 +696,18 @@ body::before {
   width: 2.25rem;
   height: 2.25rem;
   box-shadow: 0 6px 16px rgba(80, 58, 42, 0.06);
+}
+
+/* Image optimization */
+img {
+  contain: layout style paint;
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+img[loading="lazy"] {
+  content-visibility: auto;
 }
 
 .gallery-like-button {

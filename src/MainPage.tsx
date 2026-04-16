@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, memo, useCallback } from 'react';
 import { motion, useScroll, useTransform } from 'motion/react';
 import {
   ArrowRight,
@@ -142,7 +142,7 @@ const TESTIMONIALS = [
   },
 ];
 
-function AnimatedCounter({ target, suffix = '' }: { target: number; suffix?: string }) {
+const AnimatedCounter = memo(function AnimatedCounter({ target, suffix = '' }: { target: number; suffix?: string }) {
   const [count, setCount] = useState(0);
   const ref = useRef<HTMLSpanElement>(null);
   const started = useRef(false);
@@ -177,7 +177,8 @@ function AnimatedCounter({ target, suffix = '' }: { target: number; suffix?: str
       {suffix}
     </span>
   );
-}
+});
+AnimatedCounter.displayName = 'AnimatedCounter';
 
 const fadeUp = {
   hidden: { opacity: 0, y: 32 },

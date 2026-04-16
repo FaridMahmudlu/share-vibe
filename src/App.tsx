@@ -1,8 +1,8 @@
-import React, { Suspense, startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, startTransition, useDeferredValue, useEffect, useMemo, useRef, useState, useCallback, memo } from 'react';
 import { Camera, Upload, Heart, X, Sparkles, MapPin, Clock, Instagram, Twitter, Facebook, Share2, Copy, Check, Trash2, RotateCw, Sun, Contrast, Coffee, ImageOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db, auth, storage, waitForAuthInitialization } from './firebase';
-import { collection, addDoc, getDocs, onSnapshot, query, orderBy, doc, updateDoc, serverTimestamp, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { collection, addDoc, getDocs, onSnapshot, query, orderBy, doc, updateDoc, serverTimestamp, arrayUnion, arrayRemove, limit, where } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
 import { getGoogleSignInErrorMessage, resolveGoogleSignInRedirect, signInWithGoogle } from './googleAuth';
@@ -58,15 +58,16 @@ type DemoCafeCandidate = {
 
 const DEMO_CAFE_MATCHER = /(ava|lumina)/i;
 
-const AnimatedBackground = () => (
-  <div className="fixed inset-0 z-[-1] overflow-hidden pointer-events-none">
+const AnimatedBackground = memo(() => (
+  <div className="fixed inset-0 z-[-1] overflow-hidden pointer-events-none will-change-transform">
     <div className="absolute top-[-10%] left-[-10%] h-[42%] w-[42%] rounded-full bg-accent/30 blur-[110px] animate-blob" />
     <div className="absolute top-[10%] right-[-10%] h-[50%] w-[50%] rounded-full bg-[#efd2ba]/55 blur-[135px] animate-blob animation-delay-2000" />
     <div className="absolute bottom-[-22%] left-[14%] h-[56%] w-[56%] rounded-full bg-[#6b4331]/20 blur-[155px] animate-blob animation-delay-4000" />
   </div>
-);
+));
+AnimatedBackground.displayName = 'AnimatedBackground';
 
-const BrokenMediaPlaceholder = ({
+const BrokenMediaPlaceholder = memo(({
   message,
   compact = false,
 }: {
@@ -77,7 +78,8 @@ const BrokenMediaPlaceholder = ({
     <ImageOff className={compact ? 'w-8 h-8 text-cafe-100/40' : 'w-12 h-12 text-cafe-100/40'} />
     <p className={compact ? 'text-xs font-medium' : 'text-sm font-medium'}>{message}</p>
   </div>
-);
+));
+BrokenMediaPlaceholder.displayName = 'BrokenMediaPlaceholder';
 
 const MAX_WEEKLY_UPLOADS = 2;
 const MAX_UPLOAD_IMAGE_DIMENSION = 4096;
@@ -276,9 +278,9 @@ export default function App() {
     }
   };
 
-  const markMediaAsFailed = (id: string) => {
+  const markMediaAsFailed = useCallback((id: string) => {
     setFailedMediaIds((current) => (current[id] ? current : { ...current, [id]: true }));
-  };
+  }, []);
 
   const stopDesktopCamera = () => {
     if (streamRef.current) {
@@ -1073,7 +1075,8 @@ export default function App() {
     }
 
     setIsMediaItemsReady(false);
-    const q = query(collection(db, 'media'), orderBy('createdAt', 'desc'));
+    // Optimized Firestore query with limit for better performance
+    const q = query(collection(db, 'media'), orderBy('createdAt', 'desc'), limit(100));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const items: MediaItem[] = [];
       snapshot.forEach((doc) => {
@@ -1323,7 +1326,7 @@ export default function App() {
     resetUploadComposer();
   };
 
-  const toggleLike = async (id: string, e?: React.MouseEvent) => {
+  const toggleLike = useCallback(async (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     
     let uid = currentUserUid ?? auth.currentUser?.uid ?? null;
@@ -1359,14 +1362,14 @@ export default function App() {
     } catch (error) {
       console.error("Error toggling like:", error);
     }
-  };
+  }, [currentUserUid, mediaItems]);
 
-  const handleDelete = (id: string, e?: React.MouseEvent) => {
+  const handleDelete = useCallback((id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     setMediaToDelete(id);
-  };
+  }, []);
 
-  const confirmDelete = async () => {
+  const confirmDelete = useCallback(async () => {
     if (!mediaToDelete) return;
     const id = mediaToDelete;
     setMediaToDelete(null);
@@ -1381,9 +1384,9 @@ export default function App() {
       console.error("Error deleting media:", error);
       setUploadError("Silme işlemi başarısız oldu.");
     }
-  };
+  }, [mediaToDelete, mediaItems, selectedMediaId]);
 
-  const handleCopyLink = async (id: string) => {
+  const handleCopyLink = useCallback(async (id: string) => {
     const item = mediaItems.find((entry) => entry.id === id);
     const url = buildCafePublicLink({
       origin: window.location.origin,
@@ -1401,9 +1404,9 @@ export default function App() {
       console.error('Kopyalama hatası:', error);
       window.prompt('Bağlantıyı kopyalayın:', shareUrl.toString());
     }
-  };
+  }, [mediaItems, activeCafeSlug, resolvedTableLabel]);
 
-  const shareToInstagramStory = async (mediaId: string) => {
+  const shareToInstagramStory = useCallback(async (mediaId: string) => {
     const item = mediaItems.find(m => m.id === mediaId);
     if (!item) return;
 
@@ -1454,7 +1457,7 @@ export default function App() {
         console.error("Error sharing to Instagram:", error);
       }
     }
-  };
+  }, [mediaItems, activeCafeSlug, resolvedTableLabel]);
 
   const cafeMediaItems = useMemo(
     () => mediaItems.filter((item) => item.cafeSlug === activeCafeSlug),

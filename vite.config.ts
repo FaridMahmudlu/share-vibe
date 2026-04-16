@@ -11,6 +11,14 @@ export default defineConfig({
     },
   },
   build: {
+    minify: 'terser',
+    terserOptions: {
+      compress: {
+        drop_console: true,
+      },
+    },
+    reportCompressedSize: false,
+    chunkSizeWarningLimit: 600,
     rollupOptions: {
       output: {
         manualChunks(id) {
@@ -28,6 +36,10 @@ export default defineConfig({
 
           if (id.includes('react')) {
             return 'react-vendor';
+          }
+
+          if (id.includes('lucide-react')) {
+            return 'icons-vendor';
           }
         },
       },

@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useRef, useState } from 'react';
+import React, { useEffect, useId, useRef, useState, memo, useCallback } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Check, ChevronDown, type LucideIcon } from 'lucide-react';
 
@@ -18,7 +18,7 @@ type DropdownSelectProps = {
   menuClassName?: string;
 };
 
-export default function DropdownSelect({
+export default memo(function DropdownSelect({
   value,
   options,
   onChange,
@@ -131,4 +131,5 @@ export default function DropdownSelect({
       </AnimatePresence>
     </div>
   );
-}
+});
+DropdownSelect.displayName = 'DropdownSelect';

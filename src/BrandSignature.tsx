@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { BRAND_NAME, brandLogoSrc } from './brandAssets';
 
 type BrandSignatureProps = {
@@ -10,15 +11,16 @@ type BrandIconProps = {
   className?: string;
 };
 
-export function BrandIcon({ className = '' }: BrandIconProps) {
+export const BrandIcon = memo(({ className = '' }: BrandIconProps) => {
   return (
     <span className={`brand-signature-mark ${className}`.trim()} aria-hidden="true">
       <img src={brandLogoSrc} alt="" className="h-full w-full object-contain" draggable={false} loading="eager" decoding="async" />
     </span>
   );
-}
+});
+BrandIcon.displayName = 'BrandIcon';
 
-export default function BrandSignature({
+export default memo(function BrandSignature({
   className = '',
   compact = false,
   subtitle = 'kahve içi paylaşım altyapısı',
@@ -35,4 +37,4 @@ export default function BrandSignature({
       </span>
     </span>
   );
-}
+});
