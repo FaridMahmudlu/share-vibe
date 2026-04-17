@@ -249,6 +249,16 @@ export default function App() {
     return activeCafeAdminEmails.some((email) => normalizeAccessEmail(email) === normalizedUserEmail);
   }, [activeCafeAdminEmails, activeCafeOwnerEmail, currentUserEmail]);
 
+  const mediaItemsById = useMemo(() => {
+    const next = new Map<string, MediaItem>();
+    mediaItems.forEach((item) => {
+      next.set(item.id, item);
+    });
+    return next;
+  }, [mediaItems]);
+
+  const getMediaItemById = useCallback((id: string) => mediaItemsById.get(id), [mediaItemsById]);
+
   const syncCurrentUser = (user: User | null) => {
     setCurrentUserUid(user?.uid ?? null);
     setCurrentUserEmail(user?.email ?? null);
@@ -1075,9 +1085,7 @@ export default function App() {
     }
 
     setIsMediaItemsReady(false);
-    // Optimized Firestore query with limit for better performance
-    const q = query(collection(db, 'media'), orderBy('createdAt', 'desc'), limit(100));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const applySnapshot = (snapshot: { forEach: (cb: (doc: any) => void) => void }) => {
       const items: MediaItem[] = [];
       snapshot.forEach((doc) => {
         const data = doc.data();
@@ -1107,13 +1115,46 @@ export default function App() {
         setMediaItems(items);
         setIsMediaItemsReady(true);
       });
-    }, (error) => {
-      console.error("Error fetching media:", error);
-      setIsMediaItemsReady(true);
-    });
+    };
 
-    return () => unsubscribe();
-  }, [isAuthResolved]);
+    const optimizedQuery = query(
+      collection(db, 'media'),
+      where('cafeSlug', '==', activeCafeSlug),
+      orderBy('createdAt', 'desc'),
+      limit(100)
+    );
+
+    const fallbackQuery = query(collection(db, 'media'), orderBy('createdAt', 'desc'), limit(100));
+    let fallbackUnsubscribe: (() => void) | null = null;
+
+    const optimizedUnsubscribe = onSnapshot(
+      optimizedQuery,
+      (snapshot) => {
+        applySnapshot(snapshot);
+      },
+      (error) => {
+        // If a composite index is missing, fall back to the previous global query behavior.
+        console.warn('Optimized media query failed, falling back to global feed query:', error);
+        fallbackUnsubscribe = onSnapshot(
+          fallbackQuery,
+          (snapshot) => {
+            applySnapshot(snapshot);
+          },
+          (fallbackError) => {
+            console.error('Error fetching media:', fallbackError);
+            setIsMediaItemsReady(true);
+          }
+        );
+      }
+    );
+
+    return () => {
+      optimizedUnsubscribe();
+      if (fallbackUnsubscribe) {
+        fallbackUnsubscribe();
+      }
+    };
+  }, [isAuthResolved, activeCafeSlug]);
 
   useEffect(() => {
     if (
@@ -1341,7 +1382,7 @@ export default function App() {
 
     await auth.currentUser?.getIdToken(true);
 
-    const item = mediaItems.find(m => m.id === id);
+    const item = getMediaItemById(id);
     if (!item) return;
 
     const isLiked = item.likedBy.includes(uid);
@@ -1362,7 +1403,7 @@ export default function App() {
     } catch (error) {
       console.error("Error toggling like:", error);
     }
-  }, [currentUserUid, mediaItems]);
+  }, [currentUserUid, getMediaItemById]);
 
   const handleDelete = useCallback((id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -1375,7 +1416,7 @@ export default function App() {
     setMediaToDelete(null);
 
     try {
-      const item = mediaItems.find(m => m.id === id);
+      const item = getMediaItemById(id);
       await deleteMediaRecord(id, item?.url);
       if (selectedMediaId === id) {
         setSelectedMediaId(null);
@@ -1384,10 +1425,10 @@ export default function App() {
       console.error("Error deleting media:", error);
       setUploadError("Silme işlemi başarısız oldu.");
     }
-  }, [mediaToDelete, mediaItems, selectedMediaId]);
+  }, [mediaToDelete, getMediaItemById, selectedMediaId]);
 
   const handleCopyLink = useCallback(async (id: string) => {
-    const item = mediaItems.find((entry) => entry.id === id);
+    const item = getMediaItemById(id);
     const url = buildCafePublicLink({
       origin: window.location.origin,
       cafeSlug: item?.cafeSlug ?? activeCafeSlug,
@@ -1404,10 +1445,10 @@ export default function App() {
       console.error('Kopyalama hatası:', error);
       window.prompt('Bağlantıyı kopyalayın:', shareUrl.toString());
     }
-  }, [mediaItems, activeCafeSlug, resolvedTableLabel]);
+  }, [getMediaItemById, activeCafeSlug, resolvedTableLabel]);
 
   const shareToInstagramStory = useCallback(async (mediaId: string) => {
-    const item = mediaItems.find(m => m.id === mediaId);
+    const item = getMediaItemById(mediaId);
     if (!item) return;
 
     try {
@@ -1430,13 +1471,13 @@ export default function App() {
         await navigator.share({
           files: [file]
         });
-      } else if (navigator.canShare) {
+      } else if (typeof navigator.canShare === 'function') {
         // Dosya paylaşılamıyorsa sadece linki paylaş
         await navigator.share({
           title: 'Anı',
           text: item.caption || 'Bu harika anıya göz at!',
           url: (() => {
-            const shareItem = mediaItems.find((entry) => entry.id === mediaId);
+            const shareItem = getMediaItemById(mediaId);
             const shareUrl = new URL(
               buildCafePublicLink({
                 origin: window.location.origin,
@@ -1457,13 +1498,13 @@ export default function App() {
         console.error("Error sharing to Instagram:", error);
       }
     }
-  }, [mediaItems, activeCafeSlug, resolvedTableLabel]);
+  }, [getMediaItemById, activeCafeSlug, resolvedTableLabel]);
 
   const cafeMediaItems = useMemo(
     () => mediaItems.filter((item) => item.cafeSlug === activeCafeSlug),
     [mediaItems, activeCafeSlug]
   );
-  const selectedMedia = isAuthenticated && selectedMediaId ? cafeMediaItems.find(m => m.id === selectedMediaId) : null;
+  const selectedMedia = isAuthenticated && selectedMediaId ? getMediaItemById(selectedMediaId) ?? null : null;
   const deferredMediaItems = useDeferredValue(cafeMediaItems);
   const isGuestPreview = !isAuthenticated;
   const userTotalUploadsCount = currentUserUid ? countTotalUploadsForUser(currentUserUid) : 0;
@@ -1723,20 +1764,20 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="mt-5 grid grid-cols-4 gap-2 sm:gap-3">
                   {Array.from({ length: Math.max(campaignTarget, 1) }, (_, index) => {
                     const isActive = index < campaignProgressCount;
                     return (
                       <div
                         key={`campaign-step-${index}`}
-                        className={`rounded-[1.4rem] border px-3 py-4 text-center transition-all ${
+                        className={`rounded-[1.4rem] border px-2 py-3 text-center transition-all sm:px-3 sm:py-4 ${
                           isActive
                             ? 'border-transparent bg-[color:var(--color-accent)] text-white shadow-[0_16px_34px_rgba(0,0,0,0.14)]'
                             : 'border-cafe-700/80 bg-cafe-900/72 text-cafe-100/72'
                         }`}
                       >
-                        <Coffee className="mx-auto h-5 w-5" />
-                        <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.16em]">
+                        <Coffee className="mx-auto h-4 w-4 sm:h-5 sm:w-5" />
+                        <p className="mt-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] sm:mt-2 sm:text-[11px] sm:tracking-[0.16em]">
                           {index + 1}. foto
                         </p>
                       </div>
@@ -2108,7 +2149,7 @@ export default function App() {
                 {/* Media Preview Container */}
                 <div className="relative w-full h-48 sm:h-64 rounded-xl overflow-hidden bg-cafe-900 border border-cafe-700 shadow-inner shrink-0 flex items-center justify-center">
                   <img
-                    src={previewUrl}
+                    src={previewUrl ?? ''}
                     alt="Preview"
                     className="w-full h-full object-contain transition-all"
                     style={{
@@ -2496,37 +2537,39 @@ export default function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[95] flex items-end justify-center bg-cafe-900/45 p-4 backdrop-blur-sm sm:items-center"
+            className="fixed inset-0 z-[95] flex items-end justify-center bg-cafe-950/88 p-4 backdrop-blur-xl sm:items-center"
             onClick={() => setShowSharePrompt(false)}
           >
             <motion.div
               initial={{ opacity: 0, y: 28, scale: 0.96 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 24, scale: 0.96 }}
-              className="relative w-full max-w-md overflow-hidden rounded-[2rem] border border-white/55 bg-[linear-gradient(160deg,rgba(255,255,255,0.96),rgba(243,234,223,0.95))] p-6 shadow-[0_28px_80px_rgba(58,41,31,0.22)]"
+              className="relative w-full max-w-md overflow-hidden rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(43,26,18,0.98),rgba(24,14,10,0.96))] p-6 shadow-[0_28px_80px_rgba(0,0,0,0.42)]"
               onClick={(event) => event.stopPropagation()}
             >
               <button
                 onClick={() => setShowSharePrompt(false)}
-                className="absolute right-4 top-4 rounded-full p-2 text-cafe-100/45 transition-colors hover:bg-white/70 hover:text-cafe-50"
+                className="absolute right-4 top-4 rounded-full p-2 text-cafe-100/55 transition-colors hover:bg-white/8 hover:text-cafe-50"
                 aria-label="Bildirim kapat"
               >
                 <X className="h-5 w-5" />
               </button>
 
               <div className="pr-10">
-                <span className="section-pill">Yeni anı zamanı</span>
+                <span className="inline-flex items-center rounded-full border border-[color:var(--color-accent)]/24 bg-[color:var(--color-accent)]/12 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-[color:var(--color-accent)]">
+                  Yeni anı zamanı
+                </span>
                 <h3 className="mt-4 text-3xl font-serif font-semibold text-cafe-50">
                   Bir kare daha bırak, kahve adımın dolsun
                 </h3>
-                <p className="mt-3 text-sm leading-7 text-cafe-100/72">
+                <p className="mt-3 text-sm leading-7 text-cafe-100/82">
                   Şu an yeni bir anı paylaşıp galeriye eklenebilir ve kampanya ilerlemeni artırabilirsin.
                 </p>
               </div>
 
               <button
                 onClick={() => void handleOpenComposer()}
-                className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-5 py-4 text-sm font-semibold uppercase tracking-[0.16em] text-white shadow-[0_18px_36px_rgba(0,0,0,0.14)] transition-transform hover:-translate-y-0.5"
+                className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-5 py-4 text-sm font-semibold uppercase tracking-[0.16em] text-white shadow-[0_18px_36px_rgba(0,0,0,0.22)] transition-transform hover:-translate-y-0.5"
               >
                 <Camera className="h-4 w-4" />
                 Anı paylaş
