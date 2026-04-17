@@ -58,7 +58,7 @@ export const THEME_PRESETS = [
     name: 'Teal Velvet',
     accentColor: '#3e7f7a',
     handwritingFont: '"Handlee", cursive',
-    description: 'Canlılığı qoruyaraq premium görünüşü pozmayan dərin vurğu verir.',
+    description: 'Canlılığı koruyarak premium görünümü bozmayan derin bir vurgu verir.',
   },
   {
     name: 'Royal Plum Bar',
