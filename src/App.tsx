@@ -284,7 +284,7 @@ export default function App() {
     try {
       await clearPendingUpload();
     } catch (error) {
-      console.warn('Pending upload cleanup failed:', error);
+      console.warn('Bekleyen yükleme temizlenemedi:', error);
     }
   };
 
@@ -359,7 +359,7 @@ export default function App() {
       const message = getGoogleSignInErrorMessage(error);
       setUploadError(message);
       setUploadStatus(null);
-      console.error('Google sign-in error:', error);
+      console.error('Google ile giriş hatası:', error);
       return null;
     }
   };
@@ -376,7 +376,7 @@ export default function App() {
       setUploadStatus(null);
       setUploadError(null);
     } catch (error) {
-      console.error('Logout error:', error);
+      console.error('Çıkış hatası:', error);
     }
   };
 
@@ -386,7 +386,7 @@ export default function App() {
       syncCurrentUser(null);
       setOwnerAccessError(null);
     } catch (error) {
-      console.error('Owner account switch logout error:', error);
+      console.error('Kafe sahibi hesabı değiştirirken çıkış hatası:', error);
     }
 
     await handleOpenOwnerPortal();
@@ -415,7 +415,7 @@ export default function App() {
 
     if (auth.currentUser) {
       if (!canAccessActiveCafeAdmin) {
-        setUploadError('Bu kafe için admin paneli yetkiniz yok.');
+        setUploadError('Bu kafe için yönetim paneli yetkiniz yok.');
         return;
       }
 
@@ -435,23 +435,17 @@ export default function App() {
       if (canAccessAfterSignIn) {
         setCurrentView('admin');
       } else {
-        setUploadError('Bu kafe için admin paneli yetkiniz yok.');
+        setUploadError('Bu kafe için yönetim paneli yetkiniz yok.');
       }
     }
   };
 
   const handleOpenOwnerPortal = async () => {
     setOwnerAccessError(null);
+    setCurrentView('owner');
 
     if (auth.currentUser) {
       syncCurrentUser(auth.currentUser);
-
-      if (!hasOwnerPortalAccess(auth.currentUser.email)) {
-        setCurrentView('landing');
-        setOwnerAccessError('Bu Google hesabı kafe sahibi erişim listesinde değil.');
-        return;
-      }
-
       clearOwnerPortalIntent();
       setCurrentView('owner');
       return;
@@ -462,13 +456,6 @@ export default function App() {
     });
 
     if (!user) {
-      return;
-    }
-
-    if (!hasOwnerPortalAccess(user.email)) {
-      clearOwnerPortalIntent();
-      setCurrentView('landing');
-      setOwnerAccessError('Bu Google hesabı kafe sahibi erişim listesinde değil.');
       return;
     }
 
@@ -582,7 +569,7 @@ export default function App() {
 
       await new Promise<void>((resolve, reject) => {
         image.onload = () => resolve();
-        image.onerror = () => reject(new Error('Image could not be loaded.'));
+        image.onerror = () => reject(new Error('Görsel yüklenemedi.'));
       });
 
       return image;
@@ -845,7 +832,7 @@ export default function App() {
         setDemoCafeSlug(preferredCafe.slug);
         setDemoCafeName(preferredCafe.cafeName);
       } catch (error) {
-        console.warn('Demo cafe resolve failed:', error);
+        console.warn('Demo kafe belirlenemedi:', error);
       }
     };
 
@@ -917,28 +904,15 @@ export default function App() {
     if (!currentUserEmail) {
       return;
     }
-
-    if (hasOwnerPortalAccess(currentUserEmail)) {
-      setOwnerAccessError(null);
-      setCurrentView('owner');
-      return;
-    }
-
-    setCurrentView('landing');
-    setOwnerAccessError('Bu Google hesabı kafe sahibi erişim listesinde değil.');
+    setOwnerAccessError(null);
+    setCurrentView('owner');
   }, [currentUserEmail, isAuthResolved, isGoogleRedirectResolved]);
 
   useEffect(() => {
     if (currentView !== 'owner' || !currentUserEmail) {
       return;
     }
-
-    if (hasOwnerPortalAccess(currentUserEmail)) {
-      return;
-    }
-
-    setCurrentView('landing');
-    setOwnerAccessError('Bu Google hesabı kafe sahibi erişim listesinde değil.');
+    setOwnerAccessError(null);
   }, [currentUserEmail, currentView]);
 
   useEffect(() => {
@@ -1028,7 +1002,7 @@ export default function App() {
         const [redirectResult, pendingUpload] = await Promise.all([
           resolveGoogleSignInRedirect(),
           getPendingUpload().catch((error) => {
-            console.warn('Pending upload restore failed:', error);
+            console.warn('Bekleyen yükleme geri yüklenemedi:', error);
             return null;
           }),
         ]);
@@ -1045,7 +1019,7 @@ export default function App() {
           setPendingRedirectUpload(pendingUpload);
         }
       } catch (error) {
-        console.error('Error resolving Google redirect:', error);
+        console.error('Google yönlendirmesi çözümlenemedi:', error);
         await discardPendingUpload();
 
         if (!isCancelled) {
@@ -1539,8 +1513,8 @@ export default function App() {
         fallback={
           <div className="min-h-screen flex items-center justify-center px-4 text-cafe-50">
             <div className="section-shell max-w-md text-center">
-              <BrandSignature className="mx-auto mb-5 justify-center" compact subtitle="admin modülü yükleniyor" />
-              <h1 className="text-2xl font-semibold text-cafe-50">Admin paneli yükleniyor</h1>
+              <BrandSignature className="mx-auto mb-5 justify-center" compact subtitle="yönetim modülü yükleniyor" />
+              <h1 className="text-2xl font-semibold text-cafe-50">Yönetim paneli yükleniyor</h1>
               <p className="mt-3 text-sm leading-7 text-cafe-100/70">
                 Yönetim modülü ayrı yüklendiği için açılış performansı korunuyor.
               </p>
@@ -1570,7 +1544,7 @@ export default function App() {
         fallback={
           <div className="min-h-screen flex items-center justify-center px-4 text-cafe-50">
             <div className="section-shell max-w-md text-center">
-              <BrandSignature className="mx-auto mb-5 justify-center" compact subtitle="owner paneli yükleniyor" />
+              <BrandSignature className="mx-auto mb-5 justify-center" compact subtitle="kafe sahibi alanı yükleniyor" />
               <h1 className="text-2xl font-semibold text-cafe-50">Kafe sahibi paneli yükleniyor</h1>
               <p className="mt-3 text-sm leading-7 text-cafe-100/70">
                 Kafe kurulum modülü hazırlanıyor.
@@ -1673,7 +1647,7 @@ export default function App() {
                         onClick={() => void handleOpenAdminPanel()}
                         className="hidden md:inline-flex items-center justify-center rounded-full border border-cafe-700/80 bg-cafe-900/72 px-4 py-2 text-sm font-semibold text-cafe-50 transition-colors hover:border-accent/40"
                       >
-                        Admin Paneli
+                        Yönetim Paneli
                       </button>
                     )}
                     <button
@@ -2457,7 +2431,7 @@ export default function App() {
                 </h2>
                 <p className="mt-3 text-sm leading-7 text-cafe-100/82">
                   Bu ödül için son <strong>{rewardCelebration.target}</strong> paylaşımın tamamlandı.
-                  Çəkdiyin karelər aşağıda canlı şəkildə göstərilir.
+                  Çektiğin kareler aşağıda canlı şekilde gösterilir.
                 </p>
               </div>
 
@@ -2480,7 +2454,7 @@ export default function App() {
 
               <div className="mt-4 rounded-2xl border border-cafe-700/15 bg-white/78 px-4 py-3 text-center">
                 <p className="text-sm font-semibold text-cafe-50">
-                  Son {rewardCelebration.target} paylaşımından seçilən karelər
+                  Son {rewardCelebration.target} paylaşımından seçilen kareler
                 </p>
               </div>
 
@@ -2513,7 +2487,7 @@ export default function App() {
                       <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-gradient-to-br from-cafe-800 to-cafe-700 text-cafe-100/70">
                         <Camera className="h-6 w-6 text-cafe-100/55" />
                         <p className="text-xs font-semibold uppercase tracking-[0.12em] text-cafe-100/65">
-                          Foto gözlənilir
+                          Foto bekleniyor
                         </p>
                       </div>
                     )}

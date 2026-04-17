@@ -1,15 +1,15 @@
 export const THEME_COLORS = [
-  { name: 'Bakır Latte', value: '#d48f6b' },
-  { name: 'Tarçın', value: '#c97857' },
-  { name: 'Karamel', value: '#b87352' },
-  { name: 'Fındık', value: '#9d6a4c' },
-  { name: 'Toffee', value: '#bb7658' },
-  { name: 'Sütlü Kakao', value: '#a56f62' },
-  { name: 'Şeftali Köpüğü', value: '#de9d7c' },
-  { name: 'Kum Beji', value: '#c29a74' },
-  { name: 'Mocha', value: '#7f4a36' },
-  { name: 'Kızıl Kil', value: '#aa604e' },
-  { name: 'Espresso', value: '#5d382a' },
+  { name: 'Rose Gold', value: '#c98a73' },
+  { name: 'Champagne', value: '#d8b98f' },
+  { name: 'Amber Bronze', value: '#b8794f' },
+  { name: 'Terracotta Luxe', value: '#a8664a' },
+  { name: 'Olive Silk', value: '#7f8a52' },
+  { name: 'Sage Mist', value: '#8ea79a' },
+  { name: 'Teal Velvet', value: '#3e7f7a' },
+  { name: 'Navy Ink', value: '#38506b' },
+  { name: 'Royal Plum', value: '#6e4f73' },
+  { name: 'Burgundy Reserve', value: '#7a3f4a' },
+  { name: 'Espresso Noir', value: '#4a3128' },
 ];
 
 export const THEME_FONTS = [
@@ -25,58 +25,58 @@ export const THEME_FONTS = [
 
 export const THEME_PRESETS = [
   {
-    name: 'Bakır Karşılama',
-    accentColor: '#d48f6b',
+    name: 'Rose Gold Lounge',
+    accentColor: '#c98a73',
     handwritingFont: '"Kalam", cursive',
-    description: 'Sıcak, rafine ve davetkar bir ilk izlenim oluşturur.',
+    description: 'Sıcak ve rafine bir premium karşılama hissi oluşturur.',
   },
   {
-    name: 'Tarçın Akışı',
-    accentColor: '#c97857',
+    name: 'Champagne Atelier',
+    accentColor: '#d8b98f',
     handwritingFont: '"Patrick Hand", cursive',
-    description: 'Dinamik ve samimi bir paylaşım alanı hissi verir.',
+    description: 'Aydınlık, butik ve zarif bir masa deneyimi sunar.',
   },
   {
-    name: 'Fındık Yumuşaklığı',
-    accentColor: '#9d6a4c',
+    name: 'Amber Signature',
+    accentColor: '#b8794f',
     handwritingFont: '"Caveat", cursive',
-    description: 'Yumuşak tonlu ve uzun süre bakılması rahat bir görünüm sağlar.',
+    description: 'Dengeli sıcaklıkla çağrı butonlarını premium şekilde öne çıkarır.',
   },
   {
-    name: 'Kum Işığı',
-    accentColor: '#c29a74',
+    name: 'Terracotta Gallery',
+    accentColor: '#a8664a',
     handwritingFont: '"Shantell Sans", cursive',
-    description: 'Butik, aydınlık ve premium bir masa deneyimi sunar.',
+    description: 'Galeri kartlarında tok ve prestijli bir ton dengesi sağlar.',
   },
   {
-    name: 'Şeftali Dokunuşu',
-    accentColor: '#de9d7c',
+    name: 'Sage Reserve',
+    accentColor: '#8ea79a',
     handwritingFont: '"Satisfy", cursive',
-    description: 'Daha canlı ama yine de marka bütünlüğünü koruyan sıcaklık katar.',
+    description: 'Sakin, modern ve yüksek seviyeli bir atmosfer yaratır.',
   },
   {
-    name: 'Toffee Vurgusu',
-    accentColor: '#bb7658',
+    name: 'Teal Velvet',
+    accentColor: '#3e7f7a',
     handwritingFont: '"Handlee", cursive',
-    description: 'Paylaşım butonları ve kampanya kartlarında güçlü vurgu üretir.',
+    description: 'Canlılığı qoruyaraq premium görünüşü pozmayan dərin vurğu verir.',
   },
   {
-    name: 'Mocha İmzası',
-    accentColor: '#7f4a36',
+    name: 'Royal Plum Bar',
+    accentColor: '#6e4f73',
     handwritingFont: '"Marck Script", cursive',
-    description: 'Daha karakterli, tok ve premium bir marka hissi bırakır.',
+    description: 'Akşam konseptli mekanlar için zarif ve farklı bir marka dili yaratır.',
   },
   {
-    name: 'Espresso Kontrastı',
-    accentColor: '#5d382a',
+    name: 'Espresso Noir',
+    accentColor: '#4a3128',
     handwritingFont: '"Nothing You Could Do", cursive',
-    description: 'Koyu vurgularla güçlü başlıklar ve net çağrılar üretir.',
+    description: 'Yüksek kontrastlı, klasik ve lüks bir final görünümü sağlar.',
   },
 ];
 
 export const DEFAULT_ACCENT_COLOR = '#d48f6b';
 export const DEFAULT_HANDWRITING_FONT = THEME_FONTS[0].value;
-export const DEFAULT_CAFE_NAME = 'Lumina Coffee';
+export const DEFAULT_CAFE_NAME = 'Lumina Kafe';
 export const DEFAULT_CAFE_SLUG = 'ava-coffee';
 export const DEFAULT_DEMO_TABLE = 'Masa 12';
 export const DEFAULT_CAMPAIGN_TARGET = 4;

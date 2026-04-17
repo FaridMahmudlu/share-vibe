@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, memo, useCallback } from 'react';
-import { motion, useScroll, useTransform, cubicBezier } from 'motion/react';
+import { AnimatePresence, motion, useScroll, useTransform, cubicBezier } from 'motion/react';
 import {
   ArrowRight,
   BarChart3,
@@ -38,14 +38,114 @@ type MainPageProps = {
 const NAV_LINKS = [
   { href: '#nasil-calisir', label: 'Nasıl Çalışır?' },
   { href: '#ozellikler', label: 'Özellikler' },
+  { href: '#standlar', label: 'Standlar' },
+  { href: '#paketler', label: 'Paketler' },
   { href: '#kafe-sahibi', label: 'Panel' },
 ];
 
 const STATS = [
-  { value: '3 sn', label: 'Ortalama bağlanma süresi', icon: Zap },
-  { value: '%94', label: 'Müşteri memnuniyeti', icon: Heart },
-  { value: '5×', label: 'Daha fazla etkileşim', icon: TrendingUp },
-  { value: '0', label: 'Uygulama indirme', icon: Check },
+  { value: 'Aynı gün', label: 'Kurulum ve onboarding planı', icon: Zap },
+  { value: 'QR + Galeri + E-posta', label: '3 kanalda müşteri iletişimi', icon: TrendingUp },
+  { value: 'A6 stand seçenekleri', label: 'T tipi, L tipi ve sticker', icon: QrCode },
+  { value: 'Panel + Kampanya', label: 'Tek ekrandan yönetim', icon: Check },
+];
+
+const HERO_SAMPLE_IMAGES = [
+  'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&w=900&q=75',
+  'https://images.unsplash.com/photo-1481833761820-0509d3217039?auto=format&fit=crop&w=700&q=75',
+  'https://images.unsplash.com/photo-1509042239860-f550ce710b93?auto=format&fit=crop&w=700&q=75',
+];
+
+const STAND_SAMPLE_IMAGES = [
+  'https://source.unsplash.com/featured/1200x1200/?table-tent,menu,stand',
+  'https://source.unsplash.com/featured/1200x1200/?qr-code,table,stand',
+  'https://source.unsplash.com/featured/1200x1200/?restaurant-table-sign,stand',
+];
+
+const OWNER_PANEL_IMAGES = [
+  'https://images.unsplash.com/photo-1514326640560-7d063ef2aed5?auto=format&fit=crop&w=900&q=75',
+  'https://images.unsplash.com/photo-1504754524776-8f4f37790ca0?auto=format&fit=crop&w=900&q=75',
+  'https://images.unsplash.com/photo-1524758631624-e2822e304c36?auto=format&fit=crop&w=900&q=75',
+  'https://images.unsplash.com/photo-1484154218962-a197022b5858?auto=format&fit=crop&w=900&q=75',
+  'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&w=900&q=75',
+  'https://images.unsplash.com/photo-1466978913421-dad2ebd01d17?auto=format&fit=crop&w=900&q=75',
+];
+
+const STAND_OPTIONS = [
+  {
+    title: 'A6 T Tipi Masa Standı',
+    desc: 'Masanın ortasında dik durur. Menü yanında görünürlüğü en yüksek seçenektir.',
+    tag: 'Yoğun masa düzeni için',
+  },
+  {
+    title: 'A6 L Tipi Tezgah Standı',
+    desc: 'Duvar dibi ve pencere kenarı masalarda düşük yer kaplar, sade görünür.',
+    tag: 'Minimal görünüm için',
+  },
+  {
+    title: 'Yapışkanlı QR Sticker',
+    desc: 'Masaya direkt uygulanır. Dış mekan ve hızlı servis noktaları için uygundur.',
+    tag: 'Hızlı uygulama için',
+  },
+];
+
+type PackageDetail = {
+  key: string;
+  title: string;
+  badge: string;
+  price: string;
+  desc: string;
+  tables: string;
+  includes: string[];
+  isESigned: boolean;
+};
+
+const PACKAGES: PackageDetail[] = [
+  {
+    key: 'baslangic',
+    title: 'Başlangıç Paketi',
+    badge: 'E-imzasız',
+    price: '4.990 TL / ay',
+    desc: 'Tek şubeli kafeler için hızlı başlangıç paketi.',
+    tables: '10 masa / stand',
+    includes: [
+      '10 QR bağlantısı ve A6 stand planı',
+      'Canlı galeri + kampanya kurgusu',
+      'Aylık 1 e-posta kampanya şablonu',
+      'Panel kurulumu ve eğitim oturumu',
+    ],
+    isESigned: false,
+  },
+  {
+    key: 'buyume',
+    title: 'Büyüme Paketi',
+    badge: 'E-imzasız',
+    price: '8.490 TL / ay',
+    desc: 'Birden fazla masa bölgesi olan yoğun kafeler için.',
+    tables: '25 masa / stand',
+    includes: [
+      '25 QR bağlantısı ve stand yerleşim danışmanlığı',
+      'Segmentli kampanya senaryoları',
+      'Aylık 4 e-posta kampanya akışı',
+      'Haftalık performans raporu',
+    ],
+    isESigned: false,
+  },
+  {
+    key: 'kurumsal-imzali',
+    title: 'Kurumsal Paket',
+    badge: 'E-imzalı',
+    price: '11.490 TL / ay',
+    desc: 'Kurumsal sözleşme ve e-imza süreci isteyen işletmeler için.',
+    tables: '25 masa / stand + e-imza',
+    includes: [
+      'Büyüme paketindeki tüm özellikler',
+      'E-imza entegrasyonu (3.000 TL dahil)',
+      'Sözleşmeli onboarding ve operasyon checklisti',
+      'Öncelikli destek hattı',
+    ],
+    isESigned: true,
+  },
 ];
 
 const HOW_IT_WORKS = [
@@ -121,24 +221,18 @@ const FEATURES_BENTO = [
   },
 ];
 
-const TESTIMONIALS = [
+const TRUST_POINTS = [
   {
-    quote: 'Müşterilerimiz artık kafede daha uzun vakit geçiriyor. Galeri sayesinde anlar birikiyor, enerji hissediliyor.',
-    name: 'Ahmet Y.',
-    role: 'Ava Coffee, İstanbul',
-    stars: 5,
+    title: 'Pilot Süreci',
+    desc: 'Önce küçük kurulum, sonra net ölçüm: her şey veriye dayanır.',
   },
   {
-    quote: 'Kurulumu beş dakikada hallettik. QR kodları masalara yapıştırdık, hepsi bu. Müşteriler hemen alıştı.',
-    name: 'Selin K.',
-    role: 'Lumina Café, Ankara',
-    stars: 5,
+    title: 'Ölçülebilir Satış Desteği',
+    desc: 'QR taramaları, paylaşım sayıları ve e-posta geri dönüşleri tek dashboard üzerinde takip edilir.',
   },
   {
-    quote: 'Kampanya sistemi harika. Müşteriler ödül kazanmak için paylaşım yapıyor. Organik büyüme başladı.',
-    name: 'Mert D.',
-    role: 'The Roast Corner, İzmir',
-    stars: 5,
+    title: 'Kafe Sahibine Uygun Operasyon',
+    desc: 'A6 stand üretim modeline göre masa planı hazırlanır, ekip devreye girer ve süreç adım adım tamamlanır.',
   },
 ];
 
@@ -201,9 +295,11 @@ export default function MainPage({
   demoCafeName,
 }: MainPageProps) {
   const heroRef = useRef<HTMLDivElement>(null);
+  const [activePackageKey, setActivePackageKey] = useState<string | null>(null);
   const { scrollYProgress } = useScroll({ target: heroRef, offset: ['start start', 'end start'] });
   const heroY = useTransform(scrollYProgress, [0, 1], ['0%', '18%']);
   const heroOpacity = useTransform(scrollYProgress, [0, 0.7], [1, 0]);
+  const activePackage = PACKAGES.find((pkg) => pkg.key === activePackageKey) ?? null;
 
   const ownerButtonLabel = hasOwnerAccess
     ? 'Yönetim Paneline Git'
@@ -248,7 +344,7 @@ export default function MainPage({
           <div className="mp-nav-actions">
             <button type="button" onClick={onOpenDemo} className="mp-btn-ghost">
               <PlayCircle className="h-4 w-4" />
-              Demo
+              Canlı Önizleme
             </button>
             <button type="button" onClick={onOpenOwnerPortal} className="mp-btn-primary">
               <ShieldCheck className="h-4 w-4" />
@@ -278,18 +374,18 @@ export default function MainPage({
 
             {/* sub */}
             <motion.p variants={fadeUp} className="mp-hero-sub">
-              ShareVibe ile müşterileriniz masadan QR okutarak anlarını paylaşır, ödüller kazanır.
-              Siz tek bir panelden her şeyi yönetirsiniz.
+              ShareVibe; QR standları, canlı galeri, kampanya kurgusu ve e-posta pazarlamasını tek akışta birleştirir.
+              Amaç sadece bilgi vermek değil, masadan tekrar siparişe dönen bir müşteri döngüsü kurmaktır.
             </motion.p>
 
             {/* cta */}
             <motion.div variants={fadeUp} className="mp-hero-cta-row">
               <button onClick={onOpenDemo} className="mp-btn-primary mp-btn-lg">
                 <PlayCircle className="h-5 w-5" />
-                Canlı Demo İncele
+                Canlı Önizlemeyi İncele
                 <ArrowRight className="h-4 w-4" />
               </button>
-              <button onClick={onOpenOwnerPortal} className="mp-btn-outline mp-btn-lg">
+              <button type="button" onClick={onOpenOwnerPortal} className="mp-btn-outline mp-btn-lg">
                 <LayoutDashboard className="h-5 w-5" />
                 {ownerButtonLabel}
               </button>
@@ -303,7 +399,7 @@ export default function MainPage({
                 ))}
               </div>
               <span className="mp-hero-trust-text">
-                Yüzlerce kafe sahibinin tercihi · Kurulum 5 dakika
+                Önce plan, sonra kurulum: ölçüm, panel ve e-posta akışı tek yerde ilerler.
               </span>
             </motion.div>
           </motion.div>
@@ -325,20 +421,14 @@ export default function MainPage({
 
               <div className="mp-preview-gallery">
                 <div className="mp-preview-photo mp-preview-photo-main">
-                  <div className="mp-preview-photo-inner" style={{ background: 'linear-gradient(135deg, #d48f6b44 0%, #f3ebe2cc 100%)' }}>
-                    <Camera className="h-8 w-8 text-[#d48f6b]" />
-                  </div>
+                  <img src={HERO_SAMPLE_IMAGES[0]} alt="Kafe masasında paylaşılan örnek fotoğraf" className="mp-preview-photo-img" loading="lazy" decoding="async" />
                 </div>
                 <div className="mp-preview-col">
                   <div className="mp-preview-photo mp-preview-photo-sm">
-                    <div className="mp-preview-photo-inner" style={{ background: 'linear-gradient(135deg, #bb765844 0%, #f8f1eacc 100%)' }}>
-                      <ImagePlus className="h-5 w-5 text-[#bb7658]" />
-                    </div>
+                    <img src={HERO_SAMPLE_IMAGES[1]} alt="Latte art paylaşım örneği" className="mp-preview-photo-img" loading="lazy" decoding="async" />
                   </div>
                   <div className="mp-preview-photo mp-preview-photo-sm">
-                    <div className="mp-preview-photo-inner" style={{ background: 'linear-gradient(135deg, #9a5f4444 0%, #f3ebe2cc 100%)' }}>
-                      <Heart className="h-5 w-5 text-[#9a5f44]" />
-                    </div>
+                    <img src={HERO_SAMPLE_IMAGES[2]} alt="Kafe atmosferi paylaşım örneği" className="mp-preview-photo-img" loading="lazy" decoding="async" />
                   </div>
                 </div>
               </div>
@@ -512,17 +602,17 @@ export default function MainPage({
               <div className="mp-bento-large-visual">
                 <div className="mp-bento-mini-card">
                   <div className="mp-bento-mini-dot mp-bento-mini-dot-1" />
-                  <span>Ava Coffee</span>
+                  <span>Ava Kahve</span>
                   <span className="mp-bento-mini-check"><Check className="h-3 w-3" /></span>
                 </div>
                 <div className="mp-bento-mini-card">
                   <div className="mp-bento-mini-dot mp-bento-mini-dot-2" />
-                  <span>Lumina Café</span>
+                  <span>Lumina Kafe</span>
                   <span className="mp-bento-mini-check"><Check className="h-3 w-3" /></span>
                 </div>
                 <div className="mp-bento-mini-card mp-bento-mini-card-accent">
                   <div className="mp-bento-mini-dot mp-bento-mini-dot-3" />
-                  <span>The Roast Corner</span>
+                  <span>Kavrum Köşesi</span>
                   <span className="mp-bento-mini-check"><Check className="h-3 w-3" /></span>
                 </div>
               </div>
@@ -563,8 +653,8 @@ export default function MainPage({
             <h3 className="mp-bento-small-title">Güvenli Kontrol</h3>
             <p className="mp-bento-small-desc">Google hesabınızla giriş yapın. Sadece sizin panelinize siz erişirsiniz.</p>
             <div className="mp-security-row">
-              <span className="mp-security-badge">🔒 Google Auth</span>
-              <span className="mp-security-badge">Firestore Rules</span>
+              <span className="mp-security-badge">🔒 Google Doğrulama</span>
+              <span className="mp-security-badge">Firestore Kuralları</span>
             </div>
           </motion.div>
 
@@ -580,7 +670,7 @@ export default function MainPage({
               <BarChart3 className="h-6 w-6" />
             </div>
             <h3 className="mp-bento-small-title">Canlı Galeri</h3>
-            <p className="mp-bento-small-desc">Paylaşımlar anında kafenin interaktif galerisinde herkese görünür hale gelir.</p>
+            <p className="mp-bento-small-desc">Paylaşımlar anında galeride görünür, kampanya tetiklenir ve e-posta akışına veri gider.</p>
             <div className="mp-live-indicator">
               <span className="mp-live-dot" />
               <span className="mp-live-text">CANLI</span>
@@ -599,7 +689,7 @@ export default function MainPage({
               <Gift className="h-6 w-6" />
             </div>
             <h3 className="mp-bento-small-title">Kampanya & Ödüller</h3>
-            <p className="mp-bento-small-desc">Esnek hedef sistemiyle siz belirlersiniz, müşteriler kazanır.</p>
+            <p className="mp-bento-small-desc">Ödül hedefi tamamlandığında kupon e-postası ve yeniden ziyaret mesajı otomatik gönderilir.</p>
             <div className="mp-reward-preview">
               <div className="mp-reward-track">
                 <motion.div
@@ -615,6 +705,91 @@ export default function MainPage({
               </p>
             </div>
           </motion.div>
+        </div>
+      </section>
+
+      {/* ─── STAND OPTIONS ─── */}
+      <section id="standlar" className="mp-section">
+        <div className="mp-section-header">
+          <div className="mp-pill">Fiziki QR Standları</div>
+          <h2 className="mp-section-h2">
+            Masaya uygun<br /><span className="mp-accent-text">A6 stand modeli seçin.</span>
+          </h2>
+          <p className="mp-section-sub">
+            Proje sadece yazılım değil. Kafedeki masa yerleşimine göre doğru stand modeliyle müşteri okutma oranı artırılır.
+          </p>
+        </div>
+
+        <div className="mp-stand-grid">
+          {STAND_OPTIONS.map((stand, index) => (
+            <motion.article
+              key={stand.title}
+              initial={{ opacity: 0, y: 22 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, amount: 0.25 }}
+              transition={{ duration: 0.45, delay: index * 0.08, ease: [0.22, 1, 0.36, 1] }}
+              className="mp-stand-card"
+            >
+              <div className="mp-stand-visual" aria-hidden="true">
+                <img
+                  src={STAND_SAMPLE_IMAGES[index]}
+                  alt=""
+                  className="mp-stand-image"
+                  loading="lazy"
+                  decoding="async"
+                />
+                <div className="mp-stand-overlay">
+                  <div className={`mp-stand-shape ${index === 0 ? 'is-t' : index === 1 ? 'is-l' : 'is-sticker'}`} />
+                  <div className="mp-stand-qr" />
+                </div>
+              </div>
+              <p className="mp-stand-tag">{stand.tag}</p>
+              <h3 className="mp-stand-title">{stand.title}</h3>
+              <p className="mp-stand-desc">{stand.desc}</p>
+            </motion.article>
+          ))}
+        </div>
+      </section>
+
+      {/* ─── PRICING PACKAGES ─── */}
+      <section id="paketler" className="mp-section">
+        <div className="mp-section-header">
+          <div className="mp-pill">Paketler</div>
+          <h2 className="mp-section-h2">
+            Kaç masa için<br /><span className="mp-accent-text">ne kadar bütçe ayıracağınızı bilin.</span>
+          </h2>
+          <p className="mp-section-sub">
+            Paketler masa sayısına ve operasyon ihtiyacına göre net fiyatlandırılır. E-imza bedeli: 3.000 TL.
+          </p>
+        </div>
+
+        <div className="mp-pricing-grid">
+          {PACKAGES.map((pkg) => (
+            <article key={pkg.key} className={`mp-pricing-card ${pkg.isESigned ? 'is-esigned' : ''}`}>
+              <div className="mp-pricing-head">
+                <span className="mp-pricing-badge">{pkg.badge}</span>
+                <h3 className="mp-pricing-title">{pkg.title}</h3>
+                <p className="mp-pricing-price">{pkg.price}</p>
+                <p className="mp-pricing-desc">{pkg.desc}</p>
+              </div>
+
+              <div className="mp-pricing-meta">
+                <p className="mp-pricing-tables">{pkg.tables}</p>
+                <ul className="mp-pricing-list">
+                  {pkg.includes.slice(0, 3).map((item) => (
+                    <li key={item} className="mp-pricing-list-item">
+                      <Check className="h-4 w-4" />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <button className="mp-btn-outline mp-btn-full" onClick={() => setActivePackageKey(pkg.key)}>
+                Paketi Detaylı İncele
+              </button>
+            </article>
+          ))}
         </div>
       </section>
 
@@ -644,6 +819,7 @@ export default function MainPage({
                 'Kampanya hedefini ve ödülü belirleyin',
                 'Marka renklerinizi ve fontunuzu ayarlayın',
                 'Galeriyi anlık izleyin ve içerik moderasyonu yapın',
+                'E-posta pazarlama akışlarını panelden başlatın',
                 'Farklı kafeler arasında geçiş yapın',
               ].map((item) => (
                 <li key={item} className="mp-owner-list-item">
@@ -717,14 +893,14 @@ export default function MainPage({
                 </div>
                 {/* mini gallery */}
                 <div className="mp-panel-gallery">
-                  {[...Array(6)].map((_, i) => (
-                    <div
-                      key={i}
+                  {OWNER_PANEL_IMAGES.map((src, i) => (
+                    <img
+                      key={src}
+                      src={src}
+                      alt={`Panel örnek görseli ${i + 1}`}
                       className="mp-panel-gallery-item"
-                      style={{
-                        opacity: 0.6 + i * 0.06,
-                        background: `linear-gradient(135deg, hsl(${20 + i * 8}, 45%, ${75 - i * 4}%) 0%, hsl(${28 + i * 5}, 38%, 88%) 100%)`,
-                      }}
+                      loading="lazy"
+                      decoding="async"
                     />
                   ))}
                 </div>
@@ -744,19 +920,19 @@ export default function MainPage({
         </div>
       </section>
 
-      {/* ─── TESTIMONIALS ─── */}
+      {/* ─── TRUST SECTION ─── */}
       <section className="mp-section">
         <div className="mp-section-header">
-          <div className="mp-pill">Kafe Sahipleri Anlatıyor</div>
+          <div className="mp-pill">Neden Güvenilir?</div>
           <h2 className="mp-section-h2">
-            Gerçek kafeler,<br /><span className="mp-accent-text">gerçek sonuçlar.</span>
+            Abartı değil,<br /><span className="mp-accent-text">ölçülebilir operasyon dili.</span>
           </h2>
         </div>
 
         <div className="mp-testimonials-grid">
-          {TESTIMONIALS.map(({ quote, name, role, stars }, i) => (
+          {TRUST_POINTS.map(({ title, desc }, i) => (
             <motion.blockquote
-              key={name}
+              key={title}
               initial={{ opacity: 0, y: 28 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, amount: 0.3 }}
@@ -764,18 +940,15 @@ export default function MainPage({
               className="mp-testimonial"
             >
               <div className="mp-testimonial-stars">
-                {[...Array(stars)].map((_, s) => (
+                {[...Array(5)].map((_, s) => (
                   <Star key={s} className="h-4 w-4 fill-current text-[#d48f6b]" />
                 ))}
               </div>
-              <p className="mp-testimonial-quote">"{quote}"</p>
+              <p className="mp-testimonial-quote">{desc}</p>
               <footer className="mp-testimonial-footer">
-                <div className="mp-testimonial-avatar">
-                  {name[0]}
-                </div>
                 <div>
-                  <cite className="mp-testimonial-name">{name}</cite>
-                  <p className="mp-testimonial-role">{role}</p>
+                  <cite className="mp-testimonial-name">{title}</cite>
+                  <p className="mp-testimonial-role">ShareVibe operasyon yaklaşımı</p>
                 </div>
               </footer>
             </motion.blockquote>
@@ -799,15 +972,15 @@ export default function MainPage({
             <span className="mp-cta-accent">eşsiz bir deneyim</span> yaratın.
           </h2>
           <p className="mp-cta-sub">
-            Demo ile kafenizin nasıl görüneceğini görün, ardından panelinizi açın.
-            Kurulum 5 dakika sürer.
+            Önizleme ile masa akışını görün, paketinizi seçin ve ilk QR stand planınızı birlikte çıkaralım.
+            Sonraki adımda kampanya + e-posta akışını canlıya alalım.
           </p>
           <div className="mp-cta-actions">
             <button onClick={onOpenDemo} className="mp-btn-primary mp-btn-lg mp-btn-glow">
               <PlayCircle className="h-5 w-5" />
               Canlı Demoyu Aç
             </button>
-            <button onClick={onOpenOwnerPortal} className="mp-btn-ghost mp-btn-lg mp-btn-ghost-light">
+            <button type="button" onClick={onOpenOwnerPortal} className="mp-btn-ghost mp-btn-lg mp-btn-ghost-light">
               <ArrowRight className="h-5 w-5" />
               Panele Geç
             </button>
@@ -815,17 +988,90 @@ export default function MainPage({
         </div>
       </motion.section>
 
+      <AnimatePresence>
+        {activePackage && (
+          <motion.div
+            className="mp-package-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setActivePackageKey(null)}
+          >
+            <motion.div
+              className="mp-package-dialog"
+              initial={{ opacity: 0, y: 24, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 24, scale: 0.96 }}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="mp-package-dialog-head">
+                <div>
+                  <span className="mp-pricing-badge">{activePackage.badge}</span>
+                  <h3 className="mp-package-dialog-title">{activePackage.title}</h3>
+                  <p className="mp-package-dialog-price">{activePackage.price}</p>
+                </div>
+                <button className="mp-btn-ghost" onClick={() => setActivePackageKey(null)}>
+                  Kapat
+                </button>
+              </div>
+
+              <p className="mp-package-dialog-sub">{activePackage.desc}</p>
+              <p className="mp-package-dialog-sub"><strong>Kapsam:</strong> {activePackage.tables}</p>
+
+              <ul className="mp-package-dialog-list">
+                {activePackage.includes.map((item) => (
+                  <li key={item} className="mp-pricing-list-item">
+                    <Check className="h-4 w-4" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+
+              <div className="mp-package-dialog-footer">
+                <button onClick={onOpenOwnerPortal} className="mp-btn-primary">
+                  Bu Paketle Başla
+                </button>
+                <button onClick={onOpenDemo} className="mp-btn-outline">
+                  Önce Önizlemeyi Gör
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ─── FOOTER ─── */}
       <footer className="mp-footer">
-        <button
-          type="button"
-          onClick={onHiddenAdminTrigger}
-          className="mp-footer-brand"
-          aria-label="ShareVibe"
-        >
-          <BrandSignature compact subtitle="Kafe deneyimini dijitalleştir" />
-        </button>
-        <p className="mp-footer-copy">© 2025 ShareVibe. Tüm hakları saklıdır.</p>
+        <div className="mp-footer-grid">
+          <div>
+            <button
+              type="button"
+              onClick={onHiddenAdminTrigger}
+              className="mp-footer-brand"
+              aria-label="ShareVibe"
+            >
+              <BrandSignature compact subtitle="Kafe deneyimini dijitalleştir" />
+            </button>
+            <p className="mp-footer-copy mp-footer-copy--lead">
+              QR standları, canlı galeri, kampanya otomasyonu ve e-posta pazarlaması ile tek bir müşteri döngüsü kurun.
+            </p>
+          </div>
+
+          <div className="mp-footer-links-col">
+            <p className="mp-footer-heading">Ürün</p>
+            <a href="#nasil-calisir" className="mp-footer-link">Nasıl Çalışır?</a>
+            <a href="#standlar" className="mp-footer-link">Stand Modelleri</a>
+            <a href="#paketler" className="mp-footer-link">Paketler</a>
+          </div>
+
+          <div className="mp-footer-links-col">
+            <p className="mp-footer-heading">İletişim</p>
+            <p className="mp-footer-copy">Kurulum planı: 5 dakika</p>
+            <p className="mp-footer-copy">E-posta akışları dahil</p>
+            <p className="mp-footer-copy">Ön satış pilot desteği</p>
+          </div>
+        </div>
+        <p className="mp-footer-copy mp-footer-copy--center">© 2025 ShareVibe. Tüm hakları saklıdır.</p>
       </footer>
     </div>
   );
