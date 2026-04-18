@@ -105,6 +105,7 @@ body::before {
   align-items: center;
   gap: 0.45rem;
   padding: 0.55rem 0.9rem;
+  overflow: hidden;
   border-radius: 999px;
   border: 1px solid rgba(212, 143, 107, 0.25);
   background: rgba(42, 27, 19, 0.6);
@@ -113,6 +114,23 @@ body::before {
   font-weight: 700;
   letter-spacing: 0.22em;
   text-transform: uppercase;
+}
+
+.mp-stand-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  filter: saturate(0.92) contrast(0.95);
+}
+
+.mp-stand-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, rgba(26,15,10,0.08), rgba(26,15,10,0.18));
 }
 
 .glass-card {
@@ -1520,6 +1538,12 @@ img[loading="lazy"] {
   width: 100%; height: 100%;
   display: flex; align-items: center; justify-content: center;
 }
+.mp-preview-photo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
 
 .mp-preview-progress-wrap {
   margin-top: 1rem;
@@ -1798,7 +1822,14 @@ img[loading="lazy"] {
 .mp-panel-stat-val { font-weight: 700; color: #fff; }
 .mp-panel-stat-lbl { font-size: 0.75rem; }
 .mp-panel-gallery { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.4rem; margin-bottom: 1rem; }
-.mp-panel-gallery-item { aspect-ratio: 1; border-radius: 0.8rem; background: rgba(255,255,255,0.06); }
+.mp-panel-gallery-item {
+  aspect-ratio: 1;
+  border-radius: 0.8rem;
+  background: rgba(255,255,255,0.06);
+  object-fit: cover;
+  width: 100%;
+  height: 100%;
+}
 .mp-panel-campaign { background: rgba(255,255,255,0.04); padding: 0.8rem; border-radius: 1rem; }
 .mp-panel-campaign-header { display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; margin-bottom: 0.4rem; }
 .mp-panel-campaign-track { height: 0.5rem; background: rgba(255,255,255,0.12); border-radius: 999px; overflow: hidden; }
@@ -1830,19 +1861,553 @@ img[loading="lazy"] {
 .mp-testimonial-role { font-size: 0.78rem; color: rgba(255,255,255,0.68); }
 
 /* ------------------------------------------------------------
+   Stand Options
+   ------------------------------------------------------------ */
+.mp-stand-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.4rem;
+}
+.mp-stand-card {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 1.5rem;
+  padding: 1.4rem;
+}
+.mp-stand-visual {
+  height: 8rem;
+  border-radius: 1rem;
+  background: linear-gradient(135deg, rgba(255,255,255,0.1), rgba(255,255,255,0.03));
+  border: 1px solid rgba(255,255,255,0.12);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0.8rem;
+}
+.mp-stand-shape {
+  position: absolute;
+  border: 2px solid rgba(212,143,107,0.8);
+  border-radius: 0.6rem;
+}
+.mp-stand-shape.is-t {
+  width: 3.8rem;
+  height: 5.2rem;
+}
+.mp-stand-shape.is-l {
+  width: 4.4rem;
+  height: 2.8rem;
+  transform: skewX(-12deg);
+}
+.mp-stand-shape.is-sticker {
+  width: 4.5rem;
+  height: 4.5rem;
+  border-radius: 0.9rem;
+}
+.mp-stand-qr {
+  width: 1.2rem;
+  height: 1.2rem;
+  background: linear-gradient(135deg, #d48f6b, #bb7658);
+  border-radius: 0.2rem;
+}
+.mp-stand-tag {
+  font-size: 0.76rem;
+  color: var(--color-accent);
+  margin-bottom: 0.4rem;
+  font-weight: 600;
+}
+.mp-stand-title {
+  font-size: 1.1rem;
+  color: #fff;
+  font-weight: 700;
+  margin-bottom: 0.45rem;
+}
+.mp-stand-desc {
+  font-size: 0.92rem;
+  color: rgba(255,255,255,0.78);
+  line-height: 1.6;
+}
+
+/* ------------------------------------------------------------
+   Pricing Packages
+   ------------------------------------------------------------ */
+.mp-pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.4rem;
+}
+.mp-pricing-card {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at top right, rgba(212,143,107,0.16), transparent 42%),
+    linear-gradient(175deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 1.5rem;
+  padding: 1.3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.05rem;
+  height: 100%;
+  transition: transform 0.28s ease, border-color 0.28s ease, box-shadow 0.28s ease;
+}
+.mp-pricing-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(212,143,107,0.34);
+  box-shadow: 0 18px 40px rgba(8, 5, 3, 0.32);
+}
+.mp-pricing-card.is-esigned {
+  border-color: rgba(212,143,107,0.55);
+  box-shadow: 0 10px 26px rgba(212,143,107,0.16);
+}
+.mp-pricing-card.is-popular {
+  border-color: rgba(212,143,107,0.7);
+  box-shadow: 0 16px 34px rgba(212,143,107,0.22);
+}
+.mp-pricing-card-glow {
+  position: absolute;
+  inset: auto -28% -52% auto;
+  width: 16rem;
+  height: 16rem;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(212,143,107,0.26), transparent 70%);
+  pointer-events: none;
+}
+.mp-pricing-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  position: relative;
+  z-index: 1;
+}
+.mp-pricing-badge-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+.mp-pricing-badge {
+  display: inline-flex;
+  width: fit-content;
+  background: rgba(212,143,107,0.16);
+  border: 1px solid rgba(212,143,107,0.28);
+  color: #f4c7b1;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+.mp-pricing-recommend {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.22rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.2);
+  background: rgba(255,255,255,0.08);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+.mp-pricing-title {
+  color: #fff;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+.mp-pricing-price-wrap {
+  margin-top: 0.25rem;
+}
+.mp-pricing-price {
+  color: #fff;
+  font-size: 1.35rem;
+  font-weight: 800;
+}
+.mp-pricing-price-note {
+  margin-top: 0.22rem;
+  color: rgba(255,255,255,0.62);
+  font-size: 0.8rem;
+}
+.mp-pricing-desc {
+  color: rgba(255,255,255,0.78);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+.mp-pricing-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.72rem;
+  position: relative;
+  z-index: 1;
+  flex: 1;
+}
+.mp-pricing-cta {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  margin-top: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.9rem;
+  border-radius: 0.92rem;
+  border: 1px solid rgba(212,143,107,0.44);
+  background: linear-gradient(135deg, rgba(212,143,107,0.2), rgba(100,58,40,0.42));
+  color: #ffe3d6;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: transform 0.24s ease, box-shadow 0.24s ease, border-color 0.24s ease, color 0.24s ease;
+}
+.mp-pricing-cta::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(110deg, transparent 28%, rgba(255,255,255,0.22) 50%, transparent 72%);
+  transform: translateX(-150%);
+  transition: transform 0.62s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.mp-pricing-card:hover .mp-pricing-cta {
+  transform: translateY(-2px);
+  border-color: rgba(255, 206, 179, 0.72);
+  box-shadow: 0 12px 24px rgba(30, 15, 8, 0.35);
+  color: #fff4ee;
+}
+.mp-pricing-card:hover .mp-pricing-cta::before {
+  transform: translateX(130%);
+}
+.mp-pricing-cta:focus-visible {
+  outline: 2px solid rgba(255, 212, 189, 0.9);
+  outline-offset: 2px;
+}
+.mp-pricing-chip-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.mp-pricing-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.13);
+  color: #f8dfd2;
+  font-size: 0.77rem;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 0.27rem 0.62rem;
+}
+.mp-pricing-ops {
+  display: grid;
+  gap: 0.42rem;
+}
+.mp-pricing-ops-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  color: rgba(255,255,255,0.78);
+  font-size: 0.82rem;
+}
+.mp-pricing-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.1rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+.mp-pricing-list-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  color: rgba(255,255,255,0.8);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+.mp-pricing-list-item svg {
+  color: #8fdc6a;
+  margin-top: 0.1rem;
+  flex-shrink: 0;
+}
+
+/* Package detail overlay */
+.mp-package-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 4, 3, 0.8);
+  backdrop-filter: blur(8px);
+  z-index: 130;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+.mp-package-dialog {
+  width: min(52rem, 100%);
+  max-height: 88vh;
+  overflow: auto;
+  background: linear-gradient(180deg, rgba(46,28,19,0.98), rgba(24,14,10,0.98));
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 1.5rem;
+  padding: 1.4rem;
+}
+.mp-package-dialog-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+.mp-package-dialog-title {
+  font-size: 1.5rem;
+  color: #fff;
+  margin: 0.4rem 0 0.3rem;
+}
+.mp-package-dialog-price {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #f3c9b8;
+}
+.mp-package-dialog-sub {
+  color: rgba(255,255,255,0.8);
+  font-size: 0.95rem;
+  margin-top: 0.8rem;
+}
+.mp-package-dialog-list {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0 0;
+  display: grid;
+  gap: 0.55rem;
+}
+.mp-package-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+.mp-package-dialog-note {
+  margin-top: 0.18rem;
+  font-size: 0.8rem;
+  color: rgba(255,255,255,0.6);
+  font-weight: 400;
+}
+.mp-package-close {
+  border-radius: 0.9rem;
+  border-color: rgba(255,255,255,0.15);
+  color: rgba(255,255,255,0.7);
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+}
+.mp-package-close:hover {
+  border-color: rgba(255,255,255,0.25);
+  color: #fff;
+  background: rgba(255,255,255,0.04);
+}
+
+/* Dialog layout: 2-column main + sidebar */
+.mp-package-dialog-layout {
+  margin-top: 1.2rem;
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 1.2rem;
+}
+.mp-package-dialog-main,
+.mp-package-dialog-side {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* Descriptive paragraph blocks */
+.mp-package-dialog-sub {
+  color: rgba(255,255,255,0.82);
+  font-size: 0.92rem;
+  line-height: 1.6;
+  margin: 0;
+}
+.mp-package-focus {
+  color: rgba(255,255,255,0.9);
+  background: rgba(212,143,107,0.1);
+  border: 1px solid rgba(212,143,107,0.25);
+  border-radius: 0.95rem;
+  padding: 0.8rem 0.95rem;
+  line-height: 1.6;
+  font-weight: 500;
+}
+
+/* KPI grid: 4 cards in 2x2 */
+.mp-package-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+.mp-package-kpi-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 0.88rem;
+  padding: 0.68rem 0.75rem;
+  align-items: flex-start;
+}
+.mp-package-kpi-card svg {
+  color: #e8b8a0;
+  margin-bottom: 0.12rem;
+}
+.mp-package-kpi-card span {
+  color: rgba(255,255,255,0.65);
+  font-size: 0.72rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.mp-package-kpi-card strong {
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+/* Detail blocks for roadmap, outputs, KPIs */
+.mp-package-detail-block {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 1.02rem;
+  padding: 0.92rem 1rem;
+}
+.mp-package-detail-block.is-highlight {
+  border-color: rgba(212,143,107,0.3);
+  background: linear-gradient(155deg, rgba(212,143,107,0.12), rgba(255,255,255,0.03));
+  border-width: 1.5px;
+}
+.mp-package-detail-title {
+  margin: 0 0 0.7rem 0;
+  color: #fff;
+  font-size: 0.93rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+/* Roadmap list with numbered markers */
+.mp-package-roadmap-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.62rem;
+}
+.mp-package-roadmap-item {
+  position: relative;
+  color: rgba(255,255,255,0.86);
+  font-size: 0.87rem;
+  line-height: 1.55;
+  padding-left: 1.15rem;
+}
+.mp-package-roadmap-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.55rem;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: #d9a582;
+  box-shadow: 0 0 0 4px rgba(217,165,130,0.15);
+}
+
+/* Mini list for outputs and KPIs */
+.mp-package-mini-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.56rem;
+}
+.mp-package-mini-list li {
+  color: rgba(255,255,255,0.85);
+  font-size: 0.86rem;
+  line-height: 1.5;
+  padding-left: 0.95rem;
+  position: relative;
+}
+.mp-package-mini-list li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.54rem;
+  width: 0.36rem;
+  height: 0.36rem;
+  border-radius: 50%;
+  background: #8ce068;
+}
+
+/* Footer buttons */
+.mp-package-dialog-footer {
+  display: flex;
+  gap: 0.8rem;
+  margin-top: 1.3rem;
+  flex-wrap: wrap;
+}
+.mp-package-dialog-footer .mp-btn-primary {
+  flex: 1;
+  min-width: 10rem;
+  padding: 0.75rem 1.3rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  border-radius: 1.08rem;
+  background: linear-gradient(135deg, var(--color-accent), #da965c);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1), 
+              box-shadow 200ms ease;
+}
+.mp-package-dialog-footer .mp-btn-primary:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 24px rgba(212, 143, 107, 0.3);
+}
+.mp-package-dialog-footer .mp-btn-outline {
+  flex: 1;
+  min-width: 10rem;
+  padding: 0.75rem 1.3rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  background: transparent;
+  color: rgba(255,255,255,0.9);
+  border: 1.5px solid rgba(212,143,107,0.5);
+  border-radius: 1.08rem;
+  cursor: pointer;
+  transition: all 200ms ease;
+}
+.mp-package-dialog-footer .mp-btn-outline:hover {
+  background: rgba(212,143,107,0.15);
+  border-color: #d48f6b;
+  color: #fff;
+}
+
+/* ------------------------------------------------------------
    CTA Banner
    ------------------------------------------------------------ */
 .mp-cta-banner {
   position: relative;
   padding: 4rem 2rem;
-  background: linear-gradient(135deg, #2a1b13, #1e120b);
+  background:
+    radial-gradient(circle at top left, rgba(212,143,107,0.1), transparent 36%),
+    radial-gradient(circle at bottom right, rgba(122,77,55,0.12), transparent 42%),
+    linear-gradient(180deg, rgba(40,25,17,0.98), rgba(20,12,8,0.98));
   text-align: center;
   overflow: hidden;
 }
 .mp-cta-glow {
   position: absolute;
   inset: 0;
-  background: radial-gradient(circle at top left, rgba(212,143,107,0.12), transparent 60%);
+  background: radial-gradient(circle at top left, rgba(212,143,107,0.08), transparent 60%);
   pointer-events: none;
 }
 .mp-cta-content { position: relative; z-index: 1; max-width: 38rem; margin: 0 auto; }
@@ -1859,11 +2424,30 @@ img[loading="lazy"] {
 .mp-footer {
   padding: 2rem 2rem 3rem;
   text-align: center;
-  background: rgba(0,0,0,0.24);
+  background: linear-gradient(180deg, rgba(18,10,7,0.94), rgba(14,8,5,0.98));
   border-top: 1px solid rgba(255,255,255,0.08);
 }
-.mp-footer-brand { background: none; border: none; cursor: pointer; }
+.mp-footer-grid {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  gap: 1.4rem;
+  max-width: 84rem;
+  margin: 0 auto;
+  text-align: left;
+}
+.mp-footer-brand { background: none; border: none; cursor: pointer; padding: 0; }
 .mp-footer-copy { font-size: 0.85rem; color: rgba(255,255,255,0.68); margin-top: 0.8rem; }
+.mp-footer-copy--lead { max-width: 26rem; line-height: 1.7; }
+.mp-footer-copy--center { text-align: center; margin-top: 1.6rem; }
+.mp-footer-heading { font-size: 0.78rem; letter-spacing: 0.18em; text-transform: uppercase; color: #f3c9b8; margin-bottom: 0.75rem; }
+.mp-footer-links-col { display: flex; flex-direction: column; gap: 0.45rem; }
+.mp-footer-link {
+  color: rgba(255,255,255,0.78);
+  text-decoration: none;
+  font-size: 0.9rem;
+  transition: color 0.2s ease;
+}
+.mp-footer-link:hover { color: #f3c9b8; }
 
 /* Utility classes */
 .mp-btn-lg { font-size: 1.1rem; padding: 0.75rem 1.4rem; }
@@ -2141,6 +2725,65 @@ img[loading="lazy"] {
     gap: 1rem;
   }
 
+  /* Stand and Pricing */
+  .mp-stand-grid,
+  .mp-pricing-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .mp-stand-card,
+  .mp-pricing-card {
+    border-radius: 1.2rem;
+    padding: 1rem;
+  }
+
+  .mp-pricing-recommend {
+    font-size: 0.66rem;
+  }
+
+  .mp-pricing-price {
+    font-size: 1.22rem;
+  }
+
+  .mp-pricing-chip-row {
+    flex-direction: column;
+  }
+
+  .mp-pricing-chip {
+    width: fit-content;
+  }
+
+  .mp-package-dialog {
+    border-radius: 1.2rem;
+    padding: 1rem;
+    max-height: 92vh;
+  }
+
+  .mp-package-dialog-layout {
+    grid-template-columns: 1fr;
+    gap: 0.8rem;
+  }
+
+  .mp-package-kpi-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .mp-package-dialog-head {
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+
+  .mp-package-dialog-footer {
+    flex-direction: column;
+  }
+
+  .mp-package-dialog-footer .mp-btn-primary,
+  .mp-package-dialog-footer .mp-btn-outline {
+    width: 100%;
+    justify-content: center;
+  }
+
   .mp-testimonial {
     padding: 1rem;
     border-radius: 1.2rem;
@@ -2185,6 +2828,15 @@ img[loading="lazy"] {
     padding: 1.5rem 1rem 2rem;
   }
 
+  .mp-footer-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .mp-footer-copy--lead {
+    max-width: 100%;
+  }
+
   .mp-footer-copy {
     font-size: 0.78rem;
   }
@@ -2194,6 +2846,101 @@ img[loading="lazy"] {
     font-size: 0.75rem;
     padding: 0.35rem 0.6rem;
     display: none;
+  }
+
+  /* Package Modal Mobile */
+  .mp-package-dialog {
+    width: min(95vw, 100%);
+    max-height: 92vh;
+    padding: 1rem;
+    border-radius: 1.2rem;
+  }
+
+  .mp-package-dialog-head {
+    gap: 0.5rem;
+    margin-bottom: 0.8rem;
+  }
+
+  .mp-package-dialog-title {
+    font-size: 1.2rem;
+  }
+
+  .mp-package-dialog-price {
+    font-size: 1rem;
+  }
+
+  .mp-package-dialog-note {
+    font-size: 0.75rem;
+  }
+
+  .mp-package-focus {
+    font-size: 0.88rem;
+    padding: 0.65rem 0.8rem;
+  }
+
+  .mp-package-kpi-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.5rem;
+  }
+
+  .mp-package-kpi-card {
+    padding: 0.55rem 0.6rem;
+    border-radius: 0.75rem;
+  }
+
+  .mp-package-kpi-card span {
+    font-size: 0.65rem;
+  }
+
+  .mp-package-kpi-card strong {
+    font-size: 0.8rem;
+  }
+
+  .mp-package-detail-block {
+    padding: 0.75rem 0.85rem;
+    border-radius: 0.88rem;
+  }
+
+  .mp-package-detail-title {
+    font-size: 0.85rem;
+    margin-bottom: 0.6rem;
+  }
+
+  .mp-package-roadmap-list {
+    gap: 0.5rem;
+  }
+
+  .mp-package-roadmap-item {
+    font-size: 0.8rem;
+    padding-left: 0.95rem;
+  }
+
+  .mp-package-mini-list {
+    gap: 0.5rem;
+  }
+
+  .mp-package-mini-list li {
+    font-size: 0.8rem;
+  }
+
+  .mp-package-dialog-layout {
+    grid-template-columns: 1fr;
+    gap: 0.8rem;
+    margin-top: 0.8rem;
+  }
+
+  .mp-package-dialog-footer {
+    flex-direction: column;
+    gap: 0.6rem;
+    margin-top: 0.8rem;
+  }
+
+  .mp-package-dialog-footer .mp-btn-primary,
+  .mp-package-dialog-footer .mp-btn-outline {
+    width: 100%;
+    min-width: auto;
+    padding: 0.65rem 1rem;
+    font-size: 0.88rem;
   }
 }
 
@@ -2316,6 +3063,28 @@ img[loading="lazy"] {
     gap: 1.2rem;
   }
 
+  /* Stand and Pricing */
+  .mp-stand-grid,
+  .mp-pricing-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mp-pricing-title {
+    font-size: 1.14rem;
+  }
+
+  .mp-pricing-price {
+    font-size: 1.26rem;
+  }
+
+  .mp-package-dialog {
+    width: min(44rem, 100%);
+  }
+
+  .mp-package-dialog-layout {
+    grid-template-columns: 1fr;
+  }
+
   /* CTA Banner */
   .mp-cta-banner {
     padding: 3.5rem 1.5rem;
@@ -2332,6 +3101,10 @@ img[loading="lazy"] {
   .mp-cta-actions .mp-btn-primary,
   .mp-cta-actions .mp-btn-ghost-light {
     font-size: 0.95rem;
+  }
+
+  .mp-footer-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -2399,6 +3172,11 @@ img[loading="lazy"] {
   .mp-testimonials-grid {
     grid-template-columns: repeat(3, 1fr);
     gap: 1.6rem;
+  }
+
+  .mp-stand-grid,
+  .mp-pricing-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   /* CTA Banner */

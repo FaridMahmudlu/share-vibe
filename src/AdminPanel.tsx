@@ -448,10 +448,10 @@ export default function AdminPanel({
   const canManageWorkspace = Boolean(userEmail) && (workspaceDraftChanged || canManageActiveWorkspace);
   const panelTitle = isBrandView
     ? (isOwnerPortal ? 'Kafe Kurulum Alanı' : 'Marka Ayarları')
-    : (isOwnerPortal ? 'Kafe Sahibi Paneli' : 'Admin Paneli');
+    : (isOwnerPortal ? 'Kafe Sahibi Paneli' : 'Yönetim Paneli');
   const panelPill = isOwnerPortal ? 'Kafe Sahibi Merkezi' : 'Yönetim Merkezi';
   const loginPill = isOwnerPortal ? 'Kafe Sahibi Erişimi' : 'Yönetim Erişimi';
-  const loginTitle = isOwnerPortal ? 'Kafe Sahibi Girişi' : 'Admin Paneli';
+  const loginTitle = isOwnerPortal ? 'Kafe Sahibi Girişi' : 'Yönetim Paneli';
   const publicGalleryLink = useMemo(
     () => buildCafePublicLink({ origin: window.location.origin, cafeSlug: effectiveWorkspaceSlug }),
     [effectiveWorkspaceSlug]
@@ -470,7 +470,7 @@ export default function AdminPanel({
     try {
       await signInWithGoogle();
     } catch (error) {
-      console.error('Login error:', error);
+      console.error('Giriş hatası:', error);
     }
   };
 
@@ -482,13 +482,13 @@ export default function AdminPanel({
     try {
       await signOut(auth);
     } catch (error) {
-      console.error('Account switch logout error:', error);
+      console.error('Hesap değiştirirken çıkış hatası:', error);
     }
 
     try {
       await signInWithGoogle();
     } catch (error) {
-      console.error('Account switch login error:', error);
+      console.error('Hesap değiştirirken giriş hatası:', error);
     }
   };
 
@@ -704,7 +704,7 @@ export default function AdminPanel({
             <Settings className="w-6 h-6" />
           </div>
           <h1 className="text-2xl font-semibold text-cafe-50">
-            {isOwnerPortal ? 'Kafe sahibi alanı hazırlanıyor' : 'Admin paneli hazırlanıyor'}
+            {isOwnerPortal ? 'Kafe sahibi alanı hazırlanıyor' : 'Yönetim paneli hazırlanıyor'}
           </h1>
           <p className="mt-3 text-sm leading-7 text-cafe-100/70">
             Yetki kontrolü ve yönetim verileri yükleniyor.
@@ -798,7 +798,7 @@ export default function AdminPanel({
               type="button"
               onClick={onBack}
               className="brand-signature-button brand-signature-button--app"
-              aria-label="Main page'e dön"
+              aria-label="Ana sayfaya dön"
             >
               <BrandSignature compact subtitle={null} />
             </button>

@@ -16,7 +16,7 @@ export const auth = getAuth(app);
 export const storage = getStorage(app);
 
 const persistencePromise = setPersistence(auth, browserLocalPersistence).catch((error) => {
-  console.error('Error setting auth persistence:', error);
+  console.error('Kimlik doğrulama kalıcılığı ayarlanamadı:', error);
 });
 
 const authReadyPromise = new Promise<void>((resolve) => {

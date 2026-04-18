@@ -45,7 +45,7 @@ const openPendingUploadDb = () =>
     };
 
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error('Pending upload database could not be opened.'));
+    request.onerror = () => reject(request.error ?? new Error('Bekleyen yükleme veritabanı açılamadı.'));
   });
 
 export const savePendingUpload = async (draft: PendingUploadDraft) => {
@@ -75,12 +75,12 @@ export const savePendingUpload = async (draft: PendingUploadDraft) => {
 
     transaction.onerror = () => {
       db.close();
-      reject(transaction.error ?? new Error('Pending upload could not be saved.'));
+      reject(transaction.error ?? new Error('Bekleyen yükleme kaydedilemedi.'));
     };
 
     transaction.onabort = () => {
       db.close();
-      reject(transaction.error ?? new Error('Pending upload save was aborted.'));
+      reject(transaction.error ?? new Error('Bekleyen yükleme kaydı iptal edildi.'));
     };
 
     store.put(record);
@@ -100,7 +100,7 @@ export const getPendingUpload = async (): Promise<PendingUploadDraft | null> => 
     };
 
     request.onerror = () => {
-      reject(request.error ?? new Error('Pending upload could not be read.'));
+      reject(request.error ?? new Error('Bekleyen yükleme okunamadı.'));
     };
 
     transaction.oncomplete = () => {
@@ -109,12 +109,12 @@ export const getPendingUpload = async (): Promise<PendingUploadDraft | null> => 
 
     transaction.onerror = () => {
       db.close();
-      reject(transaction.error ?? new Error('Pending upload read failed.'));
+      reject(transaction.error ?? new Error('Bekleyen yükleme okuma işlemi başarısız oldu.'));
     };
 
     transaction.onabort = () => {
       db.close();
-      reject(transaction.error ?? new Error('Pending upload read was aborted.'));
+      reject(transaction.error ?? new Error('Bekleyen yükleme okuma işlemi iptal edildi.'));
     };
   });
 
@@ -157,12 +157,12 @@ export const clearPendingUpload = async () => {
 
     transaction.onerror = () => {
       db.close();
-      reject(transaction.error ?? new Error('Pending upload could not be cleared.'));
+      reject(transaction.error ?? new Error('Bekleyen yükleme temizlenemedi.'));
     };
 
     transaction.onabort = () => {
       db.close();
-      reject(transaction.error ?? new Error('Pending upload clear was aborted.'));
+      reject(transaction.error ?? new Error('Bekleyen yükleme temizleme işlemi iptal edildi.'));
     };
 
     store.delete(PENDING_UPLOAD_KEY);

@@ -57,9 +57,9 @@ const HERO_SAMPLE_IMAGES = [
 ];
 
 const STAND_SAMPLE_IMAGES = [
-  'https://source.unsplash.com/featured/1200x1200/?table-tent,menu,stand',
-  'https://source.unsplash.com/featured/1200x1200/?qr-code,table,stand',
-  'https://source.unsplash.com/featured/1200x1200/?restaurant-table-sign,stand',
+  'https://plus.unsplash.com/premium_photo-1769810719841-3acd637f4f32?q=80&w=755&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D',
+  'https://plus.unsplash.com/premium_photo-1770645729018-25dccfc67e04?q=80&w=1740&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D',
+  'https://plus.unsplash.com/premium_photo-1674149628320-e614b1f0ad1e?q=80&w=1740&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D',
 ];
 
 const OWNER_PANEL_IMAGES = [
@@ -94,10 +94,19 @@ type PackageDetail = {
   title: string;
   badge: string;
   price: string;
+  priceNote: string;
   desc: string;
   tables: string;
+  idealFor: string;
+  onboarding: string;
+  support: string;
+  focusLine: string;
+  rolloutPlan: string[];
+  outputs: string[];
+  kpiTargets: string[];
   includes: string[];
   isESigned: boolean;
+  isPopular?: boolean;
 };
 
 const PACKAGES: PackageDetail[] = [
@@ -106,13 +115,34 @@ const PACKAGES: PackageDetail[] = [
     title: 'Başlangıç Paketi',
     badge: 'E-imzasız',
     price: '4.990 TL / ay',
+    priceNote: 'İlk kurulum dahildir',
     desc: 'Tek şubeli kafeler için hızlı başlangıç paketi.',
     tables: '10 masa / stand',
+    idealFor: 'Yeni başlayan kafeler',
+    onboarding: '48 saatte canlı kurulum',
+    support: 'Hafta içi standart destek',
+    focusLine: 'İlk ayda düzenli QR okutma alışkanlığı oluşturup tekrar ziyaret döngüsünü başlatır.',
+    rolloutPlan: [
+      'Gün 1-2: Masa planı, QR eşleşmeleri ve panel kurulum checklisti tamamlanır.',
+      'Gün 3-5: Galeri görünümü ve ilk kampanya akışı canlı ortama alınır.',
+      'İlk hafta sonu: Ekip eğitimi ve operasyon handoff toplantısı yapılır.',
+    ],
+    outputs: [
+      'Masa bazında okutma görünürlüğü',
+      'İlk kampanya senaryosu ve ödül kurgusu',
+      'Temel dönüşüm metriği dashboardu',
+    ],
+    kpiTargets: [
+      'İlk 30 günde düzenli QR trafiği',
+      'Paylaşım başına kampanya etkileşim takibi',
+      'Aylık temel raporla optimizasyon listesi',
+    ],
     includes: [
       '10 QR bağlantısı ve A6 stand planı',
       'Canlı galeri + kampanya kurgusu',
       'Aylık 1 e-posta kampanya şablonu',
       'Panel kurulumu ve eğitim oturumu',
+      'Temel performans takip metrikleri',
     ],
     isESigned: false,
   },
@@ -121,28 +151,71 @@ const PACKAGES: PackageDetail[] = [
     title: 'Büyüme Paketi',
     badge: 'E-imzasız',
     price: '8.490 TL / ay',
+    priceNote: 'En çok tercih edilen plan',
     desc: 'Birden fazla masa bölgesi olan yoğun kafeler için.',
     tables: '25 masa / stand',
+    idealFor: 'Yoğun servis hacmi',
+    onboarding: '72 saatte çoklu alan kurgusu',
+    support: 'Öncelikli operasyon desteği',
+    focusLine: 'Yoğun saatlerde masa bazlı görünürlüğü artırarak satışa dönen müşteri akışını ölçekler.',
+    rolloutPlan: [
+      'Gün 1-2: Çoklu masa bölgesi planı ve stand yerleşim haritası hazırlanır.',
+      'Gün 3-6: Segmentli kampanya akışları ve e-posta otomasyonları devreye alınır.',
+      'İlk 14 gün: Haftalık analiz toplantısı ile performans optimizasyonu yapılır.',
+    ],
+    outputs: [
+      'Yoğun alanlar için segmentli kampanya seti',
+      'Haftalık performans raporları',
+      'Masa bazlı dönüşüm analizi ekranı',
+    ],
+    kpiTargets: [
+      'QR okutma başına kampanya katılım artışı',
+      'Haftalık tekrar ziyaret trendi',
+      'Aktif masa başına daha yüksek etkileşim oranı',
+    ],
     includes: [
       '25 QR bağlantısı ve stand yerleşim danışmanlığı',
       'Segmentli kampanya senaryoları',
       'Aylık 4 e-posta kampanya akışı',
       'Haftalık performans raporu',
+      'Masa bazlı dönüşüm analiz ekranı',
     ],
     isESigned: false,
+    isPopular: true,
   },
   {
     key: 'kurumsal-imzali',
     title: 'Kurumsal Paket',
     badge: 'E-imzalı',
     price: '11.490 TL / ay',
+    priceNote: 'E-imza maliyeti pakete dahildir',
     desc: 'Kurumsal sözleşme ve e-imza süreci isteyen işletmeler için.',
     tables: '25 masa / stand + e-imza',
+    idealFor: 'Kurumsal marka standartları',
+    onboarding: 'Sözleşmeli rollout planı',
+    support: 'Öncelikli destek + danışmanlık',
+    focusLine: 'Kurumsal operasyon akışına uygun sözleşmeli kurulumla tüm şubelerde standart kaliteyi korur.',
+    rolloutPlan: [
+      'Hafta 1: E-imza ve sözleşme süreçleriyle resmi onboarding tamamlanır.',
+      'Hafta 2: Şube bazlı rollout planı ve operasyon kontrol listeleri aktif edilir.',
+      'Aylık döngü: Strateji toplantısı ve kampanya yönetim danışmanlığı yürütülür.',
+    ],
+    outputs: [
+      'E-imza dahil kurumsal sözleşme akışı',
+      'Şube bazlı operasyon checklist yönetimi',
+      'Aylık strateji ve kampanya değerlendirme raporu',
+    ],
+    kpiTargets: [
+      'Şubeler arası standart etkileşim seviyesi',
+      'Kampanya dönüşüm trendinin aylık takibi',
+      'Kurumsal hedeflere göre aksiyon planı',
+    ],
     includes: [
       'Büyüme paketindeki tüm özellikler',
       'E-imza entegrasyonu (3.000 TL dahil)',
       'Sözleşmeli onboarding ve operasyon checklisti',
       'Öncelikli destek hattı',
+      'Aylık strateji ve kampanya değerlendirmesi',
     ],
     isESigned: true,
   },
@@ -284,6 +357,16 @@ const stagger = {
   show: { transition: { staggerChildren: 0.1 } },
 };
 
+const dialogStagger = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.07, delayChildren: 0.05 } },
+};
+
+const dialogItem = {
+  hidden: { opacity: 0, y: 14 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.38, ease: cubicBezier(0.22, 1, 0.36, 1) } },
+};
+
 export default function MainPage({
   onOpenDemo,
   onOpenOwnerPortal,
@@ -367,9 +450,9 @@ export default function MainPage({
 
             {/* heading */}
             <motion.h1 variants={fadeUp} className="mp-hero-h1">
-              Müşterilerinizi
+              Müşteri sadakatini
               <br />
-              <span className="mp-hero-h1-accent">birbirine bağlayın.</span>
+              <span className="mp-hero-h1-accent">güçlendirin.</span>
             </motion.h1>
 
             {/* sub */}
@@ -737,11 +820,8 @@ export default function MainPage({
                   className="mp-stand-image"
                   loading="lazy"
                   decoding="async"
+                  referrerPolicy="no-referrer"
                 />
-                <div className="mp-stand-overlay">
-                  <div className={`mp-stand-shape ${index === 0 ? 'is-t' : index === 1 ? 'is-l' : 'is-sticker'}`} />
-                  <div className="mp-stand-qr" />
-                </div>
               </div>
               <p className="mp-stand-tag">{stand.tag}</p>
               <h3 className="mp-stand-title">{stand.title}</h3>
@@ -764,19 +844,55 @@ export default function MainPage({
         </div>
 
         <div className="mp-pricing-grid">
-          {PACKAGES.map((pkg) => (
-            <article key={pkg.key} className={`mp-pricing-card ${pkg.isESigned ? 'is-esigned' : ''}`}>
+          {PACKAGES.map((pkg, index) => (
+            <motion.article
+              key={pkg.key}
+              initial={{ opacity: 0, y: 26 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, amount: 0.25 }}
+              transition={{ duration: 0.5, delay: index * 0.08, ease: [0.22, 1, 0.36, 1] }}
+              className={`mp-pricing-card ${pkg.isESigned ? 'is-esigned' : ''} ${pkg.isPopular ? 'is-popular' : ''}`}
+            >
+              <div className="mp-pricing-card-glow" aria-hidden="true" />
+
               <div className="mp-pricing-head">
-                <span className="mp-pricing-badge">{pkg.badge}</span>
+                <div className="mp-pricing-badge-row">
+                  <span className="mp-pricing-badge">{pkg.badge}</span>
+                  {pkg.isPopular ? (
+                    <span className="mp-pricing-recommend">
+                      <Sparkles className="h-3.5 w-3.5" /> En çok tercih edilen
+                    </span>
+                  ) : null}
+                </div>
                 <h3 className="mp-pricing-title">{pkg.title}</h3>
-                <p className="mp-pricing-price">{pkg.price}</p>
                 <p className="mp-pricing-desc">{pkg.desc}</p>
+                <div className="mp-pricing-price-wrap">
+                  <p className="mp-pricing-price">{pkg.price}</p>
+                  <p className="mp-pricing-price-note">{pkg.priceNote}</p>
+                </div>
               </div>
 
               <div className="mp-pricing-meta">
-                <p className="mp-pricing-tables">{pkg.tables}</p>
+                <div className="mp-pricing-chip-row">
+                  <span className="mp-pricing-chip">
+                    <QrCode className="h-3.5 w-3.5" /> {pkg.tables}
+                  </span>
+                  <span className="mp-pricing-chip">
+                    <Users className="h-3.5 w-3.5" /> {pkg.idealFor}
+                  </span>
+                </div>
+
+                <div className="mp-pricing-ops">
+                  <div className="mp-pricing-ops-item">
+                    <BarChart3 className="h-3.5 w-3.5" /> {pkg.onboarding}
+                  </div>
+                  <div className="mp-pricing-ops-item">
+                    <TrendingUp className="h-3.5 w-3.5" /> {pkg.support}
+                  </div>
+                </div>
+
                 <ul className="mp-pricing-list">
-                  {pkg.includes.slice(0, 3).map((item) => (
+                  {pkg.includes.map((item) => (
                     <li key={item} className="mp-pricing-list-item">
                       <Check className="h-4 w-4" />
                       {item}
@@ -785,10 +901,10 @@ export default function MainPage({
                 </ul>
               </div>
 
-              <button className="mp-btn-outline mp-btn-full" onClick={() => setActivePackageKey(pkg.key)}>
-                Paketi Detaylı İncele
+              <button className="mp-pricing-cta mp-btn-full" onClick={() => setActivePackageKey(pkg.key)}>
+                Detaylı İncele
               </button>
-            </article>
+            </motion.article>
           ))}
         </div>
       </section>
@@ -1004,28 +1120,95 @@ export default function MainPage({
               exit={{ opacity: 0, y: 24, scale: 0.96 }}
               onClick={(event) => event.stopPropagation()}
             >
-              <div className="mp-package-dialog-head">
+              <motion.div className="mp-package-dialog-head" variants={dialogStagger} initial="hidden" animate="show">
                 <div>
-                  <span className="mp-pricing-badge">{activePackage.badge}</span>
-                  <h3 className="mp-package-dialog-title">{activePackage.title}</h3>
-                  <p className="mp-package-dialog-price">{activePackage.price}</p>
+                  <motion.div variants={dialogItem} className="mp-package-badge-row">
+                    <span className="mp-pricing-badge">{activePackage.badge}</span>
+                    {activePackage.isPopular ? <span className="mp-pricing-recommend">En çok tercih edilen</span> : null}
+                  </motion.div>
+                  <motion.h3 variants={dialogItem} className="mp-package-dialog-title">{activePackage.title}</motion.h3>
+                  <motion.p variants={dialogItem} className="mp-package-dialog-price">{activePackage.price}</motion.p>
+                  <motion.p variants={dialogItem} className="mp-package-dialog-note">{activePackage.priceNote}</motion.p>
                 </div>
-                <button className="mp-btn-ghost" onClick={() => setActivePackageKey(null)}>
+                <button className="mp-btn-ghost mp-package-close" onClick={() => setActivePackageKey(null)}>
                   Kapat
                 </button>
-              </div>
+              </motion.div>
 
-              <p className="mp-package-dialog-sub">{activePackage.desc}</p>
-              <p className="mp-package-dialog-sub"><strong>Kapsam:</strong> {activePackage.tables}</p>
+              <motion.div className="mp-package-dialog-layout" variants={dialogStagger} initial="hidden" animate="show">
+                <div className="mp-package-dialog-main">
+                  <motion.p variants={dialogItem} className="mp-package-dialog-sub">
+                    {activePackage.desc}
+                  </motion.p>
+                  <motion.p variants={dialogItem} className="mp-package-dialog-sub mp-package-focus">
+                    {activePackage.focusLine}
+                  </motion.p>
 
-              <ul className="mp-package-dialog-list">
-                {activePackage.includes.map((item) => (
-                  <li key={item} className="mp-pricing-list-item">
-                    <Check className="h-4 w-4" />
-                    {item}
-                  </li>
-                ))}
-              </ul>
+                  <motion.div variants={dialogItem} className="mp-package-kpi-grid">
+                    <div className="mp-package-kpi-card">
+                      <QrCode className="h-4 w-4" />
+                      <span>Kapsam</span>
+                      <strong>{activePackage.tables}</strong>
+                    </div>
+                    <div className="mp-package-kpi-card">
+                      <Users className="h-4 w-4" />
+                      <span>İdeal Profil</span>
+                      <strong>{activePackage.idealFor}</strong>
+                    </div>
+                    <div className="mp-package-kpi-card">
+                      <BarChart3 className="h-4 w-4" />
+                      <span>Onboarding</span>
+                      <strong>{activePackage.onboarding}</strong>
+                    </div>
+                    <div className="mp-package-kpi-card">
+                      <TrendingUp className="h-4 w-4" />
+                      <span>Destek</span>
+                      <strong>{activePackage.support}</strong>
+                    </div>
+                  </motion.div>
+
+                  <motion.div variants={dialogItem} className="mp-package-detail-block">
+                    <h4 className="mp-package-detail-title">Bu pakette neler aktif?</h4>
+                    <ul className="mp-package-dialog-list">
+                      {activePackage.includes.map((item) => (
+                        <li key={item} className="mp-pricing-list-item">
+                          <Check className="h-4 w-4" />
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </motion.div>
+                </div>
+
+                <motion.aside variants={dialogItem} className="mp-package-dialog-side">
+                  <div className="mp-package-detail-block is-highlight">
+                    <h4 className="mp-package-detail-title">İlk adım planı</h4>
+                    <ol className="mp-package-roadmap-list">
+                      {activePackage.rolloutPlan.map((step) => (
+                        <li key={step} className="mp-package-roadmap-item">{step}</li>
+                      ))}
+                    </ol>
+                  </div>
+
+                  <div className="mp-package-detail-block">
+                    <h4 className="mp-package-detail-title">Operasyon çıktıları</h4>
+                    <ul className="mp-package-mini-list">
+                      {activePackage.outputs.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <div className="mp-package-detail-block">
+                    <h4 className="mp-package-detail-title">Takip edilen KPI'lar</h4>
+                    <ul className="mp-package-mini-list">
+                      {activePackage.kpiTargets.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </motion.aside>
+              </motion.div>
 
               <div className="mp-package-dialog-footer">
                 <button onClick={onOpenOwnerPortal} className="mp-btn-primary">

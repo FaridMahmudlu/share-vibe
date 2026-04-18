@@ -80,13 +80,13 @@ export const getGoogleSignInErrorMessage = (error: unknown) => {
     case 'auth/popup-blocked':
       return 'Tarayıcı giriş penceresini engelledi. Lütfen pop-up iznini açıp tekrar deneyin.';
     case 'auth/operation-not-allowed':
-      return 'Firebase Authentication içinde Google ile giriş etkin değil.';
+      return 'Firebase Kimlik Doğrulama içinde Google ile giriş etkin değil.';
     case 'auth/unauthorized-domain':
       if (isLocalDevelopmentHost(currentDomain)) {
-        return `Google ile giriş bu adres üzerinden çalışmaz: ${currentDomain}. Yerelde test için uygulamayı http://localhost:3000 adresinden açın.`;
+        return `Google ile giriş bu adres üzerinden çalışmaz: ${currentDomain}. Yerel test için uygulamayı http://localhost:3000 adresinden açın.`;
       }
 
-      return `Bu alan adı Firebase Authentication için yetkilendirilmemiş: ${currentDomain}. Firebase Console > Authentication > Settings > Authorized domains bölümüne bu alan adını ekleyin.`;
+      return `Bu alan adı Firebase Kimlik Doğrulama için yetkilendirilmemiş: ${currentDomain}. Firebase Console > Kimlik Doğrulama > Ayarlar > Yetkili alan adları bölümüne bu alan adını ekleyin.`;
     case 'auth/operation-not-supported-in-this-environment':
       return 'Bu tarayıcı açılır pencere ile girişi desteklemiyor. Google girişine yönlendirileceksiniz.';
     default:
