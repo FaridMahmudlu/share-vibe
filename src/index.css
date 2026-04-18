@@ -1933,8 +1933,12 @@ img[loading="lazy"] {
    ------------------------------------------------------------ */
 .mp-pricing-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1.4rem;
+}
+.mp-pricing-grid-wrap {
+  width: min(76rem, 100%);
+  margin: 0 auto;
 }
 .mp-pricing-card {
   position: relative;
@@ -2235,6 +2239,51 @@ img[loading="lazy"] {
   padding: 0.8rem 0.95rem;
   line-height: 1.6;
   font-weight: 500;
+}
+
+.mp-package-stand-picker {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 0.95rem;
+  padding: 0.8rem 0.9rem;
+}
+.mp-package-stand-picker-title {
+  margin: 0;
+  color: #fff;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+.mp-package-stand-picker-list {
+  margin-top: 0.65rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+.mp-package-stand-chip {
+  border: 1px solid rgba(255,255,255,0.2);
+  background: rgba(255,255,255,0.04);
+  color: rgba(255,255,255,0.85);
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.32rem 0.7rem;
+  cursor: pointer;
+  transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease;
+}
+.mp-package-stand-chip:hover {
+  border-color: rgba(212,143,107,0.6);
+  color: #fff;
+}
+.mp-package-stand-chip.is-active {
+  border-color: rgba(212,143,107,0.85);
+  background: rgba(212,143,107,0.2);
+  color: #fff;
+}
+.mp-package-stand-picker-note {
+  margin: 0.65rem 0 0;
+  color: #f3c9b8;
+  font-size: 0.82rem;
+  font-weight: 600;
 }
 
 /* KPI grid: 4 cards in 2x2 */
@@ -2732,6 +2781,10 @@ img[loading="lazy"] {
     gap: 1rem;
   }
 
+  .mp-pricing-grid-wrap {
+    width: 100%;
+  }
+
   .mp-stand-card,
   .mp-pricing-card {
     border-radius: 1.2rem;
@@ -2767,6 +2820,15 @@ img[loading="lazy"] {
 
   .mp-package-kpi-grid {
     grid-template-columns: 1fr;
+  }
+
+  .mp-package-stand-picker {
+    padding: 0.72rem 0.8rem;
+  }
+
+  .mp-package-stand-chip {
+    font-size: 0.74rem;
+    padding: 0.28rem 0.62rem;
   }
 
   .mp-package-dialog-head {
@@ -3069,6 +3131,10 @@ img[loading="lazy"] {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .mp-pricing-grid-wrap {
+    width: min(64rem, 100%);
+  }
+
   .mp-pricing-title {
     font-size: 1.14rem;
   }
@@ -3176,7 +3242,11 @@ img[loading="lazy"] {
 
   .mp-stand-grid,
   .mp-pricing-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mp-pricing-grid-wrap {
+    width: min(72rem, 100%);
   }
 
   /* CTA Banner */

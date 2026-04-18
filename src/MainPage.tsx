@@ -93,8 +93,8 @@ type PackageDetail = {
   key: string;
   title: string;
   badge: string;
-  price: string;
-  priceNote: string;
+  billing: 'aylik' | 'yillik';
+  standPrice: number;
   desc: string;
   tables: string;
   idealFor: string;
@@ -109,80 +109,73 @@ type PackageDetail = {
   isPopular?: boolean;
 };
 
+const CLASSIC_STAND_COUNTS = [10, 15, 20, 25, 30, 40, 50] as const;
+
+const SHARED_PACKAGE_INCLUDES = [
+  'Seçtiğiniz sayıda QR stand yerleşimi',
+  'Canlı galeri ve kampanya kurgusu',
+  'E-posta pazarlama akışları',
+  'Panel kurulumu ve ekip eğitimi',
+  'Performans takip metrikleri',
+  'Marka renkleri, logo ve tema uyarlaması',
+  'Teknik destek hattı',
+];
+
+const SHARED_PACKAGE_OUTPUTS = [
+  'Masaya uygun QR stand planlaması',
+  'Canlı galeri ve kampanya sistemi',
+  'Masa bazlı takip ve raporlama çıktısı',
+];
+
+const SHARED_PACKAGE_KPIS = [
+  'QR okutma başına kampanya katılım oranı',
+  'Tekrar ziyaret trendi',
+  'Masa bazlı etkileşim performansı',
+];
+
 const PACKAGES: PackageDetail[] = [
   {
     key: 'aylik',
     title: 'Aylık Plan',
     badge: 'Esnek',
-    price: '100 TL / stand',
-    priceNote: 'Her standınızı seçin',
-    desc: 'Her aya uyarlanabilir masa/stand sayısı ile esnek planı.',
-    tables: 'Seçilebilir',
+    billing: 'aylik',
+    standPrice: 100,
+    desc: 'Stand sayınızı her ay yeniden belirleyebileceğiniz esnek ödeme modeli.',
+    tables: 'Klasik stand sayısı seçimi',
     idealFor: 'Tüm kafeler',
     onboarding: '48 saatte kurulum',
-    support: 'Hafta içi standart destek',
-    focusLine: 'Aydan aya ihtiyacınıza göre masa sayısını artırıp azaltabilirsiniz. Her stand 100 TL olarak hesaplanır.',
+    support: 'Hafta içi teknik destek',
+    focusLine: 'Detaylı ekranda klasik stand sayısını seçin; toplam ücret seçtiğiniz stand adedine göre otomatik hesaplanır.',
     rolloutPlan: [
       'Gün 1-2: Masa sayınızı belirleyin ve QR standları hazırlayın.',
       'Gün 3-5: Galeri görünümü ve kampanya kurgusu canlıya alınır.',
       'İlk hafta: Ekip eğitimi ve operasyon handoff toplantısı yapılır.',
     ],
-    outputs: [
-      'Masaya uygun QR standları',
-      'Canlı galeri + kampanya sistemi',
-      'E-posta pazarlama akışları',
-    ],
-    kpiTargets: [
-      'QR okutma başına kampanya katılım',
-      'Müşteri tekrar ziyaret trendi',
-      'Aylık performans raporu',
-    ],
-    includes: [
-      'Seçili sayıda QR standı (her biri 100 TL)',
-      'Canlı galeri ve kampanya kurgusu',
-      'E-posta kampanya şablonları',
-      'Panel kurulumu ve eğitim',
-      'Performans takip metrikleri',
-      'Marka renkleriniz ve logosu',
-    ],
+    outputs: SHARED_PACKAGE_OUTPUTS,
+    kpiTargets: SHARED_PACKAGE_KPIS,
+    includes: SHARED_PACKAGE_INCLUDES,
     isESigned: false,
   },
   {
     key: 'yillik',
     title: 'Yıllık Plan',
     badge: 'Tasarruflu',
-    price: '1.000 TL / stand',
-    priceNote: 'Aylık 83 TL (2 ay kazanç)',
-    desc: 'Yıllık taahhütle %17 tasarruf elde edin. Her standınızı seçerek başlayın.',
-    tables: 'Seçilebilir',
-    idealFor: 'Kurumsal kafeler',
-    onboarding: '48 saatte kurulum + danışmanlık',
-    support: 'Öncelikli destek + aylık strateji danışmanlığı',
-    focusLine: 'Yıl boyunca aynı fiyattan sınırsız stand ekleyebilir ve yönetebilirsiniz. Aylık strateji danışmanlığı dahildir.',
+    billing: 'yillik',
+    standPrice: 1000,
+    desc: 'Yıllık ödeme ile stand başına daha avantajlı maliyet sunan sabit plan.',
+    tables: 'Klasik stand sayısı seçimi',
+    idealFor: 'Tüm kafeler',
+    onboarding: '48 saatte kurulum',
+    support: 'Hafta içi teknik destek',
+    focusLine: 'Aylık planla aynı tüm özellikleri içerir; tek fark ödeme periyodu ve yıllık birim fiyattır.',
     rolloutPlan: [
       'Gün 1-2: İlk masa sayınızı belirleyin ve QR standları hazırlayın.',
       'Gün 3-5: Galeri, kampanya ve e-posta akışları tam operasyona alınır.',
       'Aylık: Performans analizi ve strateji geliştirme toplantısı yapılır.',
     ],
-    outputs: [
-      'Masaya uygun QR standları (sınırsız ekle)',
-      'Canlı galeri ve gelişmiş kampanya sistemi',
-      'Aylık strateji danışmanlığı',
-    ],
-    kpiTargets: [
-      'QR okutma başına kampanya katılım artışı',
-      'Tekrar ziyaret trendi izlemesi',
-      'Aylık strateji göre optimizasyon',
-    ],
-    includes: [
-      'Seçili sayıda QR standı (her biri 1.000 TL/yıl = aylık 83 TL)',
-      'Yıl boyunca sınırsız stand ekleme',
-      'Canlı galeri ve ileri kampanya sistemi',
-      'E-posta pazarlama akışları (kapasitesiz)',
-      'Aylık strateji danışmanlığı ve performans analizi',
-      'Marka renkleriniz, logosu ve özel tasarımlar',
-      'Öncelikli teknik destek',
-    ],
+    outputs: SHARED_PACKAGE_OUTPUTS,
+    kpiTargets: SHARED_PACKAGE_KPIS,
+    includes: SHARED_PACKAGE_INCLUDES,
     isESigned: false,
     isPopular: true,
   },
@@ -346,10 +339,18 @@ export default function MainPage({
 }: MainPageProps) {
   const heroRef = useRef<HTMLDivElement>(null);
   const [activePackageKey, setActivePackageKey] = useState<string | null>(null);
+  const [standCountByPackage, setStandCountByPackage] = useState<Record<string, number>>({ aylik: 20, yillik: 20 });
   const { scrollYProgress } = useScroll({ target: heroRef, offset: ['start start', 'end start'] });
   const heroY = useTransform(scrollYProgress, [0, 1], ['0%', '18%']);
   const heroOpacity = useTransform(scrollYProgress, [0, 0.7], [1, 0]);
   const activePackage = PACKAGES.find((pkg) => pkg.key === activePackageKey) ?? null;
+  const activeStandCount = activePackage ? (standCountByPackage[activePackage.key] ?? CLASSIC_STAND_COUNTS[2]) : CLASSIC_STAND_COUNTS[2];
+  const activePackageTotal = activePackage ? activeStandCount * activePackage.standPrice : 0;
+  const activePackageMonthlyEquivalent = activePackage?.billing === 'yillik'
+    ? Math.round(activePackageTotal / 12)
+    : activePackageTotal;
+
+  const formatTl = useCallback((amount: number) => amount.toLocaleString('tr-TR'), []);
 
   const ownerButtonLabel = hasOwnerAccess
     ? 'Yönetim Paneline Git'
@@ -810,7 +811,8 @@ export default function MainPage({
           </p>
         </div>
 
-        <div className="mp-pricing-grid">
+        <div className="mp-pricing-grid-wrap">
+          <div className="mp-pricing-grid">
           {PACKAGES.map((pkg, index) => (
             <motion.article
               key={pkg.key}
@@ -834,8 +836,8 @@ export default function MainPage({
                 <h3 className="mp-pricing-title">{pkg.title}</h3>
                 <p className="mp-pricing-desc">{pkg.desc}</p>
                 <div className="mp-pricing-price-wrap">
-                  <p className="mp-pricing-price">{pkg.price}</p>
-                  <p className="mp-pricing-price-note">{pkg.priceNote}</p>
+                  <p className="mp-pricing-price">Stand sayısını seçin</p>
+                  <p className="mp-pricing-price-note">Fiyatı detaylı inceleme ekranında görün</p>
                 </div>
               </div>
 
@@ -873,6 +875,7 @@ export default function MainPage({
               </button>
             </motion.article>
           ))}
+          </div>
         </div>
       </section>
 
@@ -1094,8 +1097,14 @@ export default function MainPage({
                     {activePackage.isPopular ? <span className="mp-pricing-recommend">En çok tercih edilen</span> : null}
                   </motion.div>
                   <motion.h3 variants={dialogItem} className="mp-package-dialog-title">{activePackage.title}</motion.h3>
-                  <motion.p variants={dialogItem} className="mp-package-dialog-price">{activePackage.price}</motion.p>
-                  <motion.p variants={dialogItem} className="mp-package-dialog-note">{activePackage.priceNote}</motion.p>
+                  <motion.p variants={dialogItem} className="mp-package-dialog-price">
+                    {activeStandCount} stand için {formatTl(activePackageTotal)} TL / {activePackage.billing === 'yillik' ? 'yıl' : 'ay'}
+                  </motion.p>
+                  <motion.p variants={dialogItem} className="mp-package-dialog-note">
+                    {activePackage.billing === 'yillik'
+                      ? `Aylık karşılık: ${formatTl(activePackageMonthlyEquivalent)} TL`
+                      : 'Birim fiyat: 100 TL / stand (aylık)'}
+                  </motion.p>
                 </div>
                 <button className="mp-btn-ghost mp-package-close" onClick={() => setActivePackageKey(null)}>
                   Kapat
@@ -1111,11 +1120,30 @@ export default function MainPage({
                     {activePackage.focusLine}
                   </motion.p>
 
+                  <motion.div variants={dialogItem} className="mp-package-stand-picker">
+                    <p className="mp-package-stand-picker-title">Klasik stand sayısı seçin</p>
+                    <div className="mp-package-stand-picker-list">
+                      {CLASSIC_STAND_COUNTS.map((count) => (
+                        <button
+                          key={count}
+                          type="button"
+                          className={`mp-package-stand-chip ${count === activeStandCount ? 'is-active' : ''}`}
+                          onClick={() => setStandCountByPackage((prev) => ({ ...prev, [activePackage.key]: count }))}
+                        >
+                          {count} stand
+                        </button>
+                      ))}
+                    </div>
+                    <p className="mp-package-stand-picker-note">
+                      Toplam: {formatTl(activePackageTotal)} TL / {activePackage.billing === 'yillik' ? 'yıl' : 'ay'}
+                    </p>
+                  </motion.div>
+
                   <motion.div variants={dialogItem} className="mp-package-kpi-grid">
                     <div className="mp-package-kpi-card">
                       <QrCode className="h-4 w-4" />
                       <span>Kapsam</span>
-                      <strong>{activePackage.tables}</strong>
+                      <strong>{activeStandCount} stand</strong>
                     </div>
                     <div className="mp-package-kpi-card">
                       <Users className="h-4 w-4" />

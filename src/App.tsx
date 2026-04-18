@@ -1725,7 +1725,7 @@ export default function App() {
                 </p>
               </div>
 
-              <div className="rounded-[2rem] border border-white/22 bg-cafe-900/70 p-5 shadow-[0_24px_54px_rgba(0,0,0,0.24)] lg:min-w-[360px]">
+              <div className="w-full rounded-[2rem] border border-white/22 bg-cafe-900/70 p-5 shadow-[0_24px_54px_rgba(0,0,0,0.24)] lg:min-w-[360px]">
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <p className="text-xs uppercase tracking-[0.22em] text-cafe-100/78">Kampanya takibi</p>
