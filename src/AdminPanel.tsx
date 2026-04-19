@@ -802,34 +802,34 @@ export default function AdminPanel({
     );
   }
 
-  if (!hasPortalAccess) {
-    // ✅ Email Verification Check
-    if (userEmail && !isEmailVerified) {
-      return (
-        <div className="min-h-screen flex items-center justify-center p-4 text-cafe-50">
-          <div className="section-shell max-w-md w-full text-center">
-            <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-[1.6rem] bg-yellow-50 text-yellow-600">
-              <ShieldCheck className="w-7 h-7" />
-            </div>
-            <span className="section-pill">EMAİL DOĞRULMASI GEREKLİ</span>
-            <h1 className="mt-4 text-3xl font-semibold text-cafe-50">E-posta doğrulaması gerekli</h1>
-            <p className="mt-3 text-sm leading-7 text-cafe-100/72">
-              Yönetim paneline erişim için e-postanızı doğrulamanız gerekiyor. Lütfen Gmail gelen kutusunda doğrulama e-postasını kontrol edin.
-            </p>
-            <div className="mt-5 rounded-2xl border border-cafe-700/75 bg-cafe-900/45 px-4 py-3 text-sm text-cafe-100/72">
-              E-posta: <strong className="text-cafe-50">{userEmail}</strong>
-            </div>
-            <button
-              onClick={handleLogout}
-              className="mt-6 w-full rounded-2xl border border-cafe-700/80 bg-white/80 px-4 py-3 font-semibold text-cafe-50 transition-colors hover:border-accent/30"
-            >
-              Çıkış yap
-            </button>
+  // ✅ Email Verification Check (before access check)
+  if (userEmail && !isEmailVerified && !isLocalDevelopmentHost) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4 text-cafe-50">
+        <div className="section-shell max-w-md w-full text-center">
+          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-[1.6rem] bg-yellow-50 text-yellow-600">
+            <ShieldCheck className="w-7 h-7" />
           </div>
+          <span className="section-pill">EMAİL DOĞRULMASI GEREKLİ</span>
+          <h1 className="mt-4 text-3xl font-semibold text-cafe-50">E-posta doğrulaması gerekli</h1>
+          <p className="mt-3 text-sm leading-7 text-cafe-100/72">
+            Yönetim paneline erişim için e-postanızı doğrulamanız gerekiyor. Lütfen Gmail gelen kutusunda doğrulama e-postasını kontrol edin.
+          </p>
+          <div className="mt-5 rounded-2xl border border-cafe-700/75 bg-cafe-900/45 px-4 py-3 text-sm text-cafe-100/72">
+            E-posta: <strong className="text-cafe-50">{userEmail}</strong>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="mt-6 w-full rounded-2xl border border-cafe-700/80 bg-white/80 px-4 py-3 font-semibold text-cafe-50 transition-colors hover:border-accent/30"
+          >
+            Çıkış yap
+          </button>
         </div>
-      );
-    }
+      </div>
+    );
+  }
 
+  if (!hasPortalAccess) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4 text-cafe-50">
         <div className="section-shell max-w-md w-full text-center">
