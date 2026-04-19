@@ -1,4 +1,140 @@
-# Share Vibe
+# ShareVibe - Cafe Photo Sharing Platform
+
+A modern React/TypeScript application for sharing photos at cafes with reward campaigns.
+
+## 🚀 Quick Start
+
+### Prerequisites
+- Node.js 18+
+- npm or yarn
+- Firebase account
+
+### Installation
+
+```bash
+# Install dependencies
+npm install
+
+# Start development server
+npm run dev
+```
+
+Visit `http://localhost:3000` in your browser.
+
+## 🔧 Configuration
+
+### Firebase Setup
+
+1. Create a Firebase project at [firebase.google.com](https://firebase.google.com)
+2. Copy your Firebase config to `firebase-applet-config.json`
+
+### Google OAuth Configuration
+
+**IMPORTANT**: Before deploying to production, you MUST add your domain to Google OAuth:
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com)
+2. Navigate to Credentials → OAuth 2.0 Client IDs → Web application
+3. Add these **Authorized redirect URIs**:
+   - `http://localhost:3000/` (dev)
+   - `https://your-domain.com/` (production)
+   - `https://your-project.web.app/__/auth/handler` (Firebase Hosting)
+
+4. Save changes
+
+**Without this configuration, Google login will fail on production!**
+
+## 📱 Responsive Design
+
+Works perfectly on all devices:
+- **Mobile** (360px - 480px): Small phones to regular phones
+- **Tablet** (640px - 900px): Landscape & portrait
+- **Desktop** (1024px+): Full experience
+
+Uses CSS `clamp()` for fluid typography and responsive spacing.
+
+## 📦 Build
+
+```bash
+npm run build
+```
+
+Output: `dist/` folder with production-ready assets
+
+## 🚀 Deployment
+
+### Option 1: Firebase Hosting (Recommended)
+
+```bash
+npm run build
+npm run deploy:prod
+```
+
+### Option 2: Custom Server
+
+```bash
+npm run build
+# Upload dist/ folder to your server
+scp -r dist/ user@server:/var/www/app/
+```
+
+## 📂 Project Structure
+
+```
+src/
+├── App.tsx              # Main application
+├── AdminPanel.tsx       # Admin dashboard  
+├── MainPage.tsx         # Landing page
+├── firebase.ts          # Firebase config
+├── googleAuth.ts        # Google OAuth setup
+├── index.css            # Global styles
+├── components/          # React components
+├── utils/               # Helper functions
+├── security/            # Security rules
+└── seo/                 # SEO optimization
+```
+
+## 🛠️ Tech Stack
+
+- React 19 + TypeScript
+- Vite 6 (build tool)
+- Tailwind CSS 4 (styling)
+- Firebase (backend)
+- Motion (animations)
+- Lucide (icons)
+
+## 🔐 Security
+
+- Firestore Security Rules
+- Firebase Storage Rules  
+- CSRF Protection
+- Input Sanitization
+- Audit Logging
+
+## 📝 Scripts
+
+```bash
+npm run dev              # Start dev server
+npm run build            # Production build
+npm run preview          # Preview build
+npm run lint             # TypeScript check
+npm run test             # Run tests
+npm run deploy:prod      # Deploy to Firebase
+```
+
+## 🐛 Troubleshooting
+
+**Google login fails?**
+→ Add your domain to Google OAuth authorized URIs
+
+**Images not loading?**
+→ Check Firebase Storage rules and permissions
+
+**Build errors?**
+→ Run `npm run clean && npm install`
+
+---
+
+Built with ❤️ for cafes worldwide
 
 Share Vibe, kafeler için tasarlanmış QR tabanlı bir paylaşım ve kampanya deneyimidir. Misafirler masa üzerindeki QR kodu okutarak doğrudan ilgili kafenin akışına girer, fotoğraf paylaşır, içerikleri beğenir ve kampanya akışına katılır. Kafe sahipleri ise kendi çalışma alanlarından marka görünümünü, kampanya kurgusunu ve medya akışını yönetir.
 
