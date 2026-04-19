@@ -45,45 +45,33 @@ if (Get-Command scp -ErrorAction SilentlyContinue) {
 # Step 3: Extract and deploy on server
 Write-Host "⚙️  Step 3: Deploying on server..." -ForegroundColor Yellow
 $deployCommands = @"
-# Create web root
-mkdir -p /var/www/sharevibe/html || true
-
-# Extract files
+mkdir -p /var/www/sharevibe/html
 cd /tmp
 if [ -f sharevibe-dist.tar.gz ]; then
     tar -xzf sharevibe-dist.tar.gz
     cp -r dist/* /var/www/sharevibe/html/
     rm -rf dist sharevibe-dist.tar.gz
+    chown -R www-data:www-data /var/www/sharevibe/html
+    chmod -R 755 /var/www/sharevibe/html
+    echo "Files deployed successfully"
 fi
-
-# Set permissions
-chown -R www-data:www-data /var/www/sharevibe/html 2>/dev/null || true
-chmod -R 755 /var/www/sharevibe/html
-
-echo "✅ Files deployed successfully"
 "@
 
-ssh "${DEPLOY_USER}@${DEPLOY_HOST}" $deployCommands
+ssh $DEPLOY_USER@$DEPLOY_HOST $deployCommands
 Write-Host "✅ Files deployed" -ForegroundColor Green
 
 # Step 4: Configure Nginx
 Write-Host "🔒 Step 4: Configuring Nginx..." -ForegroundColor Yellow
-scp "nginx-sharevibe.conf" "${DEPLOY_USER}@${DEPLOY_HOST}:/etc/nginx/sites-available/sharevibe.conf"
+scp "nginx-sharevibe.conf" "$DEPLOY_USER@$DEPLOY_HOST`:/etc/nginx/sites-available/sharevibe.conf"
 
 $nginxCommands = @"
-# Enable nginx config
-ln -sf /etc/nginx/sites-available/sharevibe.conf /etc/nginx/sites-enabled/sharevibe.conf || true
-
-# Test nginx config
-nginx -t || echo "⚠️  Nginx config test warning"
-
-# Reload nginx
-systemctl reload nginx || systemctl restart nginx || echo "⚠️  Manual nginx restart may be needed"
-
-echo "✅ Nginx configured and reloaded"
+ln -sf /etc/nginx/sites-available/sharevibe.conf /etc/nginx/sites-enabled/sharevibe.conf
+nginx -t
+systemctl reload nginx || systemctl restart nginx
+echo "Nginx configured"
 "@
 
-ssh "${DEPLOY_USER}@${DEPLOY_HOST}" $nginxCommands
+ssh $DEPLOY_USER@$DEPLOY_HOST $nginxCommands
 Write-Host "✅ Nginx configured" -ForegroundColor Green
 
 # Step 5: Cleanup
