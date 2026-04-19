@@ -1,0 +1,219 @@
+# ShareVibe .htaccess Configuration
+# SEO Optimization, Security, and Performance
+
+# ============================================
+# Enable Rewrite Engine
+# ============================================
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # ============================================
+  # HTTPS Redirect (Security & SEO)
+  # ============================================
+  RewriteCond %{HTTPS} off
+  RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+  # ============================================
+  # Remove .html Extension (Clean URLs)
+  # ============================================
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule ^([^\.]+)$ $1.html [NC,L]
+
+  # ============================================
+  # React Router - SPA Routing
+  # ============================================
+  # All requests go to index.html (excluding real files/folders)
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule ^ /index.html [QSA,L]
+
+  # ============================================
+  # Remove www Redirect (Pick one strategy)
+  # ============================================
+  # Option 1: Force www
+  RewriteCond %{HTTP_HOST} ^www\.sharevibe\.co$ [NC]
+  RewriteRule ^(.*)$ https://sharevibe.co/$1 [L,R=301]
+
+  # Option 2: Force www (uncomment if preferred)
+  # RewriteCond %{HTTP_HOST} ^sharevibe\.co$ [NC]
+  # RewriteRule ^(.*)$ https://www.sharevibe.co/$1 [L,R=301]
+
+  # ============================================
+  # Trailing Slash Normalization
+  # ============================================
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteCond %{REQUEST_URI} !^/api/.*
+  RewriteRule ^(.*[^/])/?$ /$1/ [L,R=301]
+
+  # ============================================
+  # Block Bad Bots
+  # ============================================
+  RewriteCond %{HTTP_USER_AGENT} (AhrefsBot|SemrushBot|MJ12bot) [NC]
+  RewriteRule ^ - [F,L]
+
+</IfModule>
+
+# ============================================
+# GZIP Compression (Performance)
+# ============================================
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/plain
+  AddOutputFilterByType DEFLATE text/html
+  AddOutputFilterByType DEFLATE text/xml
+  AddOutputFilterByType DEFLATE text/css
+  AddOutputFilterByType DEFLATE text/javascript
+  AddOutputFilterByType DEFLATE application/xml
+  AddOutputFilterByType DEFLATE application/xhtml+xml
+  AddOutputFilterByType DEFLATE application/rss+xml
+  AddOutputFilterByType DEFLATE application/json
+  AddOutputFilterByType DEFLATE application/javascript
+  AddOutputFilterByType DEFLATE application/x-javascript
+  AddOutputFilterByType DEFLATE image/svg+xml
+  
+  # Don't compress compressed content
+  SetEnvIfNoCase Request_URI \.gz$ no-gzip
+  SetEnvIfNoCase Request_URI \.json$ no-gzip
+</IfModule>
+
+# ============================================
+# Browser Caching (Performance)
+# ============================================
+<IfModule mod_expires.c>
+  ExpiresActive On
+  
+  # Caching rules by file type
+  ExpiresByType text/html "access plus 1 day"
+  ExpiresByType text/css "access plus 1 month"
+  ExpiresByType text/javascript "access plus 1 month"
+  ExpiresByType application/javascript "access plus 1 month"
+  ExpiresByType image/jpeg "access plus 3 months"
+  ExpiresByType image/gif "access plus 3 months"
+  ExpiresByType image/png "access plus 3 months"
+  ExpiresByType image/webp "access plus 3 months"
+  ExpiresByType image/svg+xml "access plus 3 months"
+  ExpiresByType font/truetype "access plus 1 year"
+  ExpiresByType font/opentype "access plus 1 year"
+  ExpiresByType application/x-font-ttf "access plus 1 year"
+  ExpiresByType application/x-font-woff "access plus 1 year"
+  ExpiresByType application/x-font-woff2 "access plus 1 year"
+  ExpiresByType application/font-woff "access plus 1 year"
+  ExpiresByType application/font-woff2 "access plus 1 year"
+  ExpiresByType application/json "access plus 0 seconds"
+  ExpiresByType application/ld+json "access plus 0 seconds"
+  ExpiresByType application/xml "access plus 0 seconds"
+  
+  # Default
+  ExpiresDefault "access plus 2 days"
+</IfModule>
+
+# ============================================
+# ETags (Caching & Performance)
+# ============================================
+<IfModule mod_headers.c>
+  # Remove ETag header if using Vary header
+  Header unset ETag
+  FileETag None
+</IfModule>
+
+# ============================================
+# Cache Control Headers
+# ============================================
+<IfModule mod_headers.c>
+  # Cache control for HTML (Short lived)
+  <FilesMatch "\.(html|htm)$">
+    Header set Cache-Control "max-age=86400, public, must-revalidate"
+    Header set X-Content-Type-Options "nosniff"
+  </FilesMatch>
+
+  # Cache control for CSS, JS (Long lived)
+  <FilesMatch "\.(css|js)$">
+    Header set Cache-Control "max-age=31536000, public, immutable"
+    Header set X-Content-Type-Options "nosniff"
+  </FilesMatch>
+
+  # Cache control for images (Very long lived)
+  <FilesMatch "\.(jpg|jpeg|png|gif|webp|svg|ico)$">
+    Header set Cache-Control "max-age=31536000, public, immutable"
+    Header set X-Content-Type-Options "nosniff"
+  </FilesMatch>
+
+  # Cache control for fonts (Very long lived)
+  <FilesMatch "\.(woff|woff2|ttf|otf|eot)$">
+    Header set Cache-Control "max-age=31536000, public, immutable"
+    Header set X-Content-Type-Options "nosniff"
+  </FilesMatch>
+
+  # JSON-LD (No cache)
+  <FilesMatch "\.jsonld$">
+    Header set Cache-Control "max-age=0, no-cache, no-store, must-revalidate"
+  </FilesMatch>
+
+  # API responses (No cache)
+  <FilesMatch "^/api/.*">
+    Header set Cache-Control "max-age=0, no-cache, no-store, must-revalidate"
+  </FilesMatch>
+
+  # Security Headers (SEO & Security)
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "SAMEORIGIN"
+  Header always set X-XSS-Protection "1; mode=block"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+  Header always set Permissions-Policy "camera=(), microphone=(), geolocation=()"
+  
+  # HSTS (Strict-Transport-Security) - Only after HTTPS confirmed
+  Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+</IfModule>
+
+# ============================================
+# Mime Types
+# ============================================
+<IfModule mod_mime.c>
+  AddType application/json .json
+  AddType application/ld+json .jsonld
+  AddType application/manifest+json .webmanifest
+  AddType image/webp .webp
+  AddType text/plain .tsx
+  AddType text/plain .ts
+  AddType application/atom+xml .xml
+  AddType application/rss+xml .xml
+  AddType text/calendar .ics
+</IfModule>
+
+# ============================================
+# Disable Directory Listing
+# ============================================
+<IfModule mod_autoindex.c>
+  Options -Indexes
+</IfModule>
+
+# ============================================
+# Protect Sensitive Files
+# ============================================
+<FilesMatch "^\.">
+  Deny from all
+</FilesMatch>
+
+<FilesMatch "~\.php$">
+  Deny from all
+</FilesMatch>
+
+<Files "robots.txt">
+  Allow from all
+</Files>
+
+<Files "sitemap.xml">
+  Allow from all
+</Files>
+
+<Files "manifest.json">
+  Allow from all
+</Files>
+
+# ============================================
+# Error Pages (for better UX)
+# ============================================
+ErrorDocument 404 /404.html
+ErrorDocument 500 /500.html

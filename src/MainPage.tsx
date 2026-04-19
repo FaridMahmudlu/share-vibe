@@ -433,7 +433,7 @@ export default function MainPage({
             <motion.div variants={fadeUp} className="mp-hero-cta-row">
               <button onClick={onOpenDemo} className="mp-btn-primary mp-btn-lg">
                 <PlayCircle className="h-5 w-5" />
-                Canlı Önizlemeyi İncele
+                Canlı Önizleme
                 <ArrowRight className="h-4 w-4" />
               </button>
               <button type="button" onClick={onOpenOwnerPortal} className="mp-btn-outline mp-btn-lg">
@@ -777,6 +777,8 @@ export default function MainPage({
               key={stand.title}
               initial={{ opacity: 0, y: 22 }}
               whileInView={{ opacity: 1, y: 0 }}
+              whileHover={{ y: -8, scale: 1.015 }}
+              whileTap={{ scale: 0.995 }}
               viewport={{ once: true, amount: 0.25 }}
               transition={{ duration: 0.45, delay: index * 0.08, ease: [0.22, 1, 0.36, 1] }}
               className="mp-stand-card"
@@ -790,10 +792,21 @@ export default function MainPage({
                   decoding="async"
                   referrerPolicy="no-referrer"
                 />
+                <div className="mp-stand-visual-overlay" />
+                <div className="mp-stand-visual-chip">
+                  <QrCode className="h-3.5 w-3.5" />
+                  QR hazır
+                </div>
               </div>
-              <p className="mp-stand-tag">{stand.tag}</p>
-              <h3 className="mp-stand-title">{stand.title}</h3>
-              <p className="mp-stand-desc">{stand.desc}</p>
+              <div className="mp-stand-copy">
+                <p className="mp-stand-tag">{stand.tag}</p>
+                <h3 className="mp-stand-title">{stand.title}</h3>
+                <p className="mp-stand-desc">{stand.desc}</p>
+                <div className="mp-stand-foot">
+                  <span>Kurulum ekibi tarafından sahaya uygun hazırlanır</span>
+                  <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                </div>
+              </div>
             </motion.article>
           ))}
         </div>
@@ -804,10 +817,11 @@ export default function MainPage({
         <div className="mp-section-header">
           <div className="mp-pill">Paketler</div>
           <h2 className="mp-section-h2">
-            Her stand<br /><span className="mp-accent-text">100 TL / ay ile başlayın.</span>
+            İşletmenize en uygun planı seçin,<br /><span className="mp-accent-text">operasyonunuzu güvenle büyütün.</span>
           </h2>
           <p className="mp-section-sub">
-            Masalarınıza göre standınızı seçin. Aylık esnek ve Yıllık tasarruflu planlar. Her stand 100 TL (Aylık) veya 1.000 TL (Yıllık) olarak hesaplanır.
+            Aylık ve Yıllık planlarda aynı güçlü altyapı sunulur.
+            Fark yalnızca ödeme periyodudur; detaylı incelemede toplam maliyeti anında görebilirsiniz.
           </p>
         </div>
 
@@ -1064,11 +1078,11 @@ export default function MainPage({
           <div className="mp-cta-actions">
             <button onClick={onOpenDemo} className="mp-btn-primary mp-btn-lg mp-btn-glow">
               <PlayCircle className="h-5 w-5" />
-              Canlı Demoyu Aç
+              Canlı Önizleme
             </button>
             <button type="button" onClick={onOpenOwnerPortal} className="mp-btn-ghost mp-btn-lg mp-btn-ghost-light">
               <ArrowRight className="h-5 w-5" />
-              Panele Geç
+              Yönetim Paneline Git
             </button>
           </div>
         </div>

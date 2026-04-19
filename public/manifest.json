@@ -1,0 +1,124 @@
+{
+  "name": "ShareVibe - Kafe Paylaşım Platformu",
+  "short_name": "ShareVibe",
+  "description": "Kafe deneyimini fotoğraflarla paylaş. QR kod taraması ile güvenli paylaşım. Cafe sahiplerine marka kontrolü.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#c96d36",
+  "background_color": "#1a0f0a",
+  "categories": ["lifestyle", "photography", "social"],
+  "screenshots": [
+    {
+      "src": "/screenshots/mobile-540x720.png",
+      "sizes": "540x720",
+      "type": "image/png",
+      "form_factor": "narrow"
+    },
+    {
+      "src": "/screenshots/desktop-1280x720.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide"
+    }
+  ],
+  "icons": [
+    {
+      "src": "/favicon-16x16.png",
+      "sizes": "16x16",
+      "type": "image/png"
+    },
+    {
+      "src": "/favicon-32x32.png",
+      "sizes": "32x32",
+      "type": "image/png"
+    },
+    {
+      "src": "/favicon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/favicon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/apple-touch-icon-180x180.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/maskable-icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/maskable-icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Fotoğraf Paylaş",
+      "short_name": "Paylaş",
+      "description": "Kafe fotoğrafını hemen paylaş",
+      "url": "/?action=upload",
+      "icons": [
+        {
+          "src": "/shortcut-upload-192x192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Galeriyi Aç",
+      "short_name": "Galeri",
+      "description": "Kafe galerilerine bak",
+      "url": "/?action=gallery",
+      "icons": [
+        {
+          "src": "/shortcut-gallery-192x192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
+  ],
+  "share_target": {
+    "action": "/share",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url",
+      "files": [
+        {
+          "name": "image",
+          "accept": ["image/jpeg", "image/png", "image/webp", "image/gif"]
+        }
+      ]
+    }
+  },
+  "prefer_related_applications": false,
+  "related_applications": [],
+  "launch_handler": {
+    "client_mode": ["navigate-new", "auto"]
+  },
+  "screenshots_for_help": [
+    {
+      "src": "/help/step1.png",
+      "sizes": "540x720",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "platform": "narrow"
+    }
+  ]
+}

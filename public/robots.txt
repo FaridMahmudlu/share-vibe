@@ -1,0 +1,52 @@
+# ShareVibe - Robots.txt
+# SEO: Guide search engines on what to crawl
+
+# Allow all search engines
+User-agent: *
+Allow: /
+Allow: /cafe/
+Allow: /gallery/
+
+# Block admin and private areas
+Disallow: /admin
+Disallow: /owner
+Disallow: /api
+Disallow: /auth
+Disallow: /.env
+Disallow: /config
+Disallow: /private
+Disallow: /temp
+Disallow: /cache
+
+# Specific crawl-delay for search engines (be polite)
+Crawl-delay: 1
+
+# Request-rate
+Request-rate: 30/60 # 30 requests per 60 seconds
+
+# Allow specific bots with special rules
+User-agent: Googlebot
+Allow: /
+Crawl-delay: 0 # Google can crawl faster
+
+User-agent: Bingbot
+Allow: /
+Crawl-delay: 1
+
+# Block bad bots
+User-agent: MJ12bot
+Disallow: /
+
+User-agent: AhrefsBot
+Disallow: /
+
+User-agent: SemrushBot
+Disallow: /
+
+# Sitemap location
+Sitemap: https://sharevibe.co/sitemap.xml
+Sitemap: https://sharevibe.co/sitemap-cafes.xml
+Sitemap: https://sharevibe.co/sitemap-images.xml
+
+# CDN sitemaps if needed
+Sitemap: https://sharevibe.co/sitemap-index.xml

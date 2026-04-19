@@ -358,9 +358,10 @@ body::before {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 3rem;
-  height: 3rem;
+  width: 3.2rem;
+  height: 3.2rem;
   overflow: hidden;
+  border-radius: 50%;
   flex-shrink: 0;
 }
 
@@ -410,7 +411,7 @@ body::before {
   align-items: center;
   border: 0;
   background: transparent;
-  border-radius: 0.75rem;
+  border-radius: 50%;
   padding: 0.1rem 0.2rem;
 }
 
@@ -1324,8 +1325,8 @@ img[loading="lazy"] {
   cursor: pointer;
 }
 .mp-nav-brand .brand-signature-mark {
-  width: 2.8rem;
-  height: 2.8rem;
+  width: 3rem;
+  height: 3rem;
 }
 .mp-nav-brand .brand-signature-word {
   font-size: 1.2rem;
@@ -1867,23 +1868,64 @@ img[loading="lazy"] {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1.4rem;
+  align-items: stretch;
 }
 .mp-stand-card {
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.1);
+  background:
+    radial-gradient(circle at top right, rgba(212, 143, 107, 0.17), transparent 40%),
+    linear-gradient(165deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
+  border: 1px solid rgba(255,255,255,0.12);
   border-radius: 1.5rem;
-  padding: 1.4rem;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  box-shadow: 0 18px 36px rgba(8, 5, 3, 0.22);
+  transition: border-color 0.26s ease, box-shadow 0.26s ease;
+}
+.mp-stand-card:hover {
+  border-color: rgba(212, 143, 107, 0.45);
+  box-shadow: 0 22px 44px rgba(212, 143, 107, 0.15);
 }
 .mp-stand-visual {
-  height: 8rem;
+  height: 9.6rem;
   border-radius: 1rem;
-  background: linear-gradient(135deg, rgba(255,255,255,0.1), rgba(255,255,255,0.03));
+  background: linear-gradient(135deg, rgba(255,255,255,0.11), rgba(255,255,255,0.03));
   border: 1px solid rgba(255,255,255,0.12);
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 0.8rem;
+  margin-bottom: 0.95rem;
+  overflow: hidden;
+}
+.mp-stand-visual-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(15, 8, 4, 0.02), rgba(15, 8, 4, 0.42));
+  pointer-events: none;
+}
+.mp-stand-visual-chip {
+  position: absolute;
+  left: 0.7rem;
+  top: 0.7rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.22);
+  background: rgba(16, 10, 6, 0.5);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  padding: 0.24rem 0.52rem;
+  z-index: 2;
+}
+.mp-stand-copy {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
 }
 .mp-stand-shape {
   position: absolute;
@@ -1912,20 +1954,37 @@ img[loading="lazy"] {
 }
 .mp-stand-tag {
   font-size: 0.76rem;
-  color: var(--color-accent);
-  margin-bottom: 0.4rem;
+  color: #efb99c;
+  margin-bottom: 0.45rem;
   font-weight: 600;
+  letter-spacing: 0.02em;
 }
 .mp-stand-title {
-  font-size: 1.1rem;
+  font-size: 1.25rem;
   color: #fff;
-  font-weight: 700;
-  margin-bottom: 0.45rem;
+  font-weight: 800;
+  margin-bottom: 0.52rem;
+  line-height: 1.2;
 }
 .mp-stand-desc {
   font-size: 0.92rem;
   color: rgba(255,255,255,0.78);
   line-height: 1.6;
+}
+.mp-stand-foot {
+  margin-top: auto;
+  padding-top: 0.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
+  color: rgba(255,255,255,0.72);
+  font-size: 0.76rem;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+.mp-stand-foot svg {
+  color: #d8a487;
+  flex-shrink: 0;
 }
 
 /* ------------------------------------------------------------
@@ -2513,10 +2572,11 @@ img[loading="lazy"] {
     display: inline-flex;
   }
 
-  .brand-signature-mark {
-    width: 2.4rem;
-    height: 2.4rem;
+.brand-signature-mark {
+    width: 2.6rem;
+    height: 2.6rem;
   }
+
 
   .brand-signature-word {
     font-size: 0.92rem;
@@ -2545,8 +2605,8 @@ img[loading="lazy"] {
   }
 
   .mp-nav-brand .brand-signature-mark {
-    width: 2.3rem;
-    height: 2.3rem;
+    width: 2.5rem;
+    height: 2.5rem;
   }
 
   .mp-nav-brand .brand-signature-word {
@@ -2775,7 +2835,11 @@ img[loading="lazy"] {
   }
 
   /* Stand and Pricing */
-  .mp-stand-grid,
+  .mp-stand-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
   .mp-pricing-grid {
     grid-template-columns: 1fr;
     gap: 1rem;
@@ -2789,6 +2853,22 @@ img[loading="lazy"] {
   .mp-pricing-card {
     border-radius: 1.2rem;
     padding: 1rem;
+  }
+
+  .mp-stand-visual {
+    height: 8.6rem;
+  }
+
+  .mp-stand-title {
+    font-size: 1.1rem;
+  }
+
+  .mp-stand-desc {
+    font-size: 0.86rem;
+  }
+
+  .mp-stand-foot {
+    font-size: 0.72rem;
   }
 
   .mp-pricing-recommend {
@@ -3126,7 +3206,11 @@ img[loading="lazy"] {
   }
 
   /* Stand and Pricing */
-  .mp-stand-grid,
+  .mp-stand-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1rem;
+  }
+
   .mp-pricing-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -3240,7 +3324,11 @@ img[loading="lazy"] {
     gap: 1.6rem;
   }
 
-  .mp-stand-grid,
+  .mp-stand-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1.2rem;
+  }
+
   .mp-pricing-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -3257,6 +3345,41 @@ img[loading="lazy"] {
   /* Float Chips - Show on desktop */
   .mp-float-chip {
     display: flex;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════ */
+/* ACCESSIBILITY: Reduce Motion */
+/* ═══════════════════════════════════════════════════════════════════════════════ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  html {
+    scroll-behavior: auto;
+  }
+
+  /* Disable blob animations */
+  .animate-blob {
+    animation: none;
+  }
+
+  /* Disable parallax effects */
+  .mp-hero-inner {
+    opacity: 1 !important;
+  }
+
+  /* Disable card hover animations */
+  .mp-step-card:hover,
+  .mp-testimonial-card:hover,
+  .mp-stand-card:hover,
+  .mp-package-card:hover {
+    transform: none !important;
   }
 }
 

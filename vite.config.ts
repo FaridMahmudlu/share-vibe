@@ -20,6 +20,7 @@ export default defineConfig({
     reportCompressedSize: false,
     chunkSizeWarningLimit: 600,
     rollupOptions: {
+      external: ['@sentry/react'],
       output: {
         manualChunks(id) {
           if (!id.includes('node_modules')) {

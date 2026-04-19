@@ -47,7 +47,15 @@ service cloud.firestore {
       return email is string ? email.trim().lower() : '';
     }
 
-    function hasSuperAdminEmail() {
+    // MIGRATION NOTE: Custom Claims take precedence over email checks
+    // Set custom claims using Cloud Function: setAdminClaim(uid, true)
+    function isSuperAdmin() {
+      return isAuthenticated() && request.auth.token.admin == true;
+    }
+
+    // Fallback to email verification (deprecated, for backward compatibility)
+    // TODO: Remove after all admins have Custom Claims set
+    function hasSuperAdminEmailLegacy() {
       return isAuthenticated() &&
         request.auth.token.email_verified == true &&
         (
@@ -59,18 +67,15 @@ service cloud.firestore {
     function isAdmin() {
       return isAuthenticated() &&
         (
+          isSuperAdmin() ||
           (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
-          hasSuperAdminEmail()
+          hasSuperAdminEmailLegacy()  // Fallback for backward compatibility
         );
     }
 
+    // Owner portal access via Custom Claims (preferred) or email verification
     function isOwnerPortalAccount() {
-      return isAuthenticated() &&
-        request.auth.token.email_verified == true &&
-        (
-          normalizeEmail(request.auth.token.email) == "fariddmahmudlu2008@gmail.com" ||
-          normalizeEmail(request.auth.token.email) == "aslankerem182@gmail.com"
-        );
+      return isAuthenticated() && (isSuperAdmin() || hasSuperAdminEmailLegacy());
     }
     
     function isValidUrl(url) {

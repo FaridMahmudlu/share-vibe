@@ -11,6 +11,10 @@ import { clearPendingUpload, getPendingUpload, savePendingUpload, type PendingUp
 import MainPage from './MainPage';
 import BrandSignature from './BrandSignature';
 import { hasOwnerPortalAccess, hasSuperAdminAccess, normalizeAccessEmail } from './accessConfig';
+import { validateAndSanitizeCaption, validateAndSanitizeCafeSlug } from './security/validation';
+import { CSRFProtection } from './security/browser';
+import { auditLogger } from './auditIntegration';
+import { updatePageMeta, updateBreadcrumbs, trackPageView } from './seo/utils';
 import {
   buildCafePublicLink,
   DEFAULT_CAFE_SLUG,
@@ -176,6 +180,7 @@ export default function App() {
   const [isDesktopCameraOpen, setIsDesktopCameraOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [caption, setCaption] = useState('');
+  const [captionError, setCaptionError] = useState<string | null>(null);
   const [selectedMediaId, setSelectedMediaId] = useState<string | null>(null);
   const [shareMediaId, setShareMediaId] = useState<string | null>(null);
   const [mediaToDelete, setMediaToDelete] = useState<string | null>(null);
@@ -292,6 +297,54 @@ export default function App() {
     setFailedMediaIds((current) => (current[id] ? current : { ...current, [id]: true }));
   }, []);
 
+  // SEO: Update page metadata based on current view
+  useEffect(() => {
+    if (currentView === 'landing') {
+      const fullUrl = 'https://sharevibe.co/';
+      updatePageMeta({
+        title: 'ShareVibe - Kafe Paylaşım Platformu | QR Kod ile Fotoğraf Paylaş',
+        description: 'Kafe deneyimini fotoğraflarla paylaş. QR kod taraması ile güvenli paylaşım. Cafe sahiplerine marka kontrolü.',
+        keywords: ['kafe paylaşım', 'fotoğraf paylaş', 'QR kod kafe', 'topluluk platformu', 'kahve'],
+        image: 'https://sharevibe.co/og-image.jpg',
+        type: 'website',
+        url: fullUrl,
+        canonical: fullUrl,
+      });
+      trackPageView('/', 'ShareVibe - Kafe Paylaşım Platformu', 'page');
+    } else if (currentView === 'app') {
+      // App view - cafe gallery
+      const fullUrl = `https://sharevibe.co/cafe/${activeCafeSlug}`;
+      updatePageMeta({
+        title: `${cafeName} - ShareVibe Kafe Galerisi | Fotoğraf Paylaşım`,
+        description: `${cafeName} kafe galerisi. Fotoğraf paylaş, beğen, keşfet.`,
+        keywords: ['kafe galeri', cafeName, 'fotoğraf', 'paylaşım'],
+        image: mediaItems[0]?.url || 'https://sharevibe.co/og-image.jpg',
+        type: 'product',
+        url: fullUrl,
+        canonical: fullUrl,
+      });
+      updateBreadcrumbs([
+        { name: 'ShareVibe', url: '/' },
+        { name: cafeName, url: `/cafe/${activeCafeSlug}` },
+      ]);
+      trackPageView(`/cafe/${activeCafeSlug}`, `${cafeName} - Kafe Galerisi`, 'page');
+    } else if (currentView === 'admin' || currentView === 'owner') {
+      // Admin/owner view
+      const fullUrl = 'https://sharevibe.co/admin';
+      updatePageMeta({
+        title: 'ShareVibe - Yönetim Paneli | Cafe Kontrol',
+        description: 'Cafe ayarlarını yönet, istatistikleri görüntüle, fotoğrafları düzenle.',
+        type: 'website',
+        url: fullUrl,
+        canonical: fullUrl,
+      });
+      trackPageView('/admin', 'ShareVibe - Yönetim Paneli', 'page');
+    }
+    
+    // Scroll to top on view change
+    window.scrollTo(0, 0);
+  }, [currentView, cafeName, activeCafeSlug, mediaItems]);
+
   const stopDesktopCamera = () => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
@@ -354,6 +407,8 @@ export default function App() {
       }
 
       syncCurrentUser(result.user);
+      // 📝 Audit: Log successful login
+      await auditLogger.logLogin(result.user.uid, result.user.email);
       return result.user;
     } catch (error) {
       const message = getGoogleSignInErrorMessage(error);
@@ -366,6 +421,12 @@ export default function App() {
 
   const handleLogout = async () => {
     try {
+      const user = auth.currentUser;
+      // 📝 Audit: Log logout
+      if (user) {
+        await auditLogger.logLogout(user.uid, user.email);
+      }
+      
       await signOut(auth);
       syncCurrentUser(null);
       setCurrentView('app');
@@ -679,10 +740,13 @@ export default function App() {
       const timeString = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
 
       setUploadStatus('Veritabanına kaydediliyor...');
-      await addDoc(collection(db, 'media'), {
+      // ✅ XSS Qoruması: Caption-u təmizlə
+      const sanitizedCaption = validateAndSanitizeCaption(draft.caption) || DEFAULT_MEDIA_CAPTION;
+      
+      const mediaDocRef = await addDoc(collection(db, 'media'), {
         url: downloadUrl,
         type: 'image',
-        caption: normalizeLegacyText(draft.caption, DEFAULT_MEDIA_CAPTION),
+        caption: normalizeLegacyText(sanitizedCaption, DEFAULT_MEDIA_CAPTION),
         likedBy: [],
         likesCount: 0,
         rotation: Math.random() * 6 - 3,
@@ -694,13 +758,23 @@ export default function App() {
         createdAt: serverTimestamp()
       });
 
+      // 📝 Audit: Log media upload
+      const user = auth.currentUser;
+      await auditLogger.logMediaUpload(
+        uid,
+        user?.email || null,
+        mediaDocRef.id,
+        draft.cafeSlug,
+        sanitizedCaption
+      );
+
       const totalUploadsAfterSave = countTotalUploadsForUser(uid) + 1;
       if (campaignTarget > 0 && totalUploadsAfterSave % campaignTarget === 0) {
         setRewardCelebration({
           items: buildRewardPreviewItems(uid, {
             id: `reward-${Date.now()}`,
             url: downloadUrl,
-            caption: normalizeLegacyText(draft.caption, DEFAULT_MEDIA_CAPTION),
+            caption: normalizeLegacyText(sanitizedCaption, DEFAULT_MEDIA_CAPTION),
           }),
           target: campaignTarget,
         });
@@ -2202,11 +2276,27 @@ export default function App() {
                       id="caption"
                       type="text"
                       value={caption}
-                      onChange={(e) => setCaption(e.target.value)}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setCaption(value);
+                        // ✅ Real-time XSS validation
+                        if (value && !validateAndSanitizeCaption(value)) {
+                          setCaptionError('Not tehlikeli karakterler içeriyor');
+                        } else {
+                          setCaptionError(null);
+                        }
+                      }}
                       placeholder="Örn: Harika bir akşamdı..."
-                      className="w-full bg-cafe-900 border border-cafe-700 rounded-xl px-4 py-3 text-cafe-50 placeholder:text-cafe-100/30 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-all font-handwriting text-2xl"
+                      className={`w-full bg-cafe-900 border rounded-xl px-4 py-3 text-cafe-50 placeholder:text-cafe-100/30 focus:outline-none focus:ring-2 transition-all font-handwriting text-2xl ${
+                        captionError 
+                          ? 'border-red-500 focus:ring-red-500/50 focus:border-red-500' 
+                          : 'border-cafe-700 focus:ring-accent/50 focus:border-accent'
+                      }`}
                       maxLength={40}
                     />
+                    {captionError && (
+                      <p className="text-xs text-red-400 font-medium">{captionError}</p>
+                    )}
                   </div>
                 </div>
               </div>

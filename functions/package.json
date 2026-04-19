@@ -1,0 +1,22 @@
+{
+  "name": "share-vibe-functions",
+  "description": "Share Vibe Firebase Cloud Functions",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "node": "20"
+  },
+  "scripts": {
+    "serve": "firebase emulators:start --only functions",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log",
+    "test": "jest"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.1.0",
+    "firebase-functions": "^5.1.1"
+  },
+  "devDependencies": {
+    "firebase-functions-test": "^3.2.0"
+  }
+}

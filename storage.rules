@@ -1,0 +1,95 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // ═══════════════════════════════════════════════════════════════
+    // STORAGE SECURITY RULES FOR SHARE VIBE
+    // ═══════════════════════════════════════════════════════════════
+    // 
+    // Storage hierarchy:
+    // /media/{cafeSlug}/{mediaId}.{ext}
+    //
+    // Access rules:
+    // - READ: Public (anyone can download within 7 days)
+    // - WRITE: Only authenticated users can upload
+    // - DELETE: Only uploader or admin can delete
+    // ═══════════════════════════════════════════════════════════════
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isUploader(cafeSlug, mediaId) {
+      return isAuthenticated() && request.auth.uid == resource.metadata.uploaderUid;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && request.auth.token.admin == true;
+    }
+
+    function isValidImageType(contentType) {
+      return contentType in [
+        'image/jpeg',
+        'image/png',
+        'image/webp',
+        'image/gif'
+      ];
+    }
+
+    function isValidFileSize() {
+      // Max 8MB
+      return request.resource.size <= 8_000_000;
+    }
+
+    function isValidMetadata() {
+      let meta = request.resource.metadata;
+      return meta.uploaderUid == request.auth.uid &&
+             meta.uploadedAt is int &&
+             meta.cafeSlug is string &&
+             meta.cafeSlug.size() > 0;
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // MEDIA FILES: /media/{cafeSlug}/{mediaId}.{ext}
+    // ─────────────────────────────────────────────────────────────────
+    match /media/{cafeSlug}/{mediaId} {
+      
+      // PUBLIC READ: Download URLs public but time-limited
+      // Files older than 7 days cannot be accessed via direct download
+      allow read: if request.time < resource.metadata.uploadedAt + duration.value(7, 'd');
+
+      // UPLOAD: Authenticated users only
+      allow create: if
+        isAuthenticated() &&
+        isValidImageType(request.resource.contentType) &&
+        isValidFileSize() &&
+        isValidMetadata() &&
+        request.resource.metadata.cafeSlug == cafeSlug;
+
+      // UPDATE: Not allowed (media immutable)
+      allow update: if false;
+
+      // DELETE: Uploader or admin only
+      allow delete: if
+        isUploader(cafeSlug, mediaId) || isAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // ADMIN FILES: /admin/{adminId}/{fileName}
+    // ─────────────────────────────────────────────────────────────────
+    match /admin/{adminId}/{fileName} {
+      
+      allow read: if isAdmin() && request.auth.uid == adminId;
+      allow write: if isAdmin() && request.auth.uid == adminId;
+      allow delete: if isAdmin() && request.auth.uid == adminId;
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // DEFAULT: DENY ALL
+    // ─────────────────────────────────────────────────────────────────
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

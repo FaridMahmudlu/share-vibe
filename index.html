@@ -7,14 +7,100 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="theme-color" content="#1a0f0a" />
     <meta name="format-detection" content="telephone=no" />
-    <title>ShareVibe | Topluluk Odaklı Kahve Deneyimi</title>
+    
+    <!-- ✅ SEO: Title & Description -->
+    <title>ShareVibe - Kafe Paylaşım Platformu | QR Kod ile Fotoğraf Paylaş</title>
     <meta
       name="description"
-      content="QR ile çalışan, çoklu kafe yapısını destekleyen ve kafe sahiplerine marka kontrollü paylaşım akışı sunan ShareVibe deneyimi."
+      content="Kafe deneyimini fotoğraflarla paylaş. QR kod taraması ile güvenli paylaşım. Cafe sahiplerine marka kontrolü. Topluluk odaklı platform."
     />
+    
+    <!-- ✅ SEO: Canonical Tag (prevents duplicate content) -->
+    <link rel="canonical" href="https://sharevibe.co/" />
+    
+    <!-- ✅ SEO: Robots Meta Tag -->
+    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
+    
+    <!-- ✅ SEO: Author & Copyright -->
+    <meta name="author" content="ShareVibe Team" />
+    <meta name="copyright" content="© 2026 ShareVibe. All rights reserved." />
+    
+    <!-- ✅ SEO: Language Alternates (Hreflang) -->
+    <link rel="alternate" hrefLang="tr-TR" href="https://sharevibe.co/" />
+    <link rel="alternate" hrefLang="en-US" href="https://sharevibe.co/en/" />
+    <link rel="alternate" hrefLang="x-default" href="https://sharevibe.co/" />
+    
+    <!-- ✅ SEO: Open Graph Tags (Social Sharing) -->
+    <meta property="og:site_name" content="ShareVibe" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="ShareVibe - Kafe Paylaşım Platformu" />
+    <meta property="og:description" content="Kafe deneyimini fotoğraflarla paylaş. QR kod ile güvenli paylaşım platformu." />
+    <meta property="og:url" content="https://sharevibe.co/" />
+    <meta property="og:image" content="https://sharevibe.co/og-image-1200x630.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="ShareVibe - Kafe Paylaşım Platformu" />
+    <meta property="og:locale" content="tr_TR" />
+    <meta property="og:locale:alternate" content="en_US" />
+    
+    <!-- ✅ SEO: Twitter Card Tags -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@ShareVibe" />
+    <meta name="twitter:title" content="ShareVibe - Kafe Paylaşım Platformu" />
+    <meta name="twitter:description" content="Kafe deneyimini fotoğraflarla paylaş. QR kod ile güvenli paylaşım." />
+    <meta name="twitter:image" content="https://sharevibe.co/twitter-image-1024x512.jpg" />
+    <meta name="twitter:image:alt" content="ShareVibe Platform" />
+    
+    <!-- ✅ SEO: Apple Touch Icons & Favicons -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon-180x180.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    
+    <!-- ✅ SEO: PWA Manifest -->
+    <link rel="manifest" href="/manifest.json" />
+    
+    <!-- ✅ SEO: Preconnect to external resources (performance) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="dns-prefetch" href="https://www.google-analytics.com" />
+    
+    <!-- ✅ SEO: JSON-LD Structured Data (will be injected by React) -->
+    <script type="application/ld+json" id="schema-organization">
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "name": "ShareVibe",
+      "url": "https://sharevibe.co",
+      "logo": "https://sharevibe.co/logo-600x600.png",
+      "description": "Topluluk odaklı kafe paylaşım platformu",
+      "sameAs": [
+        "https://twitter.com/ShareVibe",
+        "https://instagram.com/ShareVibe",
+        "https://facebook.com/ShareVibe"
+      ],
+      "contactPoint": {
+        "@type": "ContactPoint",
+        "email": "info@sharevibe.co",
+        "contactType": "Customer Service"
+      },
+      "foundingDate": "2026"
+    }
+    </script>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    
+    <!-- ✅ Analytics: Google Analytics 4 -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-XXXXXXXXXX', {
+        'page_path': window.location.pathname,
+        'anonymize_ip': true
+      });
+    </script>
   </body>
 </html>
