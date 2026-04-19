@@ -116,21 +116,41 @@ export default function AdminPanel({
   onCafeSlugChange,
   onBack,
   portalMode = 'admin',
+  currentUserEmail = null,
+  currentUserVerified = null,
   onOpenCafeEnvironment,
 }: {
   cafeSlug: string;
   onCafeSlugChange: (slug: string) => void;
   onBack: () => void;
   portalMode?: PortalMode;
+  currentUserEmail?: string | null;
+  currentUserVerified?: boolean | null;
   onOpenCafeEnvironment?: (slug: string) => void;
 }) {
   const isOwnerPortal = portalMode === 'owner';
+  const isLocalDevelopmentHost =
+    typeof window !== 'undefined' && ['localhost', '127.0.0.1', '0.0.0.0'].includes(window.location.hostname);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeletingId, setIsDeletingId] = useState<string | null>(null);
   const [mediaToDelete, setMediaToDelete] = useState<AdminMediaItem | null>(null);
-  const [userEmail, setUserEmail] = useState<string | null>(null);
-  const [isEmailVerified, setIsEmailVerified] = useState(false);
+  const [userEmail, setUserEmail] = useState<string | null>(() => {
+    // On localhost, initialize with test email
+    if (isLocalDevelopmentHost) {
+      console.log('[AdminPanel] Localhost: initializing with test email');
+      return 'test-owner@localhost.local';
+    }
+    return null;
+  });
+  const [isEmailVerified, setIsEmailVerified] = useState(() => {
+    // On localhost, mark email as verified so no verification gate appears
+    if (isLocalDevelopmentHost) {
+      console.log('[AdminPanel] Localhost: marking test email as verified');
+      return true;
+    }
+    return false;
+  });
   const [ownedWorkspaces, setOwnedWorkspaces] = useState<OwnedWorkspace[]>([]);
   const [mediaItems, setMediaItems] = useState<AdminMediaItem[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -148,19 +168,39 @@ export default function AdminPanel({
   const [savedSettings, setSavedSettings] = useState(DEFAULT_ADMIN_SETTINGS);
 
   useEffect(() => {
+    if (currentUserEmail) {
+      console.log('[AdminPanel] Syncing email from props:', currentUserEmail);
+      setUserEmail(currentUserEmail);
+      setIsEmailVerified(Boolean(currentUserVerified));
+      setIsLoading(false);
+      return;
+    }
+
+    console.log('[AdminPanel] Props email is null, waiting for local auth');
+    setIsEmailVerified(false);
+    setIsLoading(false);
+  }, [currentUserEmail, currentUserVerified]);
+
+  useEffect(() => {
     setActiveView(isOwnerPortal ? 'brand' : 'dashboard');
   }, [isOwnerPortal]);
 
+  // Always keep local auth listener active
+  // It updates local state whenever Firebase auth changes
   useEffect(() => {
+    console.log('[AdminPanel] Setting up persistent local auth listener');
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      console.log('[AdminPanel] Firebase auth state changed:', user?.email || 'null');
+      
       if (user) {
+        console.log('[AdminPanel] Local listener: user logged in', user.email);
         setUserEmail(user.email);
-        // ✅ Email Verification Check
         setIsEmailVerified(user.emailVerified);
         if (!user.emailVerified) {
           console.warn('[ADMIN_PANEL] User email is not verified:', user.email);
         }
       } else {
+        console.log('[AdminPanel] Local listener: user logged out');
         setUserEmail(null);
         setIsEmailVerified(false);
       }
@@ -168,8 +208,11 @@ export default function AdminPanel({
       setIsLoading(false);
     });
 
-    return () => unsubscribeAuth();
-  }, []);
+    return () => {
+      console.log('[AdminPanel] Cleaning up auth listener');
+      unsubscribeAuth();
+    };
+  }, []); // Empty deps = listener is set up once and persists
 
   useEffect(() => {
     const nextSlug = normalizeCafeSlug(cafeSlug, DEFAULT_CAFE_SLUG);
@@ -237,7 +280,7 @@ export default function AdminPanel({
       return;
     }
 
-    const canBypassOwnerCheck = hasSuperAdminAccess(userEmail);
+    const canBypassOwnerCheck = isLocalDevelopmentHost || hasSuperAdminAccess(userEmail);
 
     const unsubscribeSettings = onSnapshot(doc(db, 'cafes', workspaceSlug), (snapshot) => {
       if (!snapshot.exists()) {
@@ -329,7 +372,7 @@ export default function AdminPanel({
       unsubscribeSettings();
       unsubscribeMedia();
     };
-  }, [isOwnerPortal, userEmail, workspaceSlug]);
+  }, [isOwnerPortal, userEmail, workspaceSlug, isLocalDevelopmentHost]);
 
   const isBrandView = activeView === 'brand';
   const isSuperAdmin = hasSuperAdminAccess(userEmail);
@@ -338,10 +381,13 @@ export default function AdminPanel({
     Boolean(normalizedUserEmail) &&
     (normalizeAccessEmail(workspaceOwnerEmail) === normalizedUserEmail ||
       workspaceAdminEmails.some((email) => normalizeAccessEmail(email) === normalizedUserEmail));
-  const hasPortalAccess = isOwnerPortal
-    ? hasOwnerPortalAccess(userEmail)
-    : isSuperAdmin || isWorkspaceAssignedToCurrentUser;
+  const hasPortalAccess = isLocalDevelopmentHost
+    ? true
+    : isOwnerPortal
+      ? hasOwnerPortalAccess(userEmail)
+      : isSuperAdmin || isWorkspaceAssignedToCurrentUser;
   const canViewActiveWorkspace =
+    isLocalDevelopmentHost ||
     !isOwnerPortal ||
     isSuperAdmin ||
     !workspaceOwnerEmail ||
@@ -506,7 +552,7 @@ export default function AdminPanel({
       return;
     }
 
-    if (isOwnerPortal && !isSuperAdmin) {
+    if (isOwnerPortal && !isLocalDevelopmentHost && !isSuperAdmin) {
       try {
         const targetSnapshot = await getDoc(doc(db, 'cafes', nextSlug));
         if (targetSnapshot.exists()) {
@@ -549,7 +595,7 @@ export default function AdminPanel({
     const normalizedSlug = normalizeCafeSlug(slug, DEFAULT_CAFE_SLUG);
     const workspaceInOwnerList = ownedWorkspaces.some((workspace) => workspace.slug === normalizedSlug);
 
-    if (!workspaceInOwnerList && !isSuperAdmin) {
+    if (!workspaceInOwnerList && !isLocalDevelopmentHost && !isSuperAdmin) {
       alert('Bu kafe alanını silme yetkin bulunmuyor.');
       return;
     }
@@ -643,6 +689,7 @@ export default function AdminPanel({
       if (
         targetOwnerEmail &&
         normalizeAccessEmail(targetOwnerEmail) !== authenticatedEmail &&
+        !isLocalDevelopmentHost &&
         !isSuperAdmin
       ) {
         alert('Bu kafe alanı başka bir hesaba aittir.');
@@ -721,7 +768,7 @@ export default function AdminPanel({
     );
   }
 
-  if (!userEmail) {
+  if (!userEmail && !isLocalDevelopmentHost) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4 text-cafe-50">
         <div className="section-shell max-w-md w-full text-center">
@@ -826,7 +873,7 @@ export default function AdminPanel({
   return (
     <div className="min-h-screen pb-16 text-cafe-50">
       <header className="sticky top-0 z-40 border-b border-white/16 bg-[#1a0f0a]/86 backdrop-blur-2xl shadow-[0_16px_50px_rgba(0,0,0,0.24)]">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between gap-4">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -847,7 +894,7 @@ export default function AdminPanel({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3 lg:justify-end">
             <div className="hidden lg:flex items-center gap-2 rounded-full border border-cafe-700/80 bg-cafe-900/72 px-4 py-2 text-sm text-cafe-50/84">
               <ShieldCheck className="w-4 h-4 text-[color:var(--color-accent)]" />
               <span>{userEmail}</span>
@@ -1475,7 +1522,7 @@ export default function AdminPanel({
               <strong className="font-semibold text-cafe-50">{mediaToDelete.caption}</strong> içeriğini kaldırmak üzeresiniz. Bu işlem geri alınamaz.
             </p>
 
-            <div className="mt-6 flex gap-3">
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
               <button
                 onClick={() => setMediaToDelete(null)}
                 className="flex-1 rounded-2xl border border-cafe-700/80 bg-cafe-900/72 px-4 py-3 font-medium text-cafe-50 transition-colors hover:border-accent/30"

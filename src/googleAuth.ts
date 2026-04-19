@@ -26,6 +26,12 @@ const isLocalDevelopmentHost = (domain: string) =>
   domain === '127.0.0.1' ||
   /^\d{1,3}(\.\d{1,3}){3}$/.test(domain);
 
+const shouldPreferRedirectSignIn = () => {
+  const domain = getCurrentDomain();
+
+  return !isLocalDevelopmentHost(domain);
+};
+
 const createGoogleProvider = () => {
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({
@@ -58,6 +64,13 @@ export const signInWithGoogle = async (
 ): Promise<UserCredential | null> => {
   const { beforeRedirect } = options;
   const provider = createGoogleProvider();
+
+  if (shouldPreferRedirectSignIn()) {
+    await beforeRedirect?.();
+    await signInWithRedirect(auth, provider);
+    return null;
+  }
+
   try {
     return await finalizeSignIn(await signInWithPopup(auth, provider));
   } catch (error) {

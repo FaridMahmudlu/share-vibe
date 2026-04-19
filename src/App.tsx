@@ -90,6 +90,13 @@ const MAX_UPLOAD_IMAGE_DIMENSION = 4096;
 const MAX_UPLOAD_IMAGE_SIZE = 8_000_000;
 const AdminPanel = React.lazy(() => import('./AdminPanel'));
 const OWNER_PORTAL_INTENT_KEY = 'share-vibe-owner-portal-intent';
+const isLocalDevelopmentHost = () => {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  return ['localhost', '127.0.0.1', '0.0.0.0'].includes(window.location.hostname);
+};
 
 const getMediaDate = (value: MediaItem['createdAt']) => {
   if (!value) {
@@ -236,8 +243,12 @@ export default function App() {
   const hiddenAdminTapCountRef = useRef(0);
   const hiddenAdminTapTimeoutRef = useRef<number | null>(null);
   const isAuthenticated = Boolean(currentUserUid);
-  const hasOwnerAccess = hasOwnerPortalAccess(currentUserEmail);
+  const hasOwnerAccess = isLocalDevelopmentHost() || hasOwnerPortalAccess(currentUserEmail);
   const canAccessActiveCafeAdmin = useMemo(() => {
+    if (isLocalDevelopmentHost()) {
+      return true;
+    }
+
     const normalizedUserEmail = normalizeAccessEmail(currentUserEmail);
     if (!normalizedUserEmail) {
       return false;
@@ -1601,6 +1612,8 @@ export default function App() {
           onCafeSlugChange={setActiveCafeSlug}
           onBack={() => setCurrentView('app')}
           portalMode="admin"
+          currentUserEmail={currentUserEmail}
+          currentUserVerified={auth.currentUser?.emailVerified ?? null}
           onOpenCafeEnvironment={(slug) =>
             openCafeExperience({
               cafeSlug: slug,
@@ -1632,6 +1645,8 @@ export default function App() {
           onCafeSlugChange={setActiveCafeSlug}
           onBack={() => setCurrentView('landing')}
           portalMode="owner"
+          currentUserEmail={currentUserEmail}
+          currentUserVerified={auth.currentUser?.emailVerified ?? null}
           onOpenCafeEnvironment={(slug) =>
             openCafeExperience({
               cafeSlug: slug,
@@ -1758,7 +1773,7 @@ export default function App() {
               <span className="section-pill">Kolay paylaşım</span>
               <div className="relative space-y-5">
                 <div className="space-y-3">
-                  <h2 className="max-w-3xl text-4xl sm:text-5xl xl:text-6xl font-serif leading-[0.92] text-cafe-50">
+                  <h2 className="max-w-3xl text-3xl sm:text-5xl xl:text-6xl font-serif leading-[0.92] text-cafe-50">
                     Kafedeki güzel anları birkaç saniyede paylaşın.
                   </h2>
                   <p className="max-w-2xl text-sm sm:text-base leading-7 text-cafe-100/72">
@@ -1812,7 +1827,7 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="mt-5 grid grid-cols-4 gap-2 sm:gap-3">
+                <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
                   {Array.from({ length: Math.max(campaignTarget, 1) }, (_, index) => {
                     const isActive = index < campaignProgressCount;
                     return (
@@ -2165,7 +2180,7 @@ export default function App() {
                     />
                   </div>
 
-                  <div className="flex gap-3 w-full">
+                  <div className="flex w-full flex-col gap-3 sm:flex-row">
                     <button
                       onClick={cancelUpload}
                       className="flex-1 px-4 py-3 rounded-xl font-medium text-cafe-100 hover:bg-cafe-700 transition-colors"
@@ -2322,7 +2337,7 @@ export default function App() {
               )}
 
               {/* Modal Footer */}
-              <div className="p-4 border-t border-cafe-700 bg-cafe-800/50 flex gap-3 shrink-0 mt-4">
+              <div className="p-4 border-t border-cafe-700 bg-cafe-800/50 flex flex-col gap-3 shrink-0 mt-4 sm:flex-row">
                 <button
                   onClick={cancelUpload}
                   disabled={isSaving}
@@ -2375,7 +2390,7 @@ export default function App() {
               <h3 className="text-xl font-bold text-cafe-50 mb-2">Anıyı Sil</h3>
               <p className="text-cafe-100/70 mb-6">Bu anıyı silmek istediğinize emin misiniz? Bu işlem geri alınamaz.</p>
               
-              <div className="flex gap-3">
+              <div className="flex flex-col gap-3 sm:flex-row">
                 <button
                   onClick={() => setMediaToDelete(null)}
                   className="flex-1 px-4 py-3 rounded-xl font-medium text-cafe-100 hover:bg-cafe-700 transition-colors"
