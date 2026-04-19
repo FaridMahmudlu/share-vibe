@@ -5,7 +5,7 @@
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "🚀 ShareVibe Deployment Starting..." -ForegroundColor Cyan
+Write-Host "[*] ShareVibe Deployment Starting..." -ForegroundColor Cyan
 
 # Variables
 $DEPLOY_USER = "root"
@@ -17,67 +17,73 @@ $SCRIPT_DIR = Get-Location
 
 # Check if dist folder exists
 if (-not (Test-Path $DIST_PATH)) {
-    Write-Host "❌ ERROR: dist folder not found. Run 'npm run build' first." -ForegroundColor Red
+    Write-Host "[ERROR] dist folder not found. Run 'npm run build' first." -ForegroundColor Red
     exit 1
 }
 
 # Step 1: Create archive
-Write-Host "📦 Step 1: Creating deployment archive..." -ForegroundColor Yellow
+Write-Host "[+] Step 1: Creating deployment archive..." -ForegroundColor Yellow
 if (Get-Command tar -ErrorAction SilentlyContinue) {
     tar -czf sharevibe-dist.tar.gz dist
+    $archiveName = "sharevibe-dist.tar.gz"
 } else {
     # Fallback to PowerShell compression
     Write-Host "Using PowerShell compression..." -ForegroundColor Gray
     Compress-Archive -Path dist -DestinationPath sharevibe-dist.zip -Force
+    $archiveName = "sharevibe-dist.zip"
 }
 
 # Step 2: Upload to server
-Write-Host "🌐 Step 2: Uploading files to server..." -ForegroundColor Yellow
+Write-Host "[+] Step 2: Uploading files to server..." -ForegroundColor Yellow
 if (Get-Command scp -ErrorAction SilentlyContinue) {
-    $archiveName = if (Test-Path sharevibe-dist.tar.gz) { "sharevibe-dist.tar.gz" } else { "sharevibe-dist.zip" }
     scp $archiveName "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/"
-    Write-Host "✅ Archive uploaded" -ForegroundColor Green
+    Write-Host "[OK] Archive uploaded" -ForegroundColor Green
 } else {
-    Write-Host "⚠️  SCP not found. Please ensure OpenSSH is installed." -ForegroundColor Red
+    Write-Host "[ERROR] SCP not found. Please ensure OpenSSH is installed." -ForegroundColor Red
     exit 1
 }
 
 # Step 3: Extract and deploy on server
-Write-Host "⚙️  Step 3: Deploying on server..." -ForegroundColor Yellow
+Write-Host "[+] Step 3: Deploying on server..." -ForegroundColor Yellow
 $deployCommands = @"
 mkdir -p /var/www/sharevibe/html
 cd /tmp
-if [ -f sharevibe-dist.tar.gz ]; then
+if test -f sharevibe-dist.tar.gz; then
     tar -xzf sharevibe-dist.tar.gz
     cp -r dist/* /var/www/sharevibe/html/
     rm -rf dist sharevibe-dist.tar.gz
     chown -R www-data:www-data /var/www/sharevibe/html
     chmod -R 755 /var/www/sharevibe/html
     echo "Files deployed successfully"
+else
+    echo "Archive not found!"
+    exit 1
 fi
 "@
 
-ssh $DEPLOY_USER@$DEPLOY_HOST $deployCommands
-Write-Host "✅ Files deployed" -ForegroundColor Green
+ssh "${DEPLOY_USER}@${DEPLOY_HOST}" $deployCommands
+Write-Host "[OK] Files deployed" -ForegroundColor Green
 
 # Step 4: Configure Nginx
-Write-Host "🔒 Step 4: Configuring Nginx..." -ForegroundColor Yellow
-scp "nginx-sharevibe.conf" "$DEPLOY_USER@$DEPLOY_HOST`:/etc/nginx/sites-available/sharevibe.conf"
+Write-Host "[+] Step 4: Configuring Nginx..." -ForegroundColor Yellow
+if (Test-Path "nginx-sharevibe.conf") {
+    scp "nginx-sharevibe.conf" "${DEPLOY_USER}@${DEPLOY_HOST}:/etc/nginx/sites-available/sharevibe.conf"
 
-$nginxCommands = @"
+    $nginxCommands = @"
 ln -sf /etc/nginx/sites-available/sharevibe.conf /etc/nginx/sites-enabled/sharevibe.conf
 nginx -t
 systemctl reload nginx || systemctl restart nginx
-echo "Nginx configured"
 "@
 
-ssh $DEPLOY_USER@$DEPLOY_HOST $nginxCommands
-Write-Host "✅ Nginx configured" -ForegroundColor Green
+    ssh "${DEPLOY_USER}@${DEPLOY_HOST}" $nginxCommands
+    Write-Host "[OK] Nginx configured" -ForegroundColor Green
+} else {
+    Write-Host "[WARNING] nginx-sharevibe.conf not found. Skipping Nginx setup." -ForegroundColor Yellow
+}
 
 # Step 5: Cleanup
-Write-Host "🧹 Step 5: Cleanup..." -ForegroundColor Yellow
-if (Test-Path sharevibe-dist.tar.gz) { Remove-Item sharevibe-dist.tar.gz }
-if (Test-Path sharevibe-dist.zip) { Remove-Item sharevibe-dist.zip }
+Write-Host "[+] Step 5: Cleanup..." -ForegroundColor Yellow
+if (Test-Path "sharevibe-dist.tar.gz") { Remove-Item "sharevibe-dist.tar.gz" }
+if (Test-Path "sharevibe-dist.zip") { Remove-Item "sharevibe-dist.zip" }
 
-Write-Host "✅ Deployment Complete!" -ForegroundColor Green
-Write-Host "🌍 Your site is live at: https://sharevibe.co" -ForegroundColor Cyan
+Write-Host "[+] Deployment completed successfully!" -ForegroundColor Green
