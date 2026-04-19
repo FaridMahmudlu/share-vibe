@@ -169,6 +169,60 @@ Yalnızca veritabanı tarafındaki kuralları ve indeksleri yayınlamak için:
 - Firestore rules deploy sürecinde named database hedefi yanlış seçilirse istemci tarafında `permission-denied` hataları görülebilir.
 - Erişim listesi güncellenirse önce `access-emails.mjs`, ardından `npm run deploy:rules` çalıştırılmalıdır.
 
+## VDS Deployment (Production Sunucusu)
+
+ShareVibe uygulaması VDS (Virtual Dedicated Server) üzerinde barındırılır. Sunucu IP adresi: **185.34.101.235**
+
+### Hızlı Deploy
+
+Production build üretin:
+```bash
+npm run build
+```
+
+Deploy script-ini çalıştırın:
+
+**Windows (PowerShell):**
+```powershell
+.\deploy.ps1
+```
+
+**macOS/Linux:**
+```bash
+bash deploy.sh
+```
+
+Script otomatik olarak:
+1. Dosyaları sunucuya yükler
+2. `/var/www/sharevibe/html/` klasörüne yerleştirir
+3. Nginx yapılandırmasını deployer
+4. Nginx reload eder
+
+### Sunucu Yapılandırması
+
+- **Web Root:** `/var/www/sharevibe/html`
+- **Web Sunucusu:** Nginx
+- **SSL:** Let's Encrypt (HTTPS)
+- **Domain:** `sharevibe.co`
+- **Deployment:** Nginx konfigürasyonu `nginx-sharevibe.conf` ile yönetilir
+
+### Manuel Deploy
+
+Adım-adım işlemler için bkz: [VDS_DEPLOYMENT.md](./VDS_DEPLOYMENT.md)
+
+### Özellikler
+
+- ✅ Otomatik SSL/TLS (HTTPS)
+- ✅ Gzip sıkıştırması
+- ✅ Statik dosya caching (1 yıl)
+- ✅ Güvenlik başlıkları (X-Frame-Options, CSP, etc.)
+- ✅ SPA yönlendirmesi (index.html fallback)
+- ✅ Performans optimizasyonları
+
+### Sorun Giderme
+
+Bkz: [VDS_DEPLOYMENT.md](./VDS_DEPLOYMENT.md#troubleshooting) - Sorun Giderme bölümü
+
 ## Repository
 
 GitHub deposu:
