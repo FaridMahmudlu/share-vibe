@@ -1,4 +1,12 @@
-import { OWNER_ACCESS_EMAILS, SUPER_ADMIN_EMAILS } from '../access-emails.mjs';
+// Access control configuration
+// TODO: Move to Firebase Firestore for dynamic management
+const OWNER_ACCESS_EMAILS = [
+  'owner@sharevibe.local', // Add your owner email here
+];
+
+const SUPER_ADMIN_EMAILS = [
+  'admin@sharevibe.local', // Add admin emails here
+];
 
 const normalizeAccessEmail = (value: unknown) =>
   typeof value === 'string' ? value.trim().toLowerCase() : '';
