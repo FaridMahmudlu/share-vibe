@@ -1,0 +1,3041 @@
+import React, { Suspense, startTransition, useDeferredValue, useEffect, useMemo, useRef, useState, useCallback, memo } from 'react';
+import { AlertTriangle, Camera, Upload, Heart, X, Sparkles, MapPin, Clock, Instagram, Twitter, Facebook, Share2, Copy, Check, CheckCircle2, Trash2, RotateCw, Sun, Contrast, Coffee, ImageOff, Gift } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { db, auth, storage, waitForAuthInitialization } from '@/lib/firebase/client';
+import { collection, addDoc, getDocs, onSnapshot, query, orderBy, doc, updateDoc, serverTimestamp, arrayUnion, arrayRemove, increment, limit, where } from 'firebase/firestore';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
+import { getGoogleSignInErrorMessage, resolveGoogleSignInRedirect, signInWithGoogle } from '@/lib/auth/googleAuth';
+import { deleteMediaRecord } from '@/lib/storage/mediaStorage';
+import { clearPendingUpload, getPendingUpload, savePendingUpload, type PendingUploadDraft } from '@/lib/storage/pendingUpload';
+import MainPage from '@/pages/landing/MainPage';
+import BrandSignature from '@/components/brand/BrandSignature';
+import { canAccessCafeAdmin, hasOwnerPortalAccess, normalizeAccessEmail } from '@/config/access';
+import { validateAndSanitizeCaption, validateAndSanitizeCafeSlug } from '@/security/validation';
+import { CSRFProtection } from '@/security/browser';
+import { auditLogger } from '@/lib/audit/auditIntegration';
+import { emailService } from '@/services/api/emailService';
+import { shareToInstagramStory as storyShareService } from '@/services/sharing/storyShareService';
+import { updatePageMeta, updateBreadcrumbs, trackPageView } from '@/seo/utils';
+import {
+  buildCafePublicLink,
+  DEFAULT_CAFE_SLUG,
+  DEFAULT_ACCENT_COLOR,
+  DEFAULT_CAFE_NAME,
+  DEFAULT_CAMPAIGN_REWARD,
+  DEFAULT_CAMPAIGN_TARGET,
+  DEFAULT_DEMO_TABLE,
+  DEFAULT_HANDWRITING_FONT,
+  DEFAULT_MEDIA_CAPTION,
+  normalizeCafeSlug,
+  normalizeHandwritingFont,
+  normalizeLegacyText,
+  normalizeTableLabel,
+} from '@/config/ui';
+
+type MediaType = 'image';
+
+type MediaItem = {
+  id: string;
+  url: string;
+  type: MediaType;
+  caption: string;
+  likesCount: number;
+  likedBy: string[];
+  rotation: number;
+  date: string;
+  tableNumber: string;
+  cafeSlug: string;
+  authorUid: string;
+  createdAt: any;
+};
+
+type UploadDraft = PendingUploadDraft;
+type RewardPreviewItem = Pick<MediaItem, 'id' | 'url' | 'caption'>;
+type RewardCelebration = {
+  items: RewardPreviewItem[];
+  target: number;
+} | null;
+type PublicCampaign = {
+  id: string;
+  subject: string;
+  description: string;
+  imageUrl: string | null;
+  textContent: string;
+  status: string;
+  tag: string | null;
+};
+type DemoCafeCandidate = {
+  slug: string;
+  cafeName: string;
+  mediaCount: number;
+};
+type AppView = 'landing' | 'app' | 'admin' | 'owner' | 'notFound';
+
+const PUBLIC_LANDING_PATHS = new Set([
+  '/',
+  '/features',
+  '/pricing',
+  '/contact',
+  '/privacy-policy',
+  '/terms-of-service',
+]);
+const DEMO_CAFE_MATCHER = /(ava|lumina)/i;
+const APP_EXPERIENCE_IMAGES = [
+  'https://images.unsplash.com/photo-1509042239860-f550ce710b93?auto=format&fit=crop&w=900&q=82',
+  'https://images.unsplash.com/photo-1511920170033-f8396924c348?auto=format&fit=crop&w=900&q=82',
+  'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&w=900&q=82',
+];
+
+const AnimatedBackground = memo(() => (
+  <div className="fixed inset-0 z-[-1] overflow-hidden pointer-events-none will-change-transform">
+    <div className="absolute top-[-10%] left-[-10%] h-[42%] w-[42%] rounded-full bg-accent/30 blur-[110px] animate-blob" />
+    <div className="absolute top-[10%] right-[-10%] h-[50%] w-[50%] rounded-full bg-[#efd2ba]/55 blur-[135px] animate-blob animation-delay-2000" />
+    <div className="absolute bottom-[-22%] left-[14%] h-[56%] w-[56%] rounded-full bg-[#6b4331]/20 blur-[155px] animate-blob animation-delay-4000" />
+  </div>
+));
+AnimatedBackground.displayName = 'AnimatedBackground';
+
+const BrokenMediaPlaceholder = memo(({
+  message,
+  compact = false,
+}: {
+  message: string;
+  compact?: boolean;
+}) => (
+  <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-gradient-to-br from-cafe-800 to-cafe-700 text-cafe-100/70 px-6 text-center">
+    <ImageOff className={compact ? 'w-8 h-8 text-cafe-100/40' : 'w-12 h-12 text-cafe-100/40'} />
+    <p className={compact ? 'text-xs font-medium' : 'text-sm font-medium'}>{message}</p>
+  </div>
+));
+BrokenMediaPlaceholder.displayName = 'BrokenMediaPlaceholder';
+
+const MAX_WEEKLY_UPLOADS = 2;
+const MAX_UPLOAD_IMAGE_DIMENSION = 4096;
+const MAX_UPLOAD_IMAGE_SIZE = 8_000_000;
+const AdminPanel = React.lazy(() => import('@/pages/admin/AdminPanel'));
+const OWNER_PORTAL_INTENT_KEY = 'share-vibe-owner-portal-intent';
+
+const getUploadErrorMessage = (error: unknown) => {
+  const code =
+    typeof error === 'object' && error !== null && 'code' in error
+      ? String((error as { code?: unknown }).code)
+      : '';
+  const message =
+    error instanceof Error
+      ? error.message.toLowerCase()
+      : typeof error === 'string'
+        ? error.toLowerCase()
+        : '';
+
+  if (code === 'storage/unauthorized' || message.includes('permission') || message.includes('unauthorized')) {
+    return 'Fotoğraf yüklenemedi. Oturumunuzu yenileyip tekrar deneyin.';
+  }
+
+  if (code === 'storage/quota-exceeded') {
+    return 'Şu anda yükleme kotası dolu. Bir süre sonra tekrar deneyin.';
+  }
+
+  if (code === 'storage/retry-limit-exceeded' || message.includes('network')) {
+    return 'Bağlantı kararsız görünüyor. Lütfen internet bağlantınızı kontrol edip tekrar deneyin.';
+  }
+
+  if (message.includes('image') || message.includes('fotoğraf') || message.includes('görsel')) {
+    return 'Fotoğraf hazırlanamadı. Lütfen farklı bir görsel deneyin.';
+  }
+
+  return 'Fotoğraf paylaşımı tamamlanamadı. Lütfen tekrar deneyin.';
+};
+const isLocalDevelopmentHost = () => {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  return ['localhost', '127.0.0.1', '0.0.0.0'].includes(window.location.hostname);
+};
+
+const getMediaDate = (value: MediaItem['createdAt']) => {
+  if (!value) {
+    return null;
+  }
+
+  if (typeof value?.toDate === 'function') {
+    return value.toDate();
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const getInitialQueryParams = () => {
+  if (typeof window === 'undefined') {
+    return new URLSearchParams();
+  }
+
+  return new URLSearchParams(window.location.search);
+};
+
+const normalizeRoutePath = (pathname: string) => pathname.replace(/\/+$/, '') || '/';
+
+const getCafeSlugFromPath = (pathname: string) => {
+  const match = normalizeRoutePath(pathname).match(/^\/cafe\/([^/?#]+)$/);
+  return match?.[1] ? decodeURIComponent(match[1]) : null;
+};
+
+const getInitialCafeSlug = () =>
+  normalizeCafeSlug(
+    (typeof window !== 'undefined' ? getCafeSlugFromPath(window.location.pathname) : null) ??
+      getInitialQueryParams().get('cafe') ??
+      getInitialQueryParams().get('kafe') ??
+      DEFAULT_CAFE_SLUG
+  );
+
+const getInitialTableLabel = () =>
+  normalizeTableLabel(
+    getInitialQueryParams().get('table') ?? getInitialQueryParams().get('masa'),
+    ''
+  );
+
+const getInitialView = (): AppView => {
+  if (typeof window !== 'undefined') {
+    const normalizedPath = normalizeRoutePath(window.location.pathname);
+
+    if (normalizedPath === '/admin') {
+      return 'admin';
+    }
+
+    if (normalizedPath === '/owner') {
+      return 'owner';
+    }
+
+    if (getCafeSlugFromPath(normalizedPath) || normalizedPath === '/share') {
+      return 'app';
+    }
+
+    if (PUBLIC_LANDING_PATHS.has(normalizedPath)) {
+      return 'landing';
+    }
+
+    if (normalizedPath !== '/') {
+      return 'notFound';
+    }
+  }
+
+  const params = getInitialQueryParams();
+  const requestedScreen = params.get('screen');
+
+  if (requestedScreen && !['owner', 'admin', 'app'].includes(requestedScreen)) {
+    return 'notFound';
+  }
+
+  if (requestedScreen === 'owner') {
+    return 'owner';
+  }
+
+  if (requestedScreen === 'admin') {
+    return 'admin';
+  }
+
+  if (requestedScreen === 'app' || params.has('media') || params.has('cafe') || params.has('table') || params.has('masa')) {
+    return 'app';
+  }
+
+  return 'landing';
+};
+
+const getCurrentLandingPath = () => {
+  if (typeof window === 'undefined') {
+    return '/';
+  }
+
+  const normalizedPath = normalizeRoutePath(window.location.pathname);
+  return PUBLIC_LANDING_PATHS.has(normalizedPath) ? normalizedPath : '/';
+};
+
+const pickPreferredDemoCafe = (cafes: DemoCafeCandidate[]) =>
+  cafes.find(({ slug, mediaCount }) => slug === DEFAULT_CAFE_SLUG && mediaCount > 0) ||
+  cafes.find(({ cafeName, slug, mediaCount }) => DEMO_CAFE_MATCHER.test(`${cafeName} ${slug}`) && mediaCount > 0) ||
+  cafes.find(({ slug }) => slug === DEFAULT_CAFE_SLUG) ||
+  cafes.find(({ cafeName, slug }) => DEMO_CAFE_MATCHER.test(`${cafeName} ${slug}`)) ||
+  cafes.find(({ mediaCount }) => mediaCount > 0) ||
+  cafes[0] ||
+  null;
+
+export default function App() {
+  const [currentView, setCurrentView] = useState<AppView>(getInitialView);
+  const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [accentColor, setAccentColor] = useState(DEFAULT_ACCENT_COLOR);
+  const [handwritingFont, setHandwritingFont] = useState(DEFAULT_HANDWRITING_FONT);
+  const [cafeName, setCafeName] = useState(DEFAULT_CAFE_NAME);
+  const [activeCafeSlug, setActiveCafeSlug] = useState(getInitialCafeSlug);
+  const [demoCafeSlug, setDemoCafeSlug] = useState(DEFAULT_CAFE_SLUG);
+  const [demoCafeName, setDemoCafeName] = useState(DEFAULT_CAFE_NAME);
+  const [resolvedTableLabel, setResolvedTableLabel] = useState(getInitialTableLabel);
+  const [publicCampaigns, setPublicCampaigns] = useState<PublicCampaign[]>([]);
+  const [campaignTarget, setCampaignTarget] = useState(DEFAULT_CAMPAIGN_TARGET);
+  const [campaignReward, setCampaignReward] = useState(DEFAULT_CAMPAIGN_REWARD);
+  const [isSaving, setIsSaving] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isDesktopCameraOpen, setIsDesktopCameraOpen] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [caption, setCaption] = useState('');
+  const [captionError, setCaptionError] = useState<string | null>(null);
+  const [selectedMediaId, setSelectedMediaId] = useState<string | null>(null);
+  const [shareMediaId, setShareMediaId] = useState<string | null>(null);
+  const [activeStoryTemplateUrl, setActiveStoryTemplateUrl] = useState<string | null>(null);
+  const [isStoryShareBusy, setIsStoryShareBusy] = useState(false);
+  const [shareNotice, setShareNotice] = useState<{ tone: 'info' | 'success' | 'error'; text: string } | null>(null);
+  const [mediaToDelete, setMediaToDelete] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [isCopied, setIsCopied] = useState(false);
+  const [failedMediaIds, setFailedMediaIds] = useState<Record<string, true>>({});
+  const [currentUserUid, setCurrentUserUid] = useState<string | null>(null);
+  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
+  const [isAuthResolved, setIsAuthResolved] = useState(false);
+  const [isGoogleRedirectResolved, setIsGoogleRedirectResolved] = useState(false);
+  const [isMediaItemsReady, setIsMediaItemsReady] = useState(false);
+  const [pendingRedirectUpload, setPendingRedirectUpload] = useState<UploadDraft | null>(null);
+  const [rewardCelebration, setRewardCelebration] = useState<RewardCelebration>(null);
+  const [showSharePrompt, setShowSharePrompt] = useState(false);
+  const [ownerAccessError, setOwnerAccessError] = useState<string | null>(null);
+  const [activeCafeOwnerEmail, setActiveCafeOwnerEmail] = useState<string | null>(null);
+  const [activeCafeAdminEmails, setActiveCafeAdminEmails] = useState<string[]>([]);
+  const previousViewRef = useRef(currentView);
+  
+  // Image editing state
+  const [editRotation, setEditRotation] = useState(0);
+  const [editBrightness, setEditBrightness] = useState(100);
+  const [editContrast, setEditContrast] = useState(100);
+
+  // Calculate weekly uploads for the current user
+  const userUploadsThisWeekCount = useMemo(() => {
+    if (!currentUserUid) return 0;
+    const oneWeekAgo = new Date();
+    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+    
+    return mediaItems.filter(item => {
+      if (item.authorUid !== currentUserUid || item.cafeSlug !== activeCafeSlug) return false;
+      if (!item.createdAt) return true; // If just uploaded and timestamp is pending, count it
+      const itemDate = getMediaDate(item.createdAt);
+      if (!itemDate) return false;
+      return itemDate > oneWeekAgo;
+    }).length;
+  }, [mediaItems, currentUserUid, activeCafeSlug]);
+
+  const isDeletable = (item: MediaItem) => {
+    if (!item.createdAt) return true;
+    const itemDate = getMediaDate(item.createdAt);
+    if (!itemDate) return false;
+    const now = new Date();
+    const diffMinutes = (now.getTime() - itemDate.getTime()) / (1000 * 60);
+    return diffMinutes <= 30;
+  };
+
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const resumedPendingUploadRef = useRef(false);
+  const sharePromptScheduledRef = useRef(false);
+  const hiddenAdminTapCountRef = useRef(0);
+  const hiddenAdminTapTimeoutRef = useRef<number | null>(null);
+  const isAuthenticated = Boolean(currentUserUid);
+  const hasOwnerAccess = isLocalDevelopmentHost() || hasOwnerPortalAccess(currentUserEmail);
+  const canAccessActiveCafeAdmin = useMemo(() => {
+    if (isLocalDevelopmentHost()) {
+      return true;
+    }
+
+    const normalizedUserEmail = normalizeAccessEmail(currentUserEmail);
+    if (!normalizedUserEmail) {
+      return false;
+    }
+
+    return canAccessCafeAdmin(normalizedUserEmail, activeCafeSlug);
+  }, [activeCafeSlug, currentUserEmail]);
+
+  const mediaItemsById = useMemo(() => {
+    const next = new Map<string, MediaItem>();
+    mediaItems.forEach((item) => {
+      next.set(item.id, item);
+    });
+    return next;
+  }, [mediaItems]);
+
+  const getMediaItemById = useCallback((id: string) => mediaItemsById.get(id), [mediaItemsById]);
+
+  const syncCurrentUser = (user: User | null) => {
+    setCurrentUserUid(user?.uid ?? null);
+    setCurrentUserEmail(user?.email ?? null);
+  };
+
+  const customerSyncKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const currentUser = auth.currentUser;
+    const authProvider = currentUser?.providerData?.find((provider) => provider?.providerId)?.providerId;
+    const isGoogleVerifiedUser =
+      Boolean(currentUserUid) &&
+      Boolean(currentUserEmail) &&
+      Boolean(currentUser?.emailVerified) &&
+      authProvider === 'google.com';
+
+    if (!isGoogleVerifiedUser || !activeCafeSlug) {
+      customerSyncKeyRef.current = null;
+      return;
+    }
+
+    const firebaseUid = currentUserUid;
+    if (!firebaseUid) {
+      customerSyncKeyRef.current = null;
+      return;
+    }
+
+    const syncKey = `${firebaseUid}:${activeCafeSlug}`;
+    if (customerSyncKeyRef.current === syncKey) {
+      return;
+    }
+
+    customerSyncKeyRef.current = syncKey;
+
+    void emailService
+      .syncCurrentVisitorCustomer(firebaseUid, activeCafeSlug)
+      .catch((error) => {
+        console.warn('Visitor customer sync failed:', error);
+        customerSyncKeyRef.current = null;
+      });
+  }, [activeCafeSlug, currentUserEmail, currentUserUid]);
+
+  const rememberOwnerPortalIntent = () => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    window.sessionStorage.setItem(OWNER_PORTAL_INTENT_KEY, '1');
+  };
+
+  const clearOwnerPortalIntent = () => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    window.sessionStorage.removeItem(OWNER_PORTAL_INTENT_KEY);
+  };
+
+  const discardPendingUpload = async () => {
+    try {
+      await clearPendingUpload();
+    } catch (error) {
+      console.warn('Bekleyen yükleme temizlenemedi:', error);
+    }
+  };
+
+  const markMediaAsFailed = useCallback((id: string) => {
+    setFailedMediaIds((current) => (current[id] ? current : { ...current, [id]: true }));
+  }, []);
+
+  // SEO: Update page metadata based on current view
+  useEffect(() => {
+    if (currentView === 'landing') {
+      const landingPath = getCurrentLandingPath();
+      const fullUrl = `https://sharevibe.co${landingPath === '/' ? '/' : landingPath}`;
+      const routeMeta: Record<string, { title: string; description: string; keywords: string[] }> = {
+        '/': {
+          title: 'ShareVibe - Kafe Paylaşım Platformu | QR Kod ile Fotoğraf Paylaş',
+          description: 'Kafe deneyimini fotoğraflarla paylaş. QR kod taraması ile güvenli paylaşım. Kafe sahiplerine marka kontrolü.',
+          keywords: ['kafe paylaşım', 'fotoğraf paylaş', 'QR kod kafe', 'topluluk platformu', 'kahve'],
+        },
+        '/features': {
+          title: 'ShareVibe Özellikleri | QR Galeri, Kampanya ve Yönetim Paneli',
+          description: 'QR fotoğraf paylaşımı, canlı galeri, kampanya yönetimi, müşteri izinleri, QR araçları ve kafe yönetim paneli.',
+          keywords: ['QR galeri', 'kafe yönetim paneli', 'kampanya yönetimi', 'fotoğraf paylaşımı'],
+        },
+        '/pricing': {
+          title: 'ShareVibe Planları | Kafeler İçin Kurulum ve Paketler',
+          description: 'ShareVibe planları; QR paylaşım, canlı galeri, kampanya ve isteğe bağlı e-posta pazarlama ihtiyacına göre değerlendirilir.',
+          keywords: ['ShareVibe fiyat', 'kafe QR sistemi', 'kafe pazarlama planları'],
+        },
+        '/contact': {
+          title: 'ShareVibe İletişim | Kurulum Görüşmesi',
+          description: 'ShareVibe kurulum görüşmesi için QR deneyimi, panel kapsamı ve kampanya hedefleri birlikte değerlendirilir.',
+          keywords: ['ShareVibe iletişim', 'kafe kurulum görüşmesi', 'QR fotoğraf platformu'],
+        },
+        '/privacy-policy': {
+          title: 'ShareVibe Gizlilik Politikası',
+          description: 'ShareVibe gizlilik politikası; kafe paneli, QR fotoğraf paylaşımı ve müşteri izinleri kapsamında işlenen verileri açıklar.',
+          keywords: ['ShareVibe gizlilik', 'kafe verileri', 'müşteri izinleri'],
+        },
+        '/terms-of-service': {
+          title: 'ShareVibe Kullanım Koşulları',
+          description: 'ShareVibe kullanım koşulları; kafe hesabı, panel erişimi, içerik sorumluluğu ve hizmet kapsamını açıklar.',
+          keywords: ['ShareVibe kullanım koşulları', 'kafe paneli şartları'],
+        },
+      };
+      const meta = routeMeta[landingPath] ?? routeMeta['/'];
+      updatePageMeta({
+        title: meta.title,
+        description: meta.description,
+        keywords: meta.keywords,
+        image: 'https://sharevibe.co/sharevibe-logo.png',
+        type: 'website',
+        url: fullUrl,
+        canonical: fullUrl,
+      });
+      trackPageView(landingPath, meta.title, 'page');
+    } else if (currentView === 'app') {
+      // App view - cafe gallery
+      const fullUrl = `https://sharevibe.co/cafe/${activeCafeSlug}`;
+      updatePageMeta({
+        title: `${cafeName} - ShareVibe Kafe Galerisi | Fotoğraf Paylaşım`,
+        description: `${cafeName} kafe galerisi. Fotoğraf paylaş, beğen, keşfet.`,
+        keywords: ['kafe galeri', cafeName, 'fotoğraf', 'paylaşım'],
+        image: mediaItems[0]?.url || 'https://sharevibe.co/sharevibe-logo.png',
+        type: 'product',
+        url: fullUrl,
+        canonical: fullUrl,
+      });
+      updateBreadcrumbs([
+        { name: 'ShareVibe', url: '/' },
+        { name: cafeName, url: `/cafe/${activeCafeSlug}` },
+      ]);
+      trackPageView(`/cafe/${activeCafeSlug}`, `${cafeName} - Kafe Galerisi`, 'page');
+    } else if (currentView === 'admin' || currentView === 'owner') {
+      // Admin/owner view
+      const fullUrl = 'https://sharevibe.co/admin';
+      updatePageMeta({
+        title: 'ShareVibe - Yönetim Paneli | Cafe Kontrol',
+        description: 'Cafe ayarlarını yönet, istatistikleri görüntüle, fotoğrafları düzenle.',
+        type: 'website',
+        url: fullUrl,
+        canonical: fullUrl,
+      });
+      trackPageView('/admin', 'ShareVibe - Yönetim Paneli', 'page');
+    } else if (currentView === 'notFound') {
+      updatePageMeta({
+        title: '404 - ShareVibe',
+        description: 'Aradığınız ShareVibe sayfası bulunamadı.',
+        type: 'website',
+        url: window.location.href,
+        canonical: 'https://sharevibe.co/',
+      });
+      trackPageView('/404', '404 - ShareVibe', 'page');
+    }
+  }, [currentView, cafeName, activeCafeSlug, mediaItems]);
+
+  useEffect(() => {
+    if (previousViewRef.current === currentView) {
+      return;
+    }
+
+    previousViewRef.current = currentView;
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [currentView]);
+
+  const stopDesktopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+
+    setIsDesktopCameraOpen(false);
+  };
+
+  const clearUploadInputValues = () => {
+    for (const input of [cameraInputRef.current]) {
+      if (input) {
+        input.value = '';
+      }
+    }
+  };
+
+  const resetUploadComposer = () => {
+    setPreviewUrl(null);
+    setSelectedFile(null);
+    setCaption('');
+    setUploadError(null);
+    setUploadStatus(null);
+    setUploadProgress(null);
+    setEditRotation(0);
+    setEditBrightness(100);
+    setEditContrast(100);
+    stopDesktopCamera();
+    clearUploadInputValues();
+  };
+
+  const ensureGoogleUser = async ({
+    beforeRedirect,
+    statusMessage,
+  }: {
+    beforeRedirect?: () => Promise<void> | void;
+    statusMessage?: string;
+  } = {}) => {
+    await waitForAuthInitialization();
+
+    if (auth.currentUser) {
+      syncCurrentUser(auth.currentUser);
+      return auth.currentUser;
+    }
+
+    try {
+      if (statusMessage) {
+        setUploadStatus(statusMessage);
+      }
+
+      setUploadError(null);
+      const result = await signInWithGoogle({ beforeRedirect });
+
+      if (!result) {
+        return null;
+      }
+
+      syncCurrentUser(result.user);
+      // 📝 Audit: Log successful login
+      await auditLogger.logLogin(result.user.uid, result.user.email);
+      return result.user;
+    } catch (error) {
+      const message = getGoogleSignInErrorMessage(error);
+      setUploadError(message);
+      setUploadStatus(null);
+      console.error('Google ile giriş hatası:', error);
+      return null;
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      const user = auth.currentUser;
+      // 📝 Audit: Log logout
+      if (user) {
+        await auditLogger.logLogout(user.uid, user.email);
+      }
+      
+      await signOut(auth);
+      syncCurrentUser(null);
+      setCurrentView('app');
+      setOwnerAccessError(null);
+      setSelectedMediaId(null);
+      setShareMediaId(null);
+      setMediaToDelete(null);
+      setUploadStatus(null);
+      setUploadError(null);
+    } catch (error) {
+      console.error('Çıkış hatası:', error);
+    }
+  };
+
+  const handleSwitchOwnerAccount = async () => {
+    try {
+      await signOut(auth);
+      syncCurrentUser(null);
+      setOwnerAccessError(null);
+    } catch (error) {
+      console.error('Kafe sahibi hesabı değiştirirken çıkış hatası:', error);
+    }
+
+    await handleOpenOwnerPortal();
+  };
+
+  const handleOpenComposer = async () => {
+    setShowSharePrompt(false);
+    setCurrentView('app');
+    setSelectedMediaId(null);
+    setUploadError(null);
+    setUploadStatus(null);
+
+    if (auth.currentUser) {
+      setIsUploadModalOpen(true);
+      return;
+    }
+
+    const user = await ensureGoogleUser();
+    if (user) {
+      setIsUploadModalOpen(true);
+    }
+  };
+
+  const handleOpenAdminPanel = async () => {
+    setOwnerAccessError(null);
+
+    if (auth.currentUser) {
+      if (!canAccessActiveCafeAdmin) {
+        setUploadError('Bu kafe için yönetim paneli yetkiniz yok.');
+        return;
+      }
+
+      setCurrentView('admin');
+      return;
+    }
+
+    const user = await ensureGoogleUser();
+    if (user) {
+      const normalizedUserEmail = normalizeAccessEmail(user.email);
+      const canAccessAfterSignIn =
+        Boolean(normalizedUserEmail) &&
+        canAccessCafeAdmin(normalizedUserEmail, activeCafeSlug);
+
+      if (canAccessAfterSignIn) {
+        setCurrentView('admin');
+      } else {
+        setUploadError('Bu kafe için yönetim paneli yetkiniz yok.');
+      }
+    }
+  };
+
+  const handleOpenOwnerPortal = async () => {
+    setOwnerAccessError(null);
+    setCurrentView('owner');
+
+    if (auth.currentUser) {
+      syncCurrentUser(auth.currentUser);
+      if (!isLocalDevelopmentHost() && !hasOwnerPortalAccess(auth.currentUser.email)) {
+        setOwnerAccessError('Bu Google hesabı kafe sahibi veya Süper Sahip yetki listesinde değil.');
+        setCurrentView('landing');
+        return;
+      }
+
+      clearOwnerPortalIntent();
+      setCurrentView('owner');
+      return;
+    }
+
+    const user = await ensureGoogleUser({
+      beforeRedirect: () => rememberOwnerPortalIntent(),
+    });
+
+    if (!user) {
+      return;
+    }
+
+    clearOwnerPortalIntent();
+    if (!isLocalDevelopmentHost() && !hasOwnerPortalAccess(user.email)) {
+      setOwnerAccessError('Bu Google hesabı kafe sahibi veya Süper Sahip yetki listesinde değil.');
+      setCurrentView('landing');
+      return;
+    }
+
+    setCurrentView('owner');
+  };
+
+  const openCafeExperience = ({
+    cafeSlug = activeCafeSlug,
+    tableLabel = resolvedTableLabel || DEFAULT_DEMO_TABLE,
+  }: {
+    cafeSlug?: string;
+    tableLabel?: string;
+  } = {}) => {
+    setOwnerAccessError(null);
+    setActiveCafeSlug(normalizeCafeSlug(cafeSlug));
+    setResolvedTableLabel(normalizeTableLabel(tableLabel, ''));
+    setCurrentView('app');
+    setSelectedMediaId(null);
+    setShareMediaId(null);
+  };
+
+  const openLandingDemo = () => {
+    openCafeExperience({
+      cafeSlug: demoCafeSlug,
+      tableLabel: DEFAULT_DEMO_TABLE,
+    });
+  };
+
+  const handleHiddenAdminTrigger = () => {
+    if (hiddenAdminTapTimeoutRef.current) {
+      window.clearTimeout(hiddenAdminTapTimeoutRef.current);
+    }
+
+    hiddenAdminTapCountRef.current += 1;
+
+    if (hiddenAdminTapCountRef.current >= 5) {
+      hiddenAdminTapCountRef.current = 0;
+      hiddenAdminTapTimeoutRef.current = null;
+      void handleOpenAdminPanel();
+      return;
+    }
+
+    hiddenAdminTapTimeoutRef.current = window.setTimeout(() => {
+      hiddenAdminTapCountRef.current = 0;
+      hiddenAdminTapTimeoutRef.current = null;
+    }, 2500);
+  };
+
+  const handleMediaSelection = async (mediaId: string) => {
+    if (!auth.currentUser) {
+      const user = await ensureGoogleUser();
+      if (!user) {
+        return;
+      }
+    }
+
+    setSelectedMediaId(mediaId);
+  };
+
+  const buildUploadDraft = (): UploadDraft | null => {
+    if (!selectedFile || !resolvedTableLabel) {
+      return null;
+    }
+
+    return {
+      file: selectedFile,
+      caption,
+      cafeSlug: activeCafeSlug,
+      tableNumber: resolvedTableLabel,
+      editRotation,
+      editBrightness,
+      editContrast,
+    };
+  };
+
+  const countWeeklyUploadsForUser = (uid: string) => {
+    const oneWeekAgo = new Date();
+    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+
+    return mediaItems.filter(item => {
+      if (item.authorUid !== uid || item.cafeSlug !== activeCafeSlug) return false;
+      if (!item.createdAt) return true;
+      const itemDate = getMediaDate(item.createdAt);
+      if (!itemDate) return false;
+      return itemDate > oneWeekAgo;
+    }).length;
+  };
+
+  const countTotalUploadsForUser = (uid: string) =>
+    mediaItems.filter(item => item.authorUid === uid && item.cafeSlug === activeCafeSlug).length;
+
+  const buildRewardPreviewItems = (uid: string, latestUpload: RewardPreviewItem) =>
+    mediaItems
+      .filter((item) => item.authorUid === uid && item.cafeSlug === activeCafeSlug)
+      .slice(0, Math.max(0, campaignTarget - 1))
+      .map((item) => ({
+        id: item.id,
+        url: item.url,
+        caption: item.caption,
+      }))
+      .reverse()
+      .concat(latestUpload);
+
+  const loadImageFromFile = async (file: File) => {
+    const objectUrl = URL.createObjectURL(file);
+
+    try {
+      const image = new Image();
+      image.src = objectUrl;
+
+      await new Promise<void>((resolve, reject) => {
+        image.onload = () => resolve();
+        image.onerror = () => reject(new Error('Görsel yüklenemedi.'));
+      });
+
+      return image;
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
+  };
+
+  const prepareFileForUpload = async (draft: UploadDraft) => {
+    if (!draft.file.type.startsWith('image/')) {
+      throw new Error('Yalnız fotoğraf yükleyebilirsiniz.');
+    }
+
+    const hasEdits = draft.editRotation !== 0 || draft.editBrightness !== 100 || draft.editContrast !== 100;
+    const needsCompression = draft.file.size > MAX_UPLOAD_IMAGE_SIZE;
+
+    setUploadStatus('Fotoğraf optimize ediliyor...');
+    await new Promise<void>((resolve) => {
+      window.requestAnimationFrame(() => resolve());
+    });
+    const image = await loadImageFromFile(draft.file);
+    const scaleRatio = Math.min(1, MAX_UPLOAD_IMAGE_DIMENSION / Math.max(image.width, image.height));
+    const targetWidth = Math.max(1, Math.round(image.width * scaleRatio));
+    const targetHeight = Math.max(1, Math.round(image.height * scaleRatio));
+    const needsResize = targetWidth !== image.width || targetHeight !== image.height;
+
+    if (!hasEdits && !needsResize && !needsCompression) {
+      return draft.file;
+    }
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+
+    if (!ctx) {
+      return draft.file;
+    }
+
+    if (Math.abs(draft.editRotation % 180) === 90) {
+      canvas.width = targetHeight;
+      canvas.height = targetWidth;
+    } else {
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+    }
+
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.rotate((draft.editRotation * Math.PI) / 180);
+    ctx.filter = `brightness(${draft.editBrightness}%) contrast(${draft.editContrast}%)`;
+    ctx.drawImage(image, -targetWidth / 2, -targetHeight / 2, targetWidth, targetHeight);
+
+    const blob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob(resolve, 'image/jpeg', 0.82);
+    });
+
+    if (!blob) {
+      return draft.file;
+    }
+
+    const fileNameWithoutExtension = draft.file.name.replace(/\.[^.]+$/, '') || 'photo';
+    return new File([blob], `${fileNameWithoutExtension}.jpg`, { type: 'image/jpeg' });
+  };
+
+  const performUpload = async (draft: UploadDraft, uid: string) => {
+    if (!uid) {
+      setUploadStatus(null);
+      setUploadError('Giriş bilgisi doğrulanamadı. Lütfen tekrar deneyin.');
+      return;
+    }
+
+    await auth.currentUser?.getIdToken(true);
+
+    if (countWeeklyUploadsForUser(uid) >= MAX_WEEKLY_UPLOADS) {
+      setUploadError(`Haftalık paylaşım limitinize (${MAX_WEEKLY_UPLOADS}) ulaştınız. Lütfen daha sonra tekrar deneyin.`);
+      setUploadStatus(null);
+      setUploadProgress(null);
+      return false;
+    }
+
+    setIsSaving(true);
+    setUploadError(null);
+    setUploadProgress(0);
+    setUploadStatus('Medya yükleniyor...');
+
+    try {
+      const fileToUpload = await prepareFileForUpload(draft);
+      const uploadCafeSlug = validateAndSanitizeCafeSlug(draft.cafeSlug) ?? normalizeCafeSlug(draft.cafeSlug, DEFAULT_CAFE_SLUG);
+      const fileExtension = fileToUpload.name.split('.').pop() || 'jpg';
+      const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExtension}`;
+      const storageRef = ref(storage, `media/${uploadCafeSlug}/${fileName}`);
+      const uploadedAt = Date.now().toString();
+      const uploadTask = uploadBytesResumable(storageRef, fileToUpload, {
+        contentType: fileToUpload.type || 'image/jpeg',
+        customMetadata: {
+          uploaderUid: uid,
+          cafeSlug: uploadCafeSlug,
+          uploadedAt,
+        },
+      });
+
+      await new Promise<void>((resolve, reject) => {
+        uploadTask.on(
+          'state_changed',
+          (snapshot) => {
+            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+            setUploadProgress(progress);
+            setUploadStatus(`Yükleniyor... %${Math.round(progress)}`);
+          },
+          reject,
+          resolve
+        );
+      });
+
+      setUploadStatus('Bağlantı alınıyor...');
+      const downloadUrl = await getDownloadURL(storageRef);
+      const now = new Date();
+      const timeString = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+
+      setUploadStatus('Veritabanına kaydediliyor...');
+      // ✅ XSS Qoruması: Caption-u təmizlə
+      const sanitizedCaption = validateAndSanitizeCaption(draft.caption) || DEFAULT_MEDIA_CAPTION;
+      
+      const mediaDocRef = await addDoc(collection(db, 'media'), {
+        url: downloadUrl,
+        type: 'image',
+        caption: normalizeLegacyText(sanitizedCaption, DEFAULT_MEDIA_CAPTION),
+        likedBy: [],
+        likesCount: 0,
+        viewsCount: 0,
+        shareCount: 0,
+        qrInteractionCount: 1,
+        rotation: Math.random() * 6 - 3,
+        date: timeString,
+        tableNumber: draft.tableNumber,
+        cafeSlug: uploadCafeSlug,
+        cafeName,
+        authorUid: uid,
+        createdAt: serverTimestamp()
+      });
+
+      // 📝 Audit: Log media upload
+      const user = auth.currentUser;
+      await auditLogger.logMediaUpload(
+        uid,
+        user?.email || null,
+        mediaDocRef.id,
+        uploadCafeSlug,
+        sanitizedCaption
+      );
+
+      void emailService
+        .syncCurrentVisitorCustomer(uid, uploadCafeSlug, 'photo_share')
+        .catch((syncError) => {
+          console.warn('Visitor upload interaction sync failed:', syncError);
+        });
+
+      const totalUploadsAfterSave = countTotalUploadsForUser(uid) + 1;
+      if (campaignTarget > 0 && totalUploadsAfterSave % campaignTarget === 0) {
+        setRewardCelebration({
+          items: buildRewardPreviewItems(uid, {
+            id: `reward-${Date.now()}`,
+            url: downloadUrl,
+            caption: normalizeLegacyText(sanitizedCaption, DEFAULT_MEDIA_CAPTION),
+          }),
+          target: campaignTarget,
+        });
+      }
+
+      void discardPendingUpload();
+      setPendingRedirectUpload(null);
+      setUploadStatus(null);
+      setUploadProgress(null);
+      setIsUploadModalOpen(false);
+      resetUploadComposer();
+
+      return true;
+    } catch (error: any) {
+      console.error("Error uploading media:", error);
+      setUploadError(getUploadErrorMessage(error));
+      setUploadStatus(null);
+      setUploadProgress(null);
+      return false;
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    document.documentElement.style.setProperty('--color-accent', accentColor);
+    localStorage.setItem('theme_accent', accentColor);
+  }, [accentColor]);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty('--font-handwriting', handwritingFont);
+    localStorage.setItem('theme_font', handwritingFont);
+  }, [handwritingFont]);
+
+  useEffect(() => {
+    if (!previewUrl) {
+      return;
+    }
+
+    return () => {
+      URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
+
+  useEffect(() => {
+    if (!isDesktopCameraOpen || !videoRef.current || !streamRef.current) {
+      return;
+    }
+
+    const videoElement = videoRef.current;
+    videoElement.srcObject = streamRef.current;
+
+    const ensurePlayback = async () => {
+      try {
+        await videoElement.play();
+      } catch (error) {
+        console.error('Desktop camera playback failed:', error);
+      }
+    };
+
+    void ensurePlayback();
+  }, [isDesktopCameraOpen]);
+
+  useEffect(() => () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    if (hiddenAdminTapTimeoutRef.current) {
+      window.clearTimeout(hiddenAdminTapTimeoutRef.current);
+      hiddenAdminTapTimeoutRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    const resolveDemoCafe = async () => {
+      try {
+        const [cafesResult, mediaResult] = await Promise.allSettled([
+          getDocs(collection(db, 'cafes')),
+          getDocs(collection(db, 'media')),
+        ]);
+
+        if (isCancelled) {
+          return;
+        }
+
+        const mediaCountBySlug = new Map<string, number>();
+        if (mediaResult.status === 'fulfilled') {
+          mediaResult.value.docs.forEach((entry) => {
+            const data = entry.data();
+            if (data.type === 'video') {
+              return;
+            }
+
+            const slug = normalizeCafeSlug(data.cafeSlug ?? DEFAULT_CAFE_SLUG);
+            mediaCountBySlug.set(slug, (mediaCountBySlug.get(slug) ?? 0) + 1);
+          });
+        }
+
+        const cafes = new Map<string, DemoCafeCandidate>();
+        if (cafesResult.status === 'fulfilled') {
+          cafesResult.value.docs.forEach((entry) => {
+            const data = entry.data();
+            const slug = normalizeCafeSlug(data.cafeSlug ?? entry.id, entry.id);
+            cafes.set(slug, {
+              slug,
+              cafeName: normalizeLegacyText(data.cafeName, DEFAULT_CAFE_NAME),
+              mediaCount: mediaCountBySlug.get(slug) ?? 0,
+            });
+          });
+        }
+
+        if (mediaCountBySlug.has(DEFAULT_CAFE_SLUG) && !cafes.has(DEFAULT_CAFE_SLUG)) {
+          cafes.set(DEFAULT_CAFE_SLUG, {
+            slug: DEFAULT_CAFE_SLUG,
+            cafeName: DEFAULT_CAFE_NAME,
+            mediaCount: mediaCountBySlug.get(DEFAULT_CAFE_SLUG) ?? 0,
+          });
+        }
+
+        const preferredCafe = pickPreferredDemoCafe([...cafes.values()]);
+
+        if (!preferredCafe) {
+          return;
+        }
+
+        setDemoCafeSlug(preferredCafe.slug);
+        setDemoCafeName(preferredCafe.cafeName);
+      } catch (error) {
+        console.warn('Demo kafe belirlenemedi:', error);
+      }
+    };
+
+    void resolveDemoCafe();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+
+    if (currentView === 'notFound') {
+      return;
+    }
+
+    if (currentView === 'landing') {
+      const normalizedPath = normalizeRoutePath(url.pathname);
+      url.pathname = PUBLIC_LANDING_PATHS.has(normalizedPath) ? normalizedPath : '/';
+      url.searchParams.delete('screen');
+      url.searchParams.delete('cafe');
+      url.searchParams.delete('table');
+      url.searchParams.delete('masa');
+      url.searchParams.delete('media');
+      window.history.replaceState({}, '', url);
+      return;
+    }
+
+    if (currentView === 'admin' || currentView === 'owner') {
+      url.pathname = currentView === 'admin' ? '/admin' : '/owner';
+      url.searchParams.delete('screen');
+      url.searchParams.delete('cafe');
+      url.searchParams.delete('table');
+      url.searchParams.delete('masa');
+      url.searchParams.delete('media');
+      window.history.replaceState({}, '', url);
+      return;
+    }
+
+    if (currentView === 'app') {
+      url.pathname = `/cafe/${encodeURIComponent(activeCafeSlug)}`;
+      url.searchParams.delete('screen');
+      url.searchParams.delete('cafe');
+
+      if (resolvedTableLabel) {
+        url.searchParams.set('table', resolvedTableLabel);
+      } else {
+        url.searchParams.delete('table');
+      }
+
+      if (selectedMediaId) {
+        url.searchParams.set('media', selectedMediaId);
+      } else {
+        url.searchParams.delete('media');
+      }
+
+      window.history.replaceState({}, '', url);
+    }
+  }, [activeCafeSlug, currentView, resolvedTableLabel, selectedMediaId]);
+
+  useEffect(() => {
+    if (!isAuthResolved || !isGoogleRedirectResolved) {
+      return;
+    }
+
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    if (window.sessionStorage.getItem(OWNER_PORTAL_INTENT_KEY) !== '1') {
+      return;
+    }
+
+    clearOwnerPortalIntent();
+
+    if (!currentUserEmail) {
+      return;
+    }
+    setOwnerAccessError(null);
+    setCurrentView('owner');
+  }, [currentUserEmail, isAuthResolved, isGoogleRedirectResolved]);
+
+  useEffect(() => {
+    if (currentView !== 'owner' || !currentUserEmail) {
+      return;
+    }
+    setOwnerAccessError(null);
+  }, [currentUserEmail, currentView]);
+
+  useEffect(() => {
+    if (!isAuthResolved || !isGoogleRedirectResolved || currentView !== 'app' || !resolvedTableLabel) {
+      return;
+    }
+
+    if (sharePromptScheduledRef.current) {
+      return;
+    }
+
+    if (window.sessionStorage.getItem('share-vibe-promo-seen') === '1') {
+      return;
+    }
+
+    sharePromptScheduledRef.current = true;
+    const timeout = window.setTimeout(() => {
+      window.sessionStorage.setItem('share-vibe-promo-seen', '1');
+      setShowSharePrompt(true);
+    }, 18000 + Math.round(Math.random() * 18000));
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [currentView, isAuthResolved, isGoogleRedirectResolved, resolvedTableLabel]);
+
+  useEffect(() => {
+    if (currentView !== 'app' || !isUploadModalOpen) {
+      return;
+    }
+
+    setShowSharePrompt(false);
+  }, [currentView, isUploadModalOpen]);
+
+  useEffect(() => {
+    const unsubscribeSettings = onSnapshot(doc(db, 'cafes', activeCafeSlug), (snapshot) => {
+      if (!snapshot.exists()) {
+        setAccentColor(DEFAULT_ACCENT_COLOR);
+        setHandwritingFont(DEFAULT_HANDWRITING_FONT);
+        setCafeName(DEFAULT_CAFE_NAME);
+        setCampaignTarget(DEFAULT_CAMPAIGN_TARGET);
+        setCampaignReward(DEFAULT_CAMPAIGN_REWARD);
+        setActiveCafeOwnerEmail(null);
+        setActiveCafeAdminEmails([]);
+        return;
+      }
+
+      const data = snapshot.data();
+      const normalizedOwnerEmail = normalizeAccessEmail(data.ownerEmail);
+      const configuredAdminEmails = [
+        ...(Array.isArray(data.adminEmails) ? data.adminEmails : []),
+        ...(Array.isArray(data.admins) ? data.admins : []),
+      ]
+        .filter((entry): entry is string => typeof entry === 'string')
+        .map((entry) => normalizeAccessEmail(entry))
+        .filter(Boolean);
+
+      setActiveCafeOwnerEmail(normalizedOwnerEmail || null);
+      setActiveCafeAdminEmails(Array.from(new Set(configuredAdminEmails)));
+
+      if (typeof data.accentColor === 'string' && data.accentColor) {
+        setAccentColor(data.accentColor);
+      } else {
+        setAccentColor(DEFAULT_ACCENT_COLOR);
+      }
+
+      setHandwritingFont(normalizeHandwritingFont(data.handwritingFont));
+      setCafeName(normalizeLegacyText(data.cafeName, DEFAULT_CAFE_NAME));
+
+      if (typeof data.campaignTarget === 'number' && Number.isFinite(data.campaignTarget)) {
+        setCampaignTarget(data.campaignTarget);
+      } else {
+        setCampaignTarget(DEFAULT_CAMPAIGN_TARGET);
+      }
+
+      setCampaignReward(normalizeLegacyText(data.campaignReward, DEFAULT_CAMPAIGN_REWARD));
+      setActiveStoryTemplateUrl(typeof data.activeStoryTemplateUrl === 'string' ? data.activeStoryTemplateUrl : null);
+    });
+
+    return () => unsubscribeSettings();
+  }, [activeCafeSlug]);
+
+  useEffect(() => {
+    const unsubscribeCampaigns = onSnapshot(
+      query(collection(db, 'cafes', activeCafeSlug, 'campaigns'), orderBy('createdAt', 'desc')),
+      (snapshot) => {
+        const campaigns: PublicCampaign[] = [];
+
+        snapshot.forEach((entry) => {
+          const data = entry.data();
+          const subject = normalizeLegacyText(data.subject, '').trim();
+          const description = normalizeLegacyText(data.description, '').trim();
+          const textContent = normalizeLegacyText(data.textContent, description);
+
+          campaigns.push({
+            id: entry.id,
+            subject: subject || 'Kampanya',
+            description: description || textContent || '',
+            imageUrl: typeof data.imageUrl === 'string' && data.imageUrl ? data.imageUrl : null,
+            textContent: textContent || description || subject || '',
+            status: typeof data.status === 'string' ? data.status : 'published',
+            tag: typeof data.tag === 'string' ? data.tag : null,
+          });
+        });
+
+        setPublicCampaigns(campaigns);
+      },
+      (error) => {
+        console.error('Error fetching cafe campaigns:', error);
+        setPublicCampaigns([]);
+      }
+    );
+
+    return () => unsubscribeCampaigns();
+  }, [activeCafeSlug]);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    const resolveGoogleRedirect = async () => {
+      try {
+        const [redirectResult, pendingUpload] = await Promise.all([
+          resolveGoogleSignInRedirect(),
+          getPendingUpload().catch((error) => {
+            console.warn('Bekleyen yükleme geri yüklenemedi:', error);
+            return null;
+          }),
+        ]);
+
+        if (isCancelled) {
+          return;
+        }
+
+        if (redirectResult) {
+          syncCurrentUser(redirectResult.user);
+        }
+
+        if (pendingUpload) {
+          setPendingRedirectUpload(pendingUpload);
+        }
+      } catch (error) {
+        console.error('Google yönlendirmesi çözümlenemedi:', error);
+        await discardPendingUpload();
+
+        if (!isCancelled) {
+          setUploadError(getGoogleSignInErrorMessage(error));
+          setUploadStatus(null);
+          setUploadProgress(null);
+          setPendingRedirectUpload(null);
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsGoogleRedirectResolved(true);
+        }
+      }
+    };
+
+    void resolveGoogleRedirect();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      syncCurrentUser(user);
+      setIsAuthResolved(true);
+    });
+
+    return () => unsubscribeAuth();
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthResolved) {
+      setMediaItems([]);
+      setIsMediaItemsReady(false);
+      return;
+    }
+
+    setIsMediaItemsReady(false);
+    const applySnapshot = (snapshot: { forEach: (cb: (doc: any) => void) => void }) => {
+      const items: MediaItem[] = [];
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        if (data.type === 'video') {
+          return;
+        }
+
+        items.push({
+          id: doc.id,
+          url: typeof data.url === 'string' ? data.url : '',
+          type: 'image',
+          caption: normalizeLegacyText(data.caption, DEFAULT_MEDIA_CAPTION),
+          likesCount: typeof data.likesCount === 'number' ? data.likesCount : 0,
+          likedBy: Array.isArray(data.likedBy)
+            ? data.likedBy.filter((value: unknown): value is string => typeof value === 'string')
+            : [],
+          rotation: typeof data.rotation === 'number' ? data.rotation : 0,
+          date: normalizeLegacyText(data.date, '--:--'),
+          tableNumber: normalizeTableLabel(data.tableNumber, 'Masa'),
+          cafeSlug: normalizeCafeSlug(data.cafeSlug ?? DEFAULT_CAFE_SLUG),
+          authorUid: typeof data.authorUid === 'string' ? data.authorUid : '',
+          createdAt: data.createdAt
+        });
+      });
+      startTransition(() => {
+        setFailedMediaIds({});
+        setMediaItems(items);
+        setIsMediaItemsReady(true);
+      });
+    };
+
+    const optimizedQuery = query(
+      collection(db, 'media'),
+      where('cafeSlug', '==', activeCafeSlug),
+      orderBy('createdAt', 'desc'),
+      limit(100)
+    );
+
+    const fallbackQuery = query(collection(db, 'media'), orderBy('createdAt', 'desc'), limit(100));
+    let fallbackUnsubscribe: (() => void) | null = null;
+
+    const optimizedUnsubscribe = onSnapshot(
+      optimizedQuery,
+      (snapshot) => {
+        applySnapshot(snapshot);
+      },
+      (error) => {
+        // If a composite index is missing, fall back to the previous global query behavior.
+        console.warn('Optimized media query failed, falling back to global feed query:', error);
+        fallbackUnsubscribe = onSnapshot(
+          fallbackQuery,
+          (snapshot) => {
+            applySnapshot(snapshot);
+          },
+          (fallbackError) => {
+            console.error('Error fetching media:', fallbackError);
+            setIsMediaItemsReady(true);
+          }
+        );
+      }
+    );
+
+    return () => {
+      optimizedUnsubscribe();
+      if (fallbackUnsubscribe) {
+        fallbackUnsubscribe();
+      }
+    };
+  }, [isAuthResolved, activeCafeSlug]);
+
+  useEffect(() => {
+    if (
+      !pendingRedirectUpload ||
+      resumedPendingUploadRef.current ||
+      !isAuthResolved ||
+      !isGoogleRedirectResolved ||
+      !isMediaItemsReady ||
+      !currentUserUid
+    ) {
+      return;
+    }
+
+    resumedPendingUploadRef.current = true;
+    setActiveCafeSlug(normalizeCafeSlug(pendingRedirectUpload.cafeSlug, activeCafeSlug));
+    setResolvedTableLabel(normalizeTableLabel(pendingRedirectUpload.tableNumber, ''));
+    setCurrentView('app');
+    setIsUploadModalOpen(true);
+    setSelectedFile(pendingRedirectUpload.file);
+    setPreviewUrl(URL.createObjectURL(pendingRedirectUpload.file));
+    setCaption(pendingRedirectUpload.caption);
+    setEditRotation(pendingRedirectUpload.editRotation);
+    setEditBrightness(pendingRedirectUpload.editBrightness);
+    setEditContrast(pendingRedirectUpload.editContrast);
+    setUploadError(null);
+    setUploadStatus('Google girişi tamamlandı. Paylaşım gönderiliyor...');
+
+    void performUpload(pendingRedirectUpload, currentUserUid).finally(() => {
+      void discardPendingUpload();
+      setPendingRedirectUpload(null);
+    });
+  }, [
+    pendingRedirectUpload,
+    isAuthResolved,
+    isGoogleRedirectResolved,
+    isMediaItemsReady,
+    currentUserUid,
+    mediaItems,
+    campaignTarget,
+    activeCafeSlug,
+  ]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const mediaParam = params.get('media');
+
+    if (mediaParam && mediaItems.some(item => item.id === mediaParam && item.cafeSlug === activeCafeSlug)) {
+      setSelectedMediaId(mediaParam);
+    }
+  }, [activeCafeSlug, mediaItems]);
+
+  useEffect(() => {
+    if (selectedMediaId && !mediaItems.some((item) => item.id === selectedMediaId && item.cafeSlug === activeCafeSlug)) {
+      setSelectedMediaId(null);
+    }
+  }, [activeCafeSlug, mediaItems, selectedMediaId]);
+
+  const handleUpload = async () => {
+    const draft = buildUploadDraft();
+
+    if (!draft) {
+      if (!resolvedTableLabel) {
+        setUploadError('Paylaşım için masa QR koduyla giriş yapılması gerekir.');
+      }
+      return;
+    }
+
+    let uid = currentUserUid ?? auth.currentUser?.uid ?? null;
+
+    if (!uid) {
+      const user = await ensureGoogleUser({
+        beforeRedirect: () => savePendingUpload(draft),
+        statusMessage: 'Google ile giriş açılıyor...',
+      });
+
+      if (!user) {
+        if (!auth.currentUser) {
+          setUploadStatus('Google girişi için yönlendiriliyorsunuz...');
+        }
+        return;
+      }
+
+      uid = user.uid;
+      void discardPendingUpload();
+      setUploadStatus('Giriş doğrulanıyor...');
+    }
+
+    if (!uid) {
+      setUploadStatus(null);
+      setUploadError('Giriş bilgisi doğrulanamadı. Lütfen tekrar deneyin.');
+      return;
+    }
+
+    await performUpload(draft, uid);
+  };
+
+  const isMobileCameraDevice = () => {
+    if (typeof navigator === 'undefined') {
+      return false;
+    }
+
+    const userAgent = navigator.userAgent;
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent)
+      || (/Macintosh/i.test(userAgent) && navigator.maxTouchPoints > 1);
+  };
+
+  const startDesktopCamera = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setUploadError('Kamera açılamadı.');
+      return;
+    }
+
+    try {
+      stopDesktopCamera();
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
+        audio: false,
+      });
+
+      streamRef.current = stream;
+      setIsDesktopCameraOpen(true);
+    } catch (error) {
+      console.error('Desktop camera access failed:', error);
+      setUploadError('Kamera açılamadı.');
+      stopDesktopCamera();
+    }
+  };
+
+  const openUploadSource = () => {
+    setUploadError(null);
+    setUploadStatus(null);
+    setUploadProgress(null);
+
+    if (!resolvedTableLabel) {
+      setUploadError('Paylaşım için masa QR koduyla giriş yapılması gerekir.');
+      return;
+    }
+
+    if (isMobileCameraDevice()) {
+      cameraInputRef.current?.click();
+      return;
+    }
+
+    void startDesktopCamera();
+  };
+
+  const handleSelectedFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+
+    if (!file) {
+      return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+      setUploadError('Yalnız fotoğraf yükleyebilirsiniz.');
+      return;
+    }
+
+    setSelectedFile(file);
+    setPreviewUrl(URL.createObjectURL(file));
+    setUploadError(null);
+    setUploadStatus(null);
+    setUploadProgress(null);
+    setEditRotation(0);
+    setEditBrightness(100);
+    setEditContrast(100);
+  };
+
+  const captureDesktopPhoto = () => {
+    if (!videoRef.current) {
+      return;
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = videoRef.current.videoWidth;
+    canvas.height = videoRef.current.videoHeight;
+    const ctx = canvas.getContext('2d');
+
+    if (!ctx) {
+      return;
+    }
+
+    ctx.translate(canvas.width, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(videoRef.current, 0, 0);
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        return;
+      }
+
+      const file = new File([blob], `photo_${Date.now()}.jpg`, { type: 'image/jpeg' });
+      setSelectedFile(file);
+      setPreviewUrl(URL.createObjectURL(file));
+      setUploadError(null);
+      setUploadStatus(null);
+      setUploadProgress(null);
+      setEditRotation(0);
+      setEditBrightness(100);
+      setEditContrast(100);
+      stopDesktopCamera();
+    }, 'image/jpeg', 0.92);
+  };
+
+  const cancelUpload = () => {
+    setIsUploadModalOpen(false);
+    resetUploadComposer();
+  };
+
+  const toggleLike = useCallback(async (id: string, e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    
+    let uid = currentUserUid ?? auth.currentUser?.uid ?? null;
+    if (!uid) {
+      const user = await ensureGoogleUser();
+      if (!user) {
+        return;
+      }
+
+      uid = user.uid;
+    }
+
+    await auth.currentUser?.getIdToken(true);
+
+    const item = getMediaItemById(id);
+    if (!item) return;
+
+    const isLiked = item.likedBy.includes(uid);
+    const docRef = doc(db, 'media', id);
+
+    try {
+      if (isLiked) {
+        await updateDoc(docRef, {
+          likedBy: arrayRemove(uid),
+          likesCount: item.likesCount - 1
+        });
+      } else {
+        await updateDoc(docRef, {
+          likedBy: arrayUnion(uid),
+          likesCount: item.likesCount + 1
+        });
+      }
+    } catch (error) {
+      console.error("Error toggling like:", error);
+    }
+  }, [currentUserUid, getMediaItemById]);
+
+  const handleDelete = useCallback((id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setMediaToDelete(id);
+  }, []);
+
+  const confirmDelete = useCallback(async () => {
+    if (!mediaToDelete) return;
+    const id = mediaToDelete;
+    setMediaToDelete(null);
+
+    try {
+      const item = getMediaItemById(id);
+      await deleteMediaRecord(id, item?.url);
+      if (selectedMediaId === id) {
+        setSelectedMediaId(null);
+      }
+    } catch (error) {
+      console.error("Error deleting media:", error);
+      setUploadError("Silme işlemi başarısız oldu.");
+    }
+  }, [mediaToDelete, getMediaItemById, selectedMediaId]);
+
+  const handleCopyLink = useCallback(async (id: string) => {
+    const item = getMediaItemById(id);
+    const url = buildCafePublicLink({
+      origin: window.location.origin,
+      cafeSlug: item?.cafeSlug ?? activeCafeSlug,
+      tableLabel: item?.tableNumber ?? resolvedTableLabel,
+    });
+    const shareUrl = new URL(url);
+    shareUrl.searchParams.set('media', id);
+
+    try {
+      await navigator.clipboard.writeText(shareUrl.toString());
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    } catch (error) {
+      console.error('Kopyalama hatası:', error);
+      window.prompt('Bağlantıyı kopyalayın:', shareUrl.toString());
+    }
+  }, [getMediaItemById, activeCafeSlug, resolvedTableLabel]);
+
+  const shareToInstagramStory = useCallback(async (mediaId: string) => {
+    if (isStoryShareBusy) {
+      return;
+    }
+
+    const item = getMediaItemById(mediaId);
+    if (!item) return;
+
+    setIsStoryShareBusy(true);
+    setShareNotice({ tone: 'info', text: 'Story görseli hazırlanıyor...' });
+
+    try {
+      const result = await storyShareService({
+        mediaId,
+        photoUrl: item.url,
+        activeStoryTemplateUrl,
+        onShare: async () => {
+          try {
+            await updateDoc(doc(db, 'media', mediaId), {
+              shareCount: increment(1),
+              lastStorySharedAt: serverTimestamp(),
+              shareSources: arrayUnion('instagram_story'),
+            });
+          } catch (e) { console.warn('[Share] Firestore update failed:', e); }
+        },
+      });
+      setShareNotice({ tone: 'success', text: result.message });
+    } catch (err: any) {
+      console.error('[Share] Error:', err?.message);
+      setShareNotice({
+        tone: 'error',
+        text: err?.message || 'Story paylaşımı tamamlanamadı. Lütfen tekrar deneyin.',
+      });
+    } finally {
+      setIsStoryShareBusy(false);
+    }
+  }, [getMediaItemById, activeStoryTemplateUrl, isStoryShareBusy]);
+
+  useEffect(() => {
+    if (!shareMediaId) {
+      setIsStoryShareBusy(false);
+      setShareNotice(null);
+      setIsCopied(false);
+    }
+  }, [shareMediaId]);
+
+  const cafeMediaItems = useMemo(
+    () => mediaItems.filter((item) => item.cafeSlug === activeCafeSlug),
+    [mediaItems, activeCafeSlug]
+  );
+  const selectedMedia = isAuthenticated && selectedMediaId ? getMediaItemById(selectedMediaId) ?? null : null;
+  const deferredMediaItems = useDeferredValue(cafeMediaItems);
+  const isGuestPreview = !isAuthenticated;
+  const visiblePublicCampaigns = useMemo(
+    () => publicCampaigns.filter((campaign) => campaign.status === 'published'),
+    [publicCampaigns]
+  );
+  const featuredPublicCampaign = visiblePublicCampaigns[0] ?? null;
+  const appHeroPreviewItems = useMemo(() => {
+    const liveItems = isAuthenticated
+      ? cafeMediaItems
+          .filter((item) => item.url && !failedMediaIds[item.id])
+          .slice(0, 3)
+          .map((item) => ({
+            id: item.id,
+            url: item.url,
+            caption: item.caption,
+            tableNumber: item.tableNumber,
+          }))
+      : [];
+    const fallbackItems = APP_EXPERIENCE_IMAGES.map((url, index) => ({
+      id: `fallback-${index}`,
+      url,
+      caption: index === 0 ? 'Kahve anı' : index === 1 ? 'Masa paylaşımı' : 'Kafe atmosferi',
+      tableNumber: resolvedTableLabel || cafeName,
+    }));
+
+    return [...liveItems, ...fallbackItems].slice(0, 3);
+  }, [cafeMediaItems, cafeName, failedMediaIds, isAuthenticated, resolvedTableLabel]);
+  const rewardPreviewItems = rewardCelebration?.items ?? [];
+  const rewardShowcaseItems = useMemo(
+    () =>
+      Array.from({ length: Math.max(rewardCelebration?.target ?? 0, 0) }, (_, index) =>
+        rewardPreviewItems[index] ?? null
+      ),
+    [rewardCelebration?.target, rewardPreviewItems]
+  );
+
+  if (currentView !== 'landing' && currentView !== 'notFound' && (!isAuthResolved || !isGoogleRedirectResolved)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4 text-cafe-50">
+        <div className="section-shell max-w-md text-center">
+          <BrandSignature className="mx-auto mb-5 justify-center" compact subtitle="giriş hazırlanıyor" />
+          <h1 className="text-2xl font-semibold text-cafe-50">Hesap durumu kontrol ediliyor</h1>
+          <p className="mt-3 text-sm leading-7 text-cafe-100/70">
+            Google oturumun doğrulanıyor. Giriş yaptıysan hesabın otomatik olarak geri yüklenecek.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (currentView === 'notFound') {
+    return (
+      <div className="not-found-root min-h-screen font-sans text-cafe-50">
+        <AnimatedBackground />
+        <main className="not-found-card" aria-labelledby="not-found-title">
+          <button
+            type="button"
+            className="not-found-brand"
+            onClick={() => setCurrentView('landing')}
+            aria-label="ShareVibe ana sayfasına dön"
+          >
+            <BrandSignature compact subtitle={null} />
+          </button>
+          <div className="not-found-icon" aria-hidden="true">
+            <AlertTriangle className="h-7 w-7" />
+          </div>
+          <p className="not-found-kicker">404 / URL bulunamadı</p>
+          <h1 id="not-found-title">Aradığınız sayfa ShareVibe içinde bulunamadı.</h1>
+          <p>
+            Bu bağlantı taşınmış, hatalı yazılmış veya artık yayında olmayabilir. Ana sayfadan devam edebilir ya da aktif kafe deneyimine dönebilirsiniz.
+          </p>
+          <div className="not-found-actions">
+            <button type="button" className="not-found-primary" onClick={() => setCurrentView('landing')}>
+              Ana Sayfaya Dön
+            </button>
+            <button
+              type="button"
+              className="not-found-secondary"
+              onClick={() =>
+                openCafeExperience({
+                  cafeSlug: activeCafeSlug,
+                  tableLabel: resolvedTableLabel || DEFAULT_DEMO_TABLE,
+                })
+              }
+            >
+              Kafe Deneyimini Aç
+            </button>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  if (currentView === 'admin') {
+    return (
+      <Suspense
+        fallback={
+          <div className="min-h-screen flex items-center justify-center px-4 text-cafe-50">
+            <div className="section-shell max-w-md text-center">
+              <BrandSignature className="mx-auto mb-5 justify-center" compact subtitle="yönetim modülü yükleniyor" />
+              <h1 className="text-2xl font-semibold text-cafe-50">Yönetim paneli yükleniyor</h1>
+              <p className="mt-3 text-sm leading-7 text-cafe-100/70">
+                Yönetim modülü ayrı yüklendiği için açılış performansı korunuyor.
+              </p>
+            </div>
+          </div>
+        }
+      >
+        <AdminPanel
+          cafeSlug={activeCafeSlug}
+          onCafeSlugChange={setActiveCafeSlug}
+          onBack={() => setCurrentView('landing')}
+          portalMode="admin"
+          currentUserEmail={currentUserEmail}
+          currentUserVerified={auth.currentUser?.emailVerified ?? null}
+          onOpenCafeEnvironment={(slug) =>
+            openCafeExperience({
+              cafeSlug: slug,
+              tableLabel: DEFAULT_DEMO_TABLE,
+            })
+          }
+        />
+      </Suspense>
+    );
+  }
+
+  if (currentView === 'owner') {
+    return (
+      <Suspense
+        fallback={
+          <div className="min-h-screen flex items-center justify-center px-4 text-cafe-50">
+            <div className="section-shell max-w-md text-center">
+              <BrandSignature className="mx-auto mb-5 justify-center" compact subtitle="kafe sahibi alanı yükleniyor" />
+              <h1 className="text-2xl font-semibold text-cafe-50">Kafe sahibi paneli yükleniyor</h1>
+              <p className="mt-3 text-sm leading-7 text-cafe-100/70">
+                Kafe kurulum modülü hazırlanıyor.
+              </p>
+            </div>
+          </div>
+        }
+      >
+        <AdminPanel
+          cafeSlug={activeCafeSlug}
+          onCafeSlugChange={setActiveCafeSlug}
+          onBack={() => setCurrentView('landing')}
+          portalMode="owner"
+          currentUserEmail={currentUserEmail}
+          currentUserVerified={auth.currentUser?.emailVerified ?? null}
+          onOpenCafeEnvironment={(slug) =>
+            openCafeExperience({
+              cafeSlug: slug,
+              tableLabel: DEFAULT_DEMO_TABLE,
+            })
+          }
+        />
+      </Suspense>
+    );
+  }
+
+  if (currentView === 'landing') {
+    return (
+      <div className="min-h-screen pb-20 font-sans selection:bg-accent/20 relative text-cafe-50">
+        <AnimatedBackground />
+        <div className="relative z-10">
+          <MainPage
+            onOpenDemo={openLandingDemo}
+            onOpenOwnerPortal={() => void handleOpenOwnerPortal()}
+            onSwitchOwnerAccount={() => void handleSwitchOwnerAccount()}
+            onHiddenAdminTrigger={handleHiddenAdminTrigger}
+            ownerEmail={currentUserEmail}
+            ownerAccessError={ownerAccessError}
+            hasOwnerAccess={hasOwnerAccess}
+            demoCafeName={demoCafeName}
+            initialRoutePath={getCurrentLandingPath()}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="app-experience-root min-h-screen pb-32 font-sans selection:bg-accent/20 relative text-cafe-50">
+      <AnimatedBackground />
+
+      <div className="relative z-10">
+        <header className="app-header">
+          <div className="app-header-inner">
+            <div className="header-bar app-header-bar">
+              <div className="header-brand app-header-brand">
+                <button
+                  type="button"
+                  onClick={() => setCurrentView('landing')}
+                  className="brand-signature-button brand-signature-button--app shrink-0"
+                  aria-label="ShareVibe logosu"
+                >
+                  <BrandSignature compact subtitle={null} />
+                </button>
+
+                <div className="app-header-title min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h1 className="truncate text-base sm:text-2xl font-serif font-semibold tracking-[0.02em] text-cafe-50">
+                      {cafeName}
+                    </h1>
+                    <span className="app-header-badge hidden md:inline-flex">
+                      Anı Galerisi
+                    </span>
+                  </div>
+                  <p className="hidden sm:block text-xs sm:text-sm text-cafe-100/76">
+                    ShareVibe ile fotoğrafını paylaş, anını galeride anında gör.
+                  </p>
+                </div>
+              </div>
+
+              <nav className="header-nav-shell app-header-nav" aria-label="Sayfa kısayolları">
+                <a href="#gallery" className="header-nav-link">Galeri</a>
+                <a href="#campaign" className="header-nav-link">Kampanya</a>
+              </nav>
+
+              <div className="header-actions app-header-actions">
+                {isAuthenticated && (
+                  <div
+                    className="app-share-limit hidden lg:flex"
+                    title={currentUserEmail ?? 'Google hesabı açık'}
+                  >
+                    <span className={`h-2.5 w-2.5 rounded-full ${userUploadsThisWeekCount >= MAX_WEEKLY_UPLOADS ? 'bg-red-500' : 'bg-accent'}`} />
+                    <span className="font-medium">
+                      {userUploadsThisWeekCount}/{MAX_WEEKLY_UPLOADS} paylaşım hakkı
+                    </span>
+                  </div>
+                )}
+
+                {isAuthenticated ? (
+                  <>
+                    <button
+                      onClick={() => void (canAccessActiveCafeAdmin ? handleOpenAdminPanel() : handleOpenOwnerPortal())}
+                      className="header-secondary-action"
+                      aria-label="Yönetim panelini aç"
+                    >
+                      <span className="sm:hidden">Panel</span>
+                      <span className="hidden sm:inline">Yönetim Paneli</span>
+                    </button>
+                    <button
+                      onClick={() => void handleOpenComposer()}
+                      className="header-primary-action"
+                    >
+                      <Camera className="w-4 h-4" />
+                      <span className="sm:hidden">Paylaş</span>
+                      <span className="hidden sm:inline">Fotoğraf Paylaş</span>
+                    </button>
+                    <button
+                      onClick={handleLogout}
+                      className="header-secondary-action hidden lg:inline-flex"
+                    >
+                      Çıkış
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={() => void ensureGoogleUser()}
+                    className="header-primary-action"
+                  >
+                    <span className="sm:hidden">Giriş</span>
+                    <span className="hidden sm:inline">Google ile Giriş Yap</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <main className="app-main max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-10 space-y-8 sm:space-y-10">
+          <motion.section
+            id="experience"
+            className="app-hero"
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <div className="app-hero-copy">
+              <div className="app-hero-status">
+                <span>{resolvedTableLabel || 'Masa bağlantısı'}</span>
+                <span>{isAuthenticated ? `${userUploadsThisWeekCount}/${MAX_WEEKLY_UPLOADS} paylaşım hakkı` : 'Google ile giriş gerekir'}</span>
+              </div>
+              <h2>Kafedeki güzel anları birkaç saniyede paylaşın.</h2>
+              <p>
+                Masanızı seçin, fotoğrafınızı ekleyin ve paylaşımınız anında galeride yerini alsın. Diğer misafirlerin bıraktığı anıları da tek akışta keşfedin.
+              </p>
+
+              <div className="app-hero-actions">
+                <button
+                  type="button"
+                  onClick={() => void handleOpenComposer()}
+                  className="app-primary-button"
+                >
+                  <Camera className="w-4 h-4" />
+                  {isAuthenticated ? 'Fotoğraf Paylaş' : 'Giriş Yap'}
+                </button>
+                <a href="#gallery" className="app-secondary-button">
+                  Galeriyi Gör
+                </a>
+              </div>
+
+              <div className="app-hero-proof" aria-label="Paylaşım özeti">
+                <span>
+                  <strong>{deferredMediaItems.length}</strong>
+                  canlı fotoğraf
+                </span>
+                {visiblePublicCampaigns.length > 0 ? (
+                  <span>
+                    <strong>{visiblePublicCampaigns.length}</strong>
+                    aktif kampanya
+                  </span>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="app-hero-visual" aria-hidden="true">
+              <div className="app-hero-stage">
+                <div className="app-stage-depth" />
+                <div className="app-stage-phone">
+                  <div className="app-stage-phone-top">
+                    <span>{cafeName}</span>
+                    <Camera className="h-4 w-4" />
+                  </div>
+                  <div className="app-stage-photo-grid">
+                    {appHeroPreviewItems.map((item, index) => (
+                      <motion.div
+                        key={item.id}
+                        className={`app-stage-photo app-stage-photo-${index + 1}`}
+                        initial={{ opacity: 0, rotateY: -12, y: 20 }}
+                        animate={{ opacity: 1, rotateY: 0, y: 0 }}
+                        transition={{ duration: 0.52, delay: 0.12 + index * 0.08, ease: [0.22, 1, 0.36, 1] }}
+                      >
+                        <img src={item.url} alt="" loading={index === 0 ? 'eager' : 'lazy'} decoding="async" referrerPolicy="no-referrer" />
+                        <span>{item.tableNumber}</span>
+                      </motion.div>
+                    ))}
+                  </div>
+                </div>
+                <motion.div
+                  className="app-stage-action"
+                  initial={{ opacity: 0, y: 14, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  transition={{ duration: 0.48, delay: 0.34, ease: [0.22, 1, 0.36, 1] }}
+                >
+                  <span><Sparkles className="h-4 w-4" /></span>
+                  <strong>Anı galeride hazır</strong>
+                  <small>{visiblePublicCampaigns.length > 0 ? 'Aktif kampanyalarla senkron' : 'Paylaşım akışına eklendi'}</small>
+                </motion.div>
+              </div>
+            </div>
+          </motion.section>
+
+          {visiblePublicCampaigns.length > 0 ? (
+            <motion.section
+              id="campaign"
+              className="app-campaign-section scroll-mt-28 lg:scroll-mt-32"
+              initial={{ opacity: 0, y: 18 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: '-80px' }}
+              transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <div className="app-campaign-copy">
+                <span className="section-pill">Aktif kampanyalar</span>
+                <h2>Kafedeki aktif kampanyalar</h2>
+                <p>
+                  Bu alanda yalnızca yönetim panelindeki Kampanyalar bölümünden yayına alınan kampanyalar görünür.
+                </p>
+                <div className="app-campaign-list">
+                  {visiblePublicCampaigns.slice(0, 4).map((campaign) => (
+                    <article key={campaign.id} className="app-campaign-card">
+                      {campaign.imageUrl ? (
+                        <img
+                          src={campaign.imageUrl}
+                          alt={campaign.subject}
+                          loading="lazy"
+                          decoding="async"
+                          referrerPolicy="no-referrer"
+                        />
+                      ) : (
+                        <span className="app-campaign-card-icon"><Gift className="h-4 w-4" /></span>
+                      )}
+                      <div>
+                        {campaign.tag ? <small>{campaign.tag}</small> : null}
+                        <h3>{campaign.subject}</h3>
+                        <p>{campaign.description || campaign.textContent}</p>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </div>
+            </motion.section>
+          ) : null}
+
+          <section id="gallery" className="app-gallery-section space-y-5 scroll-mt-28 lg:scroll-mt-32">
+            <div className="app-gallery-header flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div className="app-gallery-copy space-y-2">
+                <span className="section-pill">Canlı Galeri</span>
+                <h2 className="text-3xl sm:text-4xl font-serif font-semibold text-cafe-50">
+                  Son paylaşılan anlar
+                </h2>
+                <p className="max-w-2xl text-sm sm:text-base leading-7 text-cafe-100/72">
+                  Misafirlerin bıraktığı fotoğraflar burada listelenir. Giriş yapmayan kullanıcılar içerikleri bulanık önizleme olarak görür.
+                </p>
+              </div>
+
+              <div className="app-gallery-meta flex flex-wrap gap-2">
+                <div className="app-gallery-pill inline-flex items-center rounded-full border border-cafe-700/80 bg-cafe-900/72 px-4 py-2 text-sm text-cafe-50/84">
+                  {deferredMediaItems.length} fotoğraf
+                </div>
+                {featuredPublicCampaign ? (
+                  <div className="app-gallery-pill inline-flex items-center rounded-full border border-cafe-700/80 bg-cafe-900/72 px-4 py-2 text-sm text-cafe-50/84">
+                    Kampanya: {featuredPublicCampaign.subject}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            {deferredMediaItems.length === 0 ? (
+              <div className="section-shell text-center py-14">
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12 text-[color:var(--color-accent)]">
+                  <Camera className="w-6 h-6" />
+                </div>
+                <h3 className="text-2xl font-semibold text-cafe-50">Henüz paylaşım yok</h3>
+                <p className="mt-3 max-w-xl mx-auto text-sm sm:text-base leading-7 text-cafe-100/70">
+                  İlk fotoğrafı paylaşarak galeriyi başlatabilirsiniz. Yeni paylaşımlar burada sırasıyla görünecek.
+                </p>
+              </div>
+            ) : (
+              <div className="gallery-grid">
+                {deferredMediaItems.map((item) => {
+                  const isLiked = Boolean(currentUserUid && item.likedBy.includes(currentUserUid));
+                  const canDelete = currentUserUid === item.authorUid && isDeletable(item);
+
+                  return (
+                    <article key={item.id} className="gallery-grid-item">
+                      <div className="gallery-card group">
+                        <button
+                          type="button"
+                          className="gallery-media"
+                          onClick={() => void handleMediaSelection(item.id)}
+                        >
+                          {!item.url || failedMediaIds[item.id] ? (
+                            <BrokenMediaPlaceholder compact message="Görsel yüklenemedi" />
+                          ) : (
+                            <img
+                              src={item.url}
+                              alt={item.caption}
+                              className={`w-full h-full object-cover transition-transform duration-500 ${isGuestPreview ? 'scale-[1.06] blur-[10px] brightness-[0.9]' : 'group-hover:scale-[1.03]'}`}
+                              loading="lazy"
+                              decoding="async"
+                              referrerPolicy="no-referrer"
+                              onError={() => markMediaAsFailed(item.id)}
+                            />
+                          )}
+
+                          <div className="gallery-card-topbar">
+                            <span className="gallery-chip gallery-chip--light">
+                              {item.tableNumber}
+                            </span>
+                            <span className="gallery-chip gallery-chip--dark">
+                              {item.date}
+                            </span>
+                          </div>
+
+                          <div className={`gallery-media-overlay ${isGuestPreview ? 'is-guest' : ''}`} />
+                          {!isGuestPreview && (
+                            <div className="gallery-card-cta-wrap">
+                              <span className="gallery-card-cta">
+                                Yakından Bak
+                              </span>
+                            </div>
+                          )}
+                        </button>
+
+                        <div className="gallery-card-body">
+                          <p className="gallery-caption">
+                            {item.caption}
+                          </p>
+
+                          <div className="gallery-card-footer">
+                            <div className="gallery-card-actions">
+                              {canDelete && (
+                                <button
+                                  onClick={(event) => handleDelete(item.id, event)}
+                                  className="icon-button gallery-action-button text-red-500 hover:border-red-200 hover:bg-red-50"
+                                  aria-label="Anıyı sil"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
+                              <button
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setShareMediaId(item.id);
+                                }}
+                                className="icon-button gallery-action-button"
+                                aria-label="Paylaş"
+                              >
+                                <Share2 className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={(event) => toggleLike(item.id, event)}
+                                className={`gallery-like-button ${isLiked ? 'is-liked' : ''}`}
+                              >
+                                <Heart className={`w-4 h-4 ${isLiked ? 'fill-current' : ''}`} />
+                                <span>{item.likesCount}</span>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        </main>
+      </div>
+
+      <div className="app-floating-upload fixed bottom-5 sm:bottom-8 left-1/2 z-40 flex -translate-x-1/2 flex-col items-center gap-3">
+        {isAuthenticated && (
+          <div className="rounded-full border border-cafe-700/80 bg-cafe-900/90 px-4 py-2 text-xs text-cafe-50/88 shadow-[0_14px_32px_rgba(0,0,0,0.3)] backdrop-blur-xl">
+            <span className="font-semibold">Haftalık limit:</span> {userUploadsThisWeekCount}/{MAX_WEEKLY_UPLOADS}
+          </div>
+        )}
+        <button
+          onClick={() => void handleOpenComposer()}
+          className="floating-upload-button"
+        >
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white/18">
+            <Camera className="w-5 h-5" />
+          </span>
+          <span className="flex flex-col items-start">
+            <span className="text-[11px] uppercase tracking-[0.24em] text-white/70">Hızlı İşlem</span>
+            <span className="text-sm sm:text-base font-semibold text-white">{isAuthenticated ? 'Yeni anı paylaş' : 'Giriş yapıp paylaş'}</span>
+          </span>
+        </button>
+      </div>
+
+      {/* Lightbox Modal for Viewing Media Closely */}
+      <AnimatePresence>
+        {selectedMedia && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6 bg-black/90 backdrop-blur-xl"
+            onClick={() => setSelectedMediaId(null)}
+          >
+            <button 
+              className="absolute top-4 right-4 sm:top-6 sm:right-6 text-white/70 hover:text-white z-[70] bg-black/40 p-2 rounded-full backdrop-blur-md transition-colors"
+              onClick={() => setSelectedMediaId(null)}
+            >
+              <X className="w-6 h-6 sm:w-8 sm:h-8" />
+            </button>
+            
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="relative max-w-5xl w-full max-h-[90vh] flex flex-col md:flex-row bg-cafe-900 rounded-2xl overflow-hidden shadow-2xl border border-cafe-800"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Media Section */}
+              <div className="flex-1 bg-black relative min-h-[45vh] md:min-h-[60vh] overflow-hidden">
+                {!selectedMedia.url || failedMediaIds[selectedMedia.id] ? (
+                  <BrokenMediaPlaceholder message="Bu medya şu anda görüntülenemiyor" />
+                ) : (
+                  <img
+                    src={selectedMedia.url}
+                    alt={selectedMedia.caption}
+                    className="absolute inset-0 w-full h-full object-contain"
+                    onError={() => markMediaAsFailed(selectedMedia.id)}
+                  />
+                )}
+              </div>
+              
+              {/* Info Section */}
+              <div className="w-full md:w-80 bg-cafe-800 p-5 sm:p-6 flex flex-col shrink-0 overflow-y-auto max-h-[45vh] md:max-h-none">
+                <div className="flex items-center gap-3 mb-4 pb-4 border-b border-cafe-700">
+                  <div className="w-12 h-12 rounded-full bg-cafe-700 flex items-center justify-center text-accent font-bold text-lg shadow-inner">
+                    {selectedMedia.tableNumber.replace('Masa ', '').substring(0, 3)}
+                  </div>
+                  <div>
+                    <p className="font-semibold text-cafe-50 text-lg">{selectedMedia.tableNumber}</p>
+                    <p className="text-sm text-cafe-100/50 flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5" /> {selectedMedia.date}
+                    </p>
+                  </div>
+                </div>
+                
+                <p className="font-handwriting text-3xl sm:text-4xl text-cafe-50 flex-1 py-4 leading-tight">
+                  {selectedMedia.caption}
+                </p>
+                
+                <div className="mt-4 pt-4 border-t border-cafe-700 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => toggleLike(selectedMedia.id)}
+                      className={`flex items-center gap-2 px-5 py-3 rounded-full transition-all active:scale-95 ${
+                        currentUserUid && selectedMedia.likedBy.includes(currentUserUid) ? 'bg-accent/20 text-accent' : 'bg-cafe-700 hover:bg-cafe-600 text-cafe-50'
+                      }`}
+                    >
+                      <motion.div
+                        animate={currentUserUid && selectedMedia.likedBy.includes(currentUserUid) ? { scale: [1, 1.4, 1] } : { scale: 1 }}
+                        transition={{ duration: 0.3 }}
+                      >
+                        <Heart
+                          className={`w-6 h-6 transition-colors ${
+                            currentUserUid && selectedMedia.likedBy.includes(currentUserUid) ? 'fill-accent text-accent' : 'text-cafe-100/70'
+                          }`}
+                        />
+                      </motion.div>
+                      <span className="font-bold text-lg">
+                        {selectedMedia.likesCount} Beğeni
+                      </span>
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {currentUserUid === selectedMedia.authorUid && isDeletable(selectedMedia) && (
+                      <button
+                        onClick={() => handleDelete(selectedMedia.id)}
+                        className="flex items-center justify-center bg-red-500/20 hover:bg-red-500/30 text-red-400 w-12 h-12 rounded-full transition-colors active:scale-95"
+                        aria-label="Sil"
+                      >
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setShareMediaId(selectedMedia.id)}
+                      className="flex items-center justify-center bg-cafe-700 hover:bg-cafe-600 text-cafe-50 w-12 h-12 rounded-full transition-colors active:scale-95"
+                      aria-label="Paylaş"
+                    >
+                      <Share2 className="w-5 h-5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Upload Modal - Fixed Layout */}
+      <AnimatePresence>
+        {isUploadModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-cafe-900/95 backdrop-blur-md"
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 20 }}
+              className="bg-cafe-800 rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden shadow-2xl border border-cafe-700"
+            >
+              {/* Modal Header */}
+              <div className="p-4 border-b border-cafe-700 flex justify-between items-center bg-cafe-800/50 shrink-0">
+                <h3 className="text-lg font-semibold text-cafe-50 flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-accent" />
+                  Yeni Anı
+                </h3>
+                <button
+                  onClick={cancelUpload}
+                  className="p-2 text-cafe-100/50 hover:text-cafe-50 transition-colors rounded-full hover:bg-cafe-700"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              
+              <input
+                ref={cameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={handleSelectedFileChange}
+              />
+
+              {!previewUrl && !isDesktopCameraOpen ? (
+                <div className="p-6 sm:p-8 flex flex-col gap-4">
+                  <div className="rounded-xl border border-cafe-700 bg-cafe-900/55 px-4 py-4 text-sm text-cafe-100/72">
+                    <p className="font-semibold text-cafe-50">Kafe: {cafeName}</p>
+                    <p className="mt-1">
+                      {resolvedTableLabel
+                        ? `QR ile tanınan masa: ${resolvedTableLabel}`
+                        : 'Paylaşım için masa QR koduyla açılmış bir bağlantı gerekir.'}
+                    </p>
+                  </div>
+                  <button
+                    onClick={openUploadSource}
+                    disabled={!resolvedTableLabel}
+                    className="flex items-center justify-center gap-3 w-full py-4 bg-cafe-700 hover:bg-cafe-600 text-cafe-50 rounded-xl transition-colors shadow-lg disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <Camera className="w-6 h-6 text-accent" />
+                    <span className="font-medium text-lg">Kamera ile Çek</span>
+                  </button>
+                </div>
+              ) : isDesktopCameraOpen ? (
+                <div className="p-4 sm:p-5 flex flex-col items-center gap-4">
+                  <div className="relative w-full rounded-xl overflow-hidden bg-black aspect-[3/4] sm:aspect-video flex items-center justify-center shadow-inner border border-cafe-700">
+                    <video
+                      ref={videoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      className="w-full h-full object-cover [transform:scaleX(-1)]"
+                    />
+                  </div>
+
+                  <div className="flex w-full flex-col gap-3 sm:flex-row">
+                    <button
+                      onClick={cancelUpload}
+                      className="flex-1 px-4 py-3 rounded-xl font-medium text-cafe-100 hover:bg-cafe-700 transition-colors"
+                    >
+                      İptal
+                    </button>
+                    <button
+                      onClick={captureDesktopPhoto}
+                      className="flex-1 px-4 py-3 rounded-xl font-medium bg-accent hover:brightness-110 text-cafe-900 shadow-lg shadow-accent/20 transition-colors flex items-center justify-center gap-2"
+                    >
+                      <Camera className="w-5 h-5" />
+                      Fotoğraf Çek
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* Modal Body (Scrollable) */}
+                  <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-5">
+                <div className="grid gap-2">
+                  <button
+                    onClick={openUploadSource}
+                    className="rounded-xl border border-cafe-700 bg-cafe-800/65 px-3 py-2.5 text-sm font-medium text-cafe-50 transition-colors hover:bg-cafe-700"
+                  >
+                    Tekrar Çek
+                  </button>
+                </div>
+
+                {/* Media Preview Container */}
+                <div className="relative w-full h-48 sm:h-64 rounded-xl overflow-hidden bg-cafe-900 border border-cafe-700 shadow-inner shrink-0 flex items-center justify-center">
+                  <img
+                    src={previewUrl ?? ''}
+                    alt="Preview"
+                    className="w-full h-full object-contain transition-all"
+                    style={{
+                      transform: `rotate(${editRotation}deg)`,
+                      filter: `brightness(${editBrightness}%) contrast(${editContrast}%)`
+                    }}
+                  />
+                </div>
+
+                <div className="space-y-4 shrink-0 bg-cafe-800/50 p-4 rounded-xl border border-cafe-700">
+                  <div className="flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-2 text-cafe-100/70">
+                        <RotateCw className="w-4 h-4" />
+                        <span className="text-sm font-medium">Döndür</span>
+                      </div>
+                      <button
+                        onClick={() => setEditRotation(prev => (prev + 90) % 360)}
+                        className="px-3 py-1.5 bg-cafe-700 hover:bg-cafe-600 rounded-lg text-sm font-medium transition-colors"
+                      >
+                        90° Çevir
+                      </button>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-cafe-100/70">
+                        <div className="flex items-center gap-2">
+                          <Sun className="w-4 h-4" />
+                          <span className="text-sm font-medium">Parlaklık</span>
+                        </div>
+                        <span className="text-xs">{editBrightness}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="50"
+                        max="150"
+                        value={editBrightness}
+                        onChange={(e) => setEditBrightness(Number(e.target.value))}
+                        className="w-full accent-accent"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-cafe-100/70">
+                        <div className="flex items-center gap-2">
+                          <Contrast className="w-4 h-4" />
+                          <span className="text-sm font-medium">Kontrast</span>
+                        </div>
+                        <span className="text-xs">{editContrast}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="50"
+                        max="150"
+                        value={editContrast}
+                        onChange={(e) => setEditContrast(Number(e.target.value))}
+                        className="w-full accent-accent"
+                      />
+                    </div>
+                  </div>
+                
+                <div className="space-y-4 shrink-0">
+                  <div className="rounded-xl border border-cafe-700 bg-cafe-900/55 px-4 py-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cafe-100/50">QR bilgisi</p>
+                    <div className="mt-2 flex items-center gap-2 text-sm text-cafe-100/72">
+                      <MapPin className="h-4 w-4 text-[color:var(--color-accent)]" />
+                      <span>{resolvedTableLabel || 'Masa tanınmadı'}</span>
+                    </div>
+                    <p className="mt-2 text-sm text-cafe-100/60">{cafeName}</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label htmlFor="caption" className="block text-sm font-medium text-cafe-100/70">
+                      Fotoğrafa bir not düş (İsteğe bağlı)
+                    </label>
+                    <input
+                      id="caption"
+                      type="text"
+                      value={caption}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setCaption(value);
+                        // ✅ Real-time XSS validation
+                        if (value && !validateAndSanitizeCaption(value)) {
+                          setCaptionError('Not zararlı karakterler içeriyor');
+                        } else {
+                          setCaptionError(null);
+                        }
+                      }}
+                      placeholder="Örn: Harika bir akşamdı..."
+                      className={`w-full bg-cafe-900 border rounded-xl px-4 py-3 text-cafe-50 placeholder:text-cafe-100/30 focus:outline-none focus:ring-2 transition-all font-handwriting text-2xl ${
+                        captionError 
+                          ? 'border-red-500 focus:ring-red-500/50 focus:border-red-500' 
+                          : 'border-cafe-700 focus:ring-accent/50 focus:border-accent'
+                      }`}
+                      maxLength={40}
+                    />
+                    {captionError && (
+                      <p className="text-xs text-red-400 font-medium">{captionError}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {uploadError && (
+                <div className="mx-4 mt-2 rounded-2xl border border-red-400/25 bg-red-950/30 px-4 py-3 text-red-100 shadow-[0_18px_42px_rgba(0,0,0,0.18)]">
+                  <div className="flex items-start gap-3">
+                    <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-red-400/12 text-red-300">
+                      <AlertTriangle className="h-5 w-5" />
+                    </span>
+                    <div className="min-w-0 text-left">
+                      <p className="text-sm font-semibold text-red-100">Paylaşım tamamlanamadı</p>
+                      <p className="mt-1 text-sm leading-6 text-red-100/72">{uploadError}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {uploadStatus && !uploadError && (
+                <div className="mx-4 mt-2 rounded-2xl border border-accent/25 bg-accent/10 px-4 py-3 text-accent shadow-[0_18px_42px_rgba(0,0,0,0.14)]">
+                  <div className="flex items-center gap-3 text-sm font-semibold">
+                    <CheckCircle2 className="h-5 w-5 shrink-0" />
+                    <span>{uploadStatus}</span>
+                  </div>
+                  {uploadProgress !== null && (
+                    <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-cafe-900/50">
+                      <div 
+                        className="bg-accent h-full transition-all duration-300 ease-out" 
+                        style={{ width: `${uploadProgress}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Modal Footer */}
+              <div className="p-4 border-t border-cafe-700 bg-cafe-800/50 flex flex-col gap-3 shrink-0 mt-4 sm:flex-row">
+                <button
+                  onClick={cancelUpload}
+                  disabled={isSaving}
+                  className="flex-1 px-4 py-3 rounded-xl font-medium text-cafe-100 hover:bg-cafe-700 transition-colors disabled:opacity-50"
+                >
+                  İptal
+                </button>
+                <button
+                  onClick={handleUpload}
+                  disabled={isSaving}
+                  className="flex-1 px-4 py-3 rounded-xl font-medium bg-accent hover:brightness-110 text-cafe-900 shadow-lg shadow-accent/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {isSaving ? (
+                    <div className="w-5 h-5 border-2 border-cafe-900/30 border-t-cafe-900 rounded-full animate-spin" />
+                  ) : (
+                    <>
+                      <Upload className="w-5 h-5" />
+                      Paylaş
+                    </>
+                  )}
+                </button>
+              </div>
+            </>
+            )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {mediaToDelete && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-cafe-900/80 backdrop-blur-sm"
+            onClick={() => setMediaToDelete(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 20 }}
+              className="bg-cafe-800 rounded-2xl w-full max-w-sm flex flex-col overflow-hidden shadow-2xl border border-cafe-700 p-6 text-center"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Trash2 className="w-8 h-8 text-red-500" />
+              </div>
+              <h3 className="text-xl font-bold text-cafe-50 mb-2">Anıyı Sil</h3>
+              <p className="text-cafe-100/70 mb-6">Bu anıyı silmek istediğinize emin misiniz? Bu işlem geri alınamaz.</p>
+              
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <button
+                  onClick={() => setMediaToDelete(null)}
+                  className="flex-1 px-4 py-3 rounded-xl font-medium text-cafe-100 hover:bg-cafe-700 transition-colors"
+                >
+                  İptal
+                </button>
+                <button
+                  onClick={confirmDelete}
+                  className="flex-1 px-4 py-3 rounded-xl font-medium bg-red-500 hover:bg-red-600 text-white transition-colors"
+                >
+                  Evet, Sil
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Share Modal */}
+      <AnimatePresence>
+        {shareMediaId && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-cafe-900/80 backdrop-blur-sm"
+            onClick={() => setShareMediaId(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 20 }}
+              className="bg-cafe-800 rounded-2xl w-full max-w-sm flex flex-col overflow-hidden shadow-2xl border border-cafe-700"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="p-4 border-b border-cafe-700 flex justify-between items-center bg-cafe-800/50">
+                <h3 className="text-lg font-semibold text-cafe-50 flex items-center gap-2">
+                  <Share2 className="w-5 h-5 text-accent" />
+                  Paylaş
+                </h3>
+                <button
+                  onClick={() => setShareMediaId(null)}
+                  className="p-2 text-cafe-100/50 hover:text-cafe-50 transition-colors rounded-full hover:bg-cafe-700"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-5 space-y-5">
+                <div className="flex justify-center gap-6">
+                  {/* WhatsApp */}
+                  <a href={`https://wa.me/?text=${encodeURIComponent('Bu harika anıya göz at! ' + window.location.origin + '?media=' + shareMediaId)}`} target="_blank" rel="noopener noreferrer" className="w-12 h-12 rounded-full bg-[#25D366] flex items-center justify-center text-white hover:scale-110 transition-transform shadow-lg">
+                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                  </a>
+                  {/* Twitter */}
+                  <a href={`https://twitter.com/intent/tweet?url=${encodeURIComponent(window.location.origin + '?media=' + shareMediaId)}&text=${encodeURIComponent('Bu harika anıya göz at!')}`} target="_blank" rel="noopener noreferrer" className="w-12 h-12 rounded-full bg-[#1DA1F2] flex items-center justify-center text-white hover:scale-110 transition-transform shadow-lg">
+                    <Twitter className="w-6 h-6 fill-current" />
+                  </a>
+                  {/* Facebook */}
+                  <a href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(window.location.origin + '?media=' + shareMediaId)}`} target="_blank" rel="noopener noreferrer" className="w-12 h-12 rounded-full bg-[#4267B2] flex items-center justify-center text-white hover:scale-110 transition-transform shadow-lg">
+                    <Facebook className="w-6 h-6 fill-current" />
+                  </a>
+                  {/* Story */}
+                  <button 
+                    onClick={() => shareToInstagramStory(shareMediaId)}
+                    disabled={isStoryShareBusy}
+                    aria-label="Story olarak paylaş"
+                    className="w-12 h-12 rounded-full bg-gradient-to-tr from-[#f09433] via-[#dc2743] to-[#bc1888] flex items-center justify-center text-white hover:scale-110 transition-transform shadow-lg disabled:cursor-wait disabled:opacity-60 disabled:hover:scale-100"
+                    title="Story olarak paylaş"
+                  >
+                    {isStoryShareBusy ? (
+                      <span className="w-5 h-5 rounded-full border-2 border-white/35 border-t-white animate-spin" />
+                    ) : (
+                      <Instagram className="w-6 h-6" />
+                    )}
+                  </button>
+                </div>
+
+                {shareNotice ? (
+                  <div
+                    className={`rounded-xl border px-3 py-2 text-sm font-medium ${
+                      shareNotice.tone === 'success'
+                        ? 'border-green-400/25 bg-green-500/10 text-green-100'
+                        : shareNotice.tone === 'error'
+                          ? 'border-red-400/25 bg-red-500/10 text-red-100'
+                          : 'border-accent/25 bg-accent/10 text-cafe-50'
+                    }`}
+                  >
+                    {shareNotice.text}
+                  </div>
+                ) : activeStoryTemplateUrl ? (
+                  <div className="rounded-xl border border-accent/20 bg-accent/10 px-3 py-2 text-sm font-medium text-cafe-50">
+                    Seçili story şablonu görsele uygulanır.
+                  </div>
+                ) : null}
+                
+                <div className="relative mt-2">
+                  <label className="block text-xs font-medium text-cafe-100/70 mb-1.5">Bağlantıyı Kopyala</label>
+                  <div className="flex items-center bg-cafe-900 border border-cafe-700 rounded-xl overflow-hidden">
+                    <input 
+                      type="text" 
+                      readOnly 
+                      value={`${window.location.origin}?media=${shareMediaId}`}
+                      className="flex-1 bg-transparent px-3 py-3 text-sm text-cafe-100/70 outline-none"
+                    />
+                    <button 
+                      onClick={() => handleCopyLink(shareMediaId)}
+                      className="px-4 py-3 bg-cafe-700 hover:bg-cafe-600 text-cafe-50 transition-colors flex items-center gap-2 font-medium text-sm border-l border-cafe-600"
+                    >
+                      {isCopied ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+                      {isCopied ? 'Kopyalandı' : 'Kopyala'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Reward Modal */}
+      <AnimatePresence>
+        {rewardCelebration && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-cafe-900/70 backdrop-blur-md"
+            onClick={() => setRewardCelebration(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.88, y: 32 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 24, opacity: 0 }}
+              transition={{ type: "spring", bounce: 0.5 }}
+              className="relative w-full max-w-2xl overflow-hidden rounded-[2rem] border border-white/24 bg-[linear-gradient(160deg,rgba(255,255,255,0.97),rgba(244,233,220,0.95))] p-6 shadow-[0_32px_80px_rgba(33,24,19,0.35)]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="pointer-events-none absolute inset-0 overflow-hidden">
+                {Array.from({ length: 12 }, (_, index) => (
+                  <motion.span
+                    key={`reward-particle-${index}`}
+                    className="absolute h-2.5 w-2.5 rounded-full bg-[color:var(--color-accent)]/35"
+                    style={{
+                      left: `${8 + index * 7}%`,
+                      top: `${6 + (index % 4) * 8}%`,
+                    }}
+                    initial={{ y: -6, opacity: 0.2, scale: 0.8 }}
+                    animate={{ y: [0, -10, 0], opacity: [0.2, 0.75, 0.2], scale: [0.8, 1.05, 0.8] }}
+                    transition={{ duration: 1.8 + (index % 3) * 0.35, repeat: Infinity, ease: 'easeInOut' }}
+                  />
+                ))}
+              </div>
+
+              <div className="text-center">
+                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-[color:var(--color-accent)]/18 text-[color:var(--color-accent)] shadow-[0_16px_34px_rgba(0,0,0,0.16)]">
+                  <motion.div
+                    initial={{ rotate: -10, scale: 0.8 }}
+                    animate={{ rotate: [0, 10, -8, 0], scale: [0.95, 1.08, 0.95] }}
+                    transition={{ duration: 1.7, repeat: Infinity, ease: 'easeInOut' }}
+                  >
+                    <Sparkles className="h-8 w-8" />
+                  </motion.div>
+                </div>
+                <p className="mt-4 text-xs font-semibold uppercase tracking-[0.22em] text-cafe-100/62">Kampanya tamamlandı</p>
+                <h2 className="mt-3 text-3xl font-serif font-semibold text-cafe-50">
+                  Tebrikler! {campaignReward} kazandın
+                </h2>
+                <p className="mt-3 text-sm leading-7 text-cafe-100/82">
+                  Bu ödül için son <strong>{rewardCelebration.target}</strong> paylaşımın tamamlandı.
+                  Çektiğin kareler aşağıda canlı şekilde gösterilir.
+                </p>
+              </div>
+
+              <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {Array.from({ length: rewardCelebration.target }, (_, index) => (
+                  <motion.div
+                    key={`reward-step-${index}`}
+                    initial={{ opacity: 0, y: 10, scale: 0.92 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{ delay: 0.08 * index, duration: 0.35 }}
+                    className="rounded-[1.35rem] bg-[color:var(--color-accent)] px-3 py-4 text-center text-white shadow-[0_16px_34px_rgba(0,0,0,0.14)]"
+                  >
+                    <Coffee className="mx-auto h-5 w-5" />
+                    <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.16em]">
+                      {index + 1}. foto
+                    </p>
+                  </motion.div>
+                ))}
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-cafe-700/15 bg-white/78 px-4 py-3 text-center">
+                <p className="text-sm font-semibold text-cafe-50">
+                  Son {rewardCelebration.target} paylaşımından seçilen kareler
+                </p>
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-3 rounded-[1.75rem] border border-cafe-700/15 bg-white/78 p-3 sm:grid-cols-3 md:grid-cols-4">
+                {rewardShowcaseItems.map((item, index) => (
+                  <motion.div
+                    key={item?.id ?? `reward-empty-${index}`}
+                    initial={{ opacity: 0, y: 12, scale: 0.94 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{ delay: 0.1 + 0.06 * index, duration: 0.3 }}
+                    className="relative aspect-square overflow-hidden rounded-[1.25rem] bg-cafe-800"
+                  >
+                    {item ? (
+                      <>
+                        <img
+                          src={item.url}
+                          alt={item.caption}
+                          className="h-full w-full object-cover"
+                          loading="lazy"
+                          decoding="async"
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/65 to-transparent p-3">
+                          <p className="line-clamp-2 text-sm text-white" style={{ fontFamily: handwritingFont }}>
+                            {item.caption}
+                          </p>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-gradient-to-br from-cafe-800 to-cafe-700 text-cafe-100/70">
+                        <Camera className="h-6 w-6 text-cafe-100/55" />
+                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-cafe-100/65">
+                          Foto bekleniyor
+                        </p>
+                      </div>
+                    )}
+                  </motion.div>
+                ))}
+              </div>
+
+              <button
+                onClick={() => setRewardCelebration(null)}
+                className="mt-6 inline-flex w-full items-center justify-center rounded-2xl bg-[color:var(--color-accent)] px-4 py-4 text-sm font-semibold uppercase tracking-[0.16em] text-white shadow-[0_18px_36px_rgba(0,0,0,0.18)] transition-transform hover:-translate-y-0.5"
+              >
+                Tamam
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {showSharePrompt && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[95] flex items-end justify-center bg-cafe-950/88 p-4 backdrop-blur-xl sm:items-center"
+            onClick={() => setShowSharePrompt(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 28, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 24, scale: 0.96 }}
+              className="relative w-full max-w-md overflow-hidden rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(43,26,18,0.98),rgba(24,14,10,0.96))] p-6 shadow-[0_28px_80px_rgba(0,0,0,0.42)]"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <button
+                onClick={() => setShowSharePrompt(false)}
+                className="absolute right-4 top-4 rounded-full p-2 text-cafe-100/55 transition-colors hover:bg-white/8 hover:text-cafe-50"
+                aria-label="Bildirim kapat"
+              >
+                <X className="h-5 w-5" />
+              </button>
+
+              <div className="pr-10">
+                <span className="inline-flex items-center rounded-full border border-[color:var(--color-accent)]/24 bg-[color:var(--color-accent)]/12 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-[color:var(--color-accent)]">
+                  Yeni anı zamanı
+                </span>
+                <h3 className="mt-4 text-3xl font-serif font-semibold text-cafe-50">
+                  Bir kare daha bırak, kahve adımın dolsun
+                </h3>
+                <p className="mt-3 text-sm leading-7 text-cafe-100/82">
+                  Şu an yeni bir anı paylaşıp galeriye eklenebilir ve kampanya ilerlemeni artırabilirsin.
+                </p>
+              </div>
+
+              <button
+                onClick={() => void handleOpenComposer()}
+                className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[color:var(--color-accent)] px-5 py-4 text-sm font-semibold uppercase tracking-[0.16em] text-white shadow-[0_18px_36px_rgba(0,0,0,0.22)] transition-transform hover:-translate-y-0.5"
+              >
+                <Camera className="h-4 w-4" />
+                Anı paylaş
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+    </div>
+  );
+}
