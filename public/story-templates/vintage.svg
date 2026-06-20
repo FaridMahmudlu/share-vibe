@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4b2f22"/>
+      <stop offset="0.52" stop-color="#7a4b31"/>
+      <stop offset="1" stop-color="#2a1b15"/>
+    </linearGradient>
+    <pattern id="grain" width="18" height="18" patternUnits="userSpaceOnUse">
+      <circle cx="3" cy="5" r="1" fill="#f8e0bd" opacity="0.13"/>
+      <circle cx="13" cy="12" r="1.2" fill="#1f120d" opacity="0.1"/>
+    </pattern>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="24" stdDeviation="30" flood-color="#120805" flood-opacity="0.42"/>
+    </filter>
+  </defs>
+  <rect width="1080" height="1920" fill="url(#bg)"/>
+  <rect width="1080" height="1920" fill="url(#grain)"/>
+  <rect x="132" y="260" width="816" height="1290" rx="34" fill="#f8dfb8" opacity="0.2"/>
+  <rect x="154" y="300" width="772" height="1206" rx="30" fill="#00ff00" filter="url(#shadow)"/>
+  <rect x="154" y="300" width="772" height="1206" rx="30" fill="none" stroke="#f8dfb8" stroke-width="8"/>
+  <path d="M110 218h860M110 1608h860" stroke="#f8dfb8" stroke-width="3" stroke-opacity="0.42"/>
+  <text x="540" y="168" text-anchor="middle" fill="#f8dfb8" font-family="Georgia, serif" font-size="58" font-weight="700">ShareVibe</text>
+  <text x="540" y="216" text-anchor="middle" fill="#f0b36f" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="800" letter-spacing="8">VINTAGE CAFE</text>
+  <text x="540" y="1698" text-anchor="middle" fill="#fff2d8" font-family="Georgia, serif" font-size="66" font-weight="700">Sıcak bir an</text>
+  <text x="540" y="1754" text-anchor="middle" fill="#f8dfb8" font-family="Inter, Arial, sans-serif" font-size="26" font-weight="650" opacity="0.82">Bu kare kafenin hikayesine eklendi</text>
+  <rect x="414" y="1808" width="252" height="48" rx="24" fill="#f0b36f"/>
+  <text x="540" y="1839" text-anchor="middle" fill="#2a1710" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="900" letter-spacing="3">PAYLAŞ</text>
+</svg>

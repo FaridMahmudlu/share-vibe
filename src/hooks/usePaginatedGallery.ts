@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { collection, query, where, orderBy, limit, startAfter, getDocs, Query, DocumentData, QueryConstraint } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db } from '../lib/firebase/client';
 import { logError, logWarning } from '../utils/errorTracking';
 
 export interface PaginatedResult<T> {

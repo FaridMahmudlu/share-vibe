@@ -10,8 +10,8 @@ service firebase.storage {
     // /media/{cafeSlug}/{mediaId}.{ext}
     //
     // Access rules:
-    // - READ: Public (anyone can download within 7 days)
-    // - WRITE: Only authenticated users can upload
+    // - READ: Public gallery media
+    // - WRITE: Authenticated users only, scoped to a cafe slug
     // - DELETE: Only uploader or admin can delete
     // ═══════════════════════════════════════════════════════════════
 
@@ -20,12 +20,37 @@ service firebase.storage {
       return request.auth != null;
     }
 
-    function isUploader(cafeSlug, mediaId) {
+    function isUploader() {
       return isAuthenticated() && request.auth.uid == resource.metadata.uploaderUid;
     }
 
+    function isSuperAdmin() {
+      return isAuthenticated() &&
+             (
+               request.auth.token.sharevibeSuperOwner == true ||
+               request.auth.token.role == "super_owner"
+             );
+    }
+
+    function canManageCafe(cafeSlug) {
+      return isSuperAdmin() ||
+             (
+               request.auth.token.sharevibeOwnerCafes is list &&
+               cafeSlug in request.auth.token.sharevibeOwnerCafes
+             ) ||
+             (
+               request.auth.token.sharevibeManagerCafes is list &&
+               cafeSlug in request.auth.token.sharevibeManagerCafes
+             ) ||
+             (
+               request.auth.token.role in ["owner", "manager"] &&
+               request.auth.token.cafeIds is list &&
+               cafeSlug in request.auth.token.cafeIds
+             );
+    }
+
     function isAdmin() {
-      return isAuthenticated() && request.auth.token.admin == true;
+      return isSuperAdmin();
     }
 
     function isValidImageType(contentType) {
@@ -33,19 +58,24 @@ service firebase.storage {
         'image/jpeg',
         'image/png',
         'image/webp',
-        'image/gif'
+        'image/heic'
       ];
     }
 
     function isValidFileSize() {
-      // Max 8MB
-      return request.resource.size <= 8_000_000;
+      // Max 15MB
+      return request.resource.size <= 15000000;
+    }
+
+    function hasAllowedImageExtension(fileName) {
+      return fileName.matches('(?i)^.+\\.(jpg|jpeg|png|webp|heic)$');
     }
 
     function isValidMetadata() {
       let meta = request.resource.metadata;
       return meta.uploaderUid == request.auth.uid &&
-             meta.uploadedAt is int &&
+             meta.uploadedAt is string &&
+             meta.uploadedAt.size() > 0 &&
              meta.cafeSlug is string &&
              meta.cafeSlug.size() > 0;
     }
@@ -55,13 +85,13 @@ service firebase.storage {
     // ─────────────────────────────────────────────────────────────────
     match /media/{cafeSlug}/{mediaId} {
       
-      // PUBLIC READ: Download URLs public but time-limited
-      // Files older than 7 days cannot be accessed via direct download
-      allow read: if request.time < resource.metadata.uploadedAt + duration.value(7, 'd');
+      // Deny public read, allow only uploader or cafe administrator/super admin
+      allow read: if isAuthenticated() && (isUploader() || canManageCafe(cafeSlug) || isSuperAdmin());
 
       // UPLOAD: Authenticated users only
       allow create: if
         isAuthenticated() &&
+        hasAllowedImageExtension(mediaId) &&
         isValidImageType(request.resource.contentType) &&
         isValidFileSize() &&
         isValidMetadata() &&
@@ -72,17 +102,49 @@ service firebase.storage {
 
       // DELETE: Uploader or admin only
       allow delete: if
-        isUploader(cafeSlug, mediaId) || isAdmin();
+        isUploader() || canManageCafe(cafeSlug);
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // CAMPAIGN FILES: /campaigns/{cafeSlug}/{fileName}
+    // ─────────────────────────────────────────────────────────────────
+    match /campaigns/{cafeSlug}/{fileName} {
+      allow read: if true;
+
+      allow create: if
+        canManageCafe(cafeSlug) &&
+        hasAllowedImageExtension(fileName) &&
+        isValidImageType(request.resource.contentType) &&
+        isValidFileSize();
+
+      allow update: if false;
+      allow delete: if canManageCafe(cafeSlug);
     }
 
     // ─────────────────────────────────────────────────────────────────
     // ADMIN FILES: /admin/{adminId}/{fileName}
     // ─────────────────────────────────────────────────────────────────
+    match /cafes/{cafeSlug}/settings/{fileName} {
+      allow read: if true;
+
+      allow create: if
+        canManageCafe(cafeSlug) &&
+        hasAllowedImageExtension(fileName) &&
+        isValidImageType(request.resource.contentType) &&
+        request.resource.size <= 4000000 &&
+        isValidMetadata() &&
+        request.resource.metadata.cafeSlug == cafeSlug &&
+        request.resource.metadata.purpose == 'cafe-logo';
+
+      allow update: if false;
+      allow delete: if isUploader() || canManageCafe(cafeSlug);
+    }
+
     match /admin/{adminId}/{fileName} {
       
-      allow read: if isAdmin() && request.auth.uid == adminId;
-      allow write: if isAdmin() && request.auth.uid == adminId;
-      allow delete: if isAdmin() && request.auth.uid == adminId;
+      allow read: if isSuperAdmin() && request.auth.uid == adminId;
+      allow write: if isSuperAdmin() && request.auth.uid == adminId;
+      allow delete: if isSuperAdmin() && request.auth.uid == adminId;
     }
 
     // ─────────────────────────────────────────────────────────────────

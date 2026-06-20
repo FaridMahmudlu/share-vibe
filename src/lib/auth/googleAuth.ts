@@ -1,0 +1,129 @@
+import {
+  GoogleAuthProvider,
+  getRedirectResult,
+  signInWithPopup,
+  signInWithRedirect,
+  type UserCredential,
+} from 'firebase/auth';
+import { httpsCallable } from 'firebase/functions';
+import { auth, functions } from '../firebase/client';
+
+const REDIRECT_FALLBACK_CODES = new Set([
+  'auth/popup-blocked',
+  'auth/operation-not-supported-in-this-environment',
+  'auth/web-storage-unsupported',
+]);
+
+const getErrorCode = (error: unknown) =>
+  typeof error === 'object' && error !== null && 'code' in error
+    ? String(error.code)
+    : '';
+
+const getCurrentDomain = () =>
+  typeof window !== 'undefined' ? window.location.hostname : 'mevcut alan adı';
+
+const isLocalDevelopmentHost = (domain: string) =>
+  domain === 'localhost' ||
+  domain === '0.0.0.0' ||
+  domain === '127.0.0.1' ||
+  /^\d{1,3}(\.\d{1,3}){3}$/.test(domain);
+
+const shouldPreferRedirectSignIn = () => {
+  const domain = getCurrentDomain();
+
+  return !isLocalDevelopmentHost(domain);
+};
+
+const createGoogleProvider = () => {
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({
+    prompt: 'select_account',
+  });
+  return provider;
+};
+
+const finalizeSignIn = async (credential: UserCredential) => {
+  try {
+    await httpsCallable(functions, 'syncMyAccessClaims')({});
+  } catch (error) {
+    console.warn('ShareVibe access claims could not be synced:', error);
+  }
+
+  const idToken = await credential.user.getIdToken(true);
+
+  try {
+    const apiUrl = import.meta.env.VITE_API_URL || '';
+    await fetch(`${apiUrl}/api/session/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idToken }),
+      credentials: 'include',
+    });
+  } catch (error) {
+    console.error('Oturum çerezi başlatılamadı:', error);
+  }
+
+  return credential;
+};
+
+type GoogleSignInOptions = {
+  beforeRedirect?: () => Promise<void> | void;
+};
+
+export const resolveGoogleSignInRedirect = async (): Promise<UserCredential | null> => {
+  const result = await getRedirectResult(auth);
+
+  if (!result) {
+    return null;
+  }
+
+  return finalizeSignIn(result);
+};
+
+export const signInWithGoogle = async (
+  options: GoogleSignInOptions = {}
+): Promise<UserCredential | null> => {
+  const { beforeRedirect } = options;
+  const provider = createGoogleProvider();
+
+  if (shouldPreferRedirectSignIn()) {
+    await beforeRedirect?.();
+    await signInWithRedirect(auth, provider);
+    return null;
+  }
+
+  try {
+    return await finalizeSignIn(await signInWithPopup(auth, provider));
+  } catch (error) {
+    if (REDIRECT_FALLBACK_CODES.has(getErrorCode(error))) {
+      await beforeRedirect?.();
+      await signInWithRedirect(auth, provider);
+      return null;
+    }
+
+    throw error;
+  }
+};
+
+export const getGoogleSignInErrorMessage = (error: unknown) => {
+  const currentDomain = getCurrentDomain();
+
+  switch (getErrorCode(error)) {
+    case 'auth/popup-closed-by-user':
+      return 'Google giriş penceresi kapatıldı. Lütfen tekrar deneyin.';
+    case 'auth/popup-blocked':
+      return 'Tarayıcı giriş penceresini engelledi. Lütfen pop-up iznini açıp tekrar deneyin.';
+    case 'auth/operation-not-allowed':
+      return 'Firebase Kimlik Doğrulama içinde Google ile giriş etkin değil.';
+    case 'auth/unauthorized-domain':
+      if (isLocalDevelopmentHost(currentDomain)) {
+        return `Google ile giriş bu adres üzerinden çalışmaz: ${currentDomain}. Yerel test için uygulamayı http://localhost:3000 adresinden açın.`;
+      }
+
+      return `Bu alan adı Firebase Kimlik Doğrulama için yetkilendirilmemiş: ${currentDomain}. Firebase Console > Kimlik Doğrulama > Ayarlar > Yetkili alan adları bölümüne bu alan adını ekleyin.`;
+    case 'auth/operation-not-supported-in-this-environment':
+      return 'Bu tarayıcı açılır pencere ile girişi desteklemiyor. Google girişine yönlendirileceksiniz.';
+    default:
+      return 'Google ile giriş başlatılamadı. Lütfen tekrar deneyin.';
+  }
+};

@@ -43,6 +43,7 @@ type MainPageProps = {
   hasOwnerAccess: boolean;
   demoCafeName: string;
   initialRoutePath?: string;
+  onOpenSecurityPolicy?: () => void;
 };
 
 const NAV_LINKS = [
@@ -395,6 +396,7 @@ export default function MainPage({
   hasOwnerAccess,
   demoCafeName,
   initialRoutePath = '/',
+  onOpenSecurityPolicy,
 }: MainPageProps) {
   const [activeFaqIndex, setActiveFaqIndex] = useState(0);
   const [selectedPlanKey, setSelectedPlanKey] = useState<PricingPlanKey | null>(null);
@@ -403,7 +405,7 @@ export default function MainPage({
   const shouldReduceMotion = useReducedMotion();
   const selectedPlan = useMemo(() => (selectedPlanKey ? getPricingPlanByKey(selectedPlanKey) : null), [selectedPlanKey]);
   const activeLegalDocument = useMemo(
-    () => legalDocuments.find((document) => document.id === activeLegalDocumentId) ?? null,
+    () => legalDocuments.find((document) => document.id === activeLegalDocumentId) || null,
     [activeLegalDocumentId]
   );
   const contactWhatsappUrl = useMemo(
@@ -415,9 +417,9 @@ export default function MainPage({
   );
 
   const ownerButtonLabel = hasOwnerAccess
-    ? 'Yönetim Paneline Git'
+ 'Yönetim Paneline Git'
     : ownerEmail
-      ? 'Yetki Bekleniyor'
+ 'Yetki Bekleniyor'
       : 'Kafe Girişi';
 
   const closeMobileNav = () => {
@@ -824,6 +826,9 @@ export default function MainPage({
               {document.title}
             </button>
           ))}
+          <button type="button" onClick={onOpenSecurityPolicy}>
+            Güvenlik Politikası
+          </button>
         </div>
         <p className="sv-copyright">© 2026 ShareVibe. Tüm hakları saklıdır. Kurulum görüşmeleri WhatsApp üzerinden yapılır.</p>
       </footer>

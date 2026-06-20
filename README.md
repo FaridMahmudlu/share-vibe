@@ -26,7 +26,7 @@ Visit `http://localhost:3000` in your browser.
 ### Firebase Setup
 
 1. Create a Firebase project at [firebase.google.com](https://firebase.google.com)
-2. Copy your Firebase config to `firebase-applet-config.json`
+2. Copy your Firebase config to `config/firebase/firebase-applet-config.json`
 
 ### Google OAuth Configuration
 
@@ -77,20 +77,22 @@ npm run build
 scp -r dist/ user@server:/var/www/app/
 ```
 
-## 📂 Project Structure
+## Project Structure
 
-```
+```text
 src/
-├── App.tsx              # Main application
-├── AdminPanel.tsx       # Admin dashboard  
-├── MainPage.tsx         # Landing page
-├── firebase.ts          # Firebase config
-├── googleAuth.ts        # Google OAuth setup
-├── index.css            # Global styles
-├── components/          # React components
-├── utils/               # Helper functions
-├── security/            # Security rules
-└── seo/                 # SEO optimization
+  main.tsx             # Vite React entrypoint
+  app/                 # SPA coordinator
+  styles/              # Global styles
+  pages/               # Page-level views
+  components/          # Reusable UI grouped by domain
+  config/              # App, brand, access, pricing, UI constants
+  lib/                 # Firebase, auth, storage, audit helpers
+  services/            # Browser API clients and sharing services
+  hooks/               # Reusable React hooks
+  utils/               # Helper functions
+  security/            # Security helpers
+  seo/                 # SEO optimization
 ```
 
 ## 🛠️ Tech Stack
@@ -189,16 +191,16 @@ Proje React ve Vite üzerinde çalışır; kimlik doğrulama, veritabanı, depol
 
 Temel dosyalar ve sorumlulukları:
 
-- [src/App.tsx](./src/App.tsx): Misafir deneyimi, galeri akışı, yükleme modalı, paylaşım ve kampanya görünümü.
-- [src/MainPage.tsx](./src/MainPage.tsx): Ana sayfa ve ürün tanıtım akışı.
-- [src/AdminPanel.tsx](./src/AdminPanel.tsx): Yönetici ve kafe sahibi paneli.
-- [src/accessConfig.ts](./src/accessConfig.ts): Uygulama tarafındaki erişim kontrol yardımcıları.
-- [access-emails.mjs](./access-emails.mjs): Kafe sahibi ve süper yönetici e-posta listelerinin tek kaynak dosyası.
-- [src/googleAuth.ts](./src/googleAuth.ts): Google giriş akışı ve hata mesajları.
-- [src/firebase.ts](./src/firebase.ts): Firebase başlatma ve servis bağlantıları.
-- [firestore.rules.template](./firestore.rules.template): Firestore kurallarının şablonu.
-- [scripts/generate-firestore-rules.mjs](./scripts/generate-firestore-rules.mjs): E-posta listelerinden güncel `firestore.rules` dosyasını üretir.
-- [scripts/firebase-deploy.mjs](./scripts/firebase-deploy.mjs): Doğru Firestore database hedefini seçerek deploy komutunu çalıştırır.
+- [src/app/App.tsx](./src/app/App.tsx): Misafir deneyimi, galeri akışı, yükleme modalı, paylaşım ve kampanya görünümü.
+- [src/pages/landing/MainPage.tsx](./src/pages/landing/MainPage.tsx): Ana sayfa ve ürün tanıtım akışı.
+- [src/pages/admin/AdminPanel.tsx](./src/pages/admin/AdminPanel.tsx): Yönetici ve kafe sahibi paneli.
+- [src/config/access.ts](./src/config/access.ts): Uygulama tarafındaki erişim kontrol yardımcıları.
+- [config/access/emails.mjs](./config/access/emails.mjs): Kafe sahibi ve süper yönetici e-posta listelerinin tek kaynak dosyası.
+- [src/lib/auth/googleAuth.ts](./src/lib/auth/googleAuth.ts): Google giriş akışı ve hata mesajları.
+- [src/lib/firebase/client.ts](./src/lib/firebase/client.ts): Firebase başlatma ve servis bağlantıları.
+- [config/firebase/firestore.rules.template](./config/firebase/firestore.rules.template): Firestore kurallarının şablonu.
+- [scripts/firebase/generate-firestore-rules.mjs](./scripts/firebase/generate-firestore-rules.mjs): E-posta listelerinden güncel `firestore.rules` dosyasını üretir.
+- [scripts/firebase/firebase-deploy.mjs](./scripts/firebase/firebase-deploy.mjs): Doğru Firestore database hedefini seçerek deploy komutunu çalıştırır.
 
 ## Yerel Geliştirme
 
@@ -233,7 +235,7 @@ Temel dosyalar ve sorumlulukları:
 - `npm run preview`: Build çıktısını önizleme modunda açar.
 - `npm run clean`: `dist` klasörünü temizler.
 - `npm run lint`: TypeScript tip kontrolü yapar.
-- `npm run generate:rules`: `access-emails.mjs` ve `firestore.rules.template` üzerinden güncel Firestore kural dosyasını üretir.
+- `npm run generate:rules`: `config/access/emails.mjs` ve `config/firebase/firestore.rules.template` üzerinden güncel Firestore kural dosyasını üretir.
 - `npm run deploy:hosting`: Sadece Firebase Hosting tarafını deploy eder.
 - `npm run deploy:rules`: Named Firestore database için kurallar ve indeksleri deploy eder.
 - `npm run deploy:prod`: Build alır, ardından hosting ve named Firestore deploy işlemini birlikte çalıştırır.
@@ -242,7 +244,7 @@ Temel dosyalar ve sorumlulukları:
 
 Bu repo, Firebase web yapılandırmasını ayrı `.env` değişkenlerine taşımadan doğrudan dosya üzerinden kullanır:
 
-- [firebase-applet-config.json](./firebase-applet-config.json)
+- [config/firebase/firebase-applet-config.json](./config/firebase/firebase-applet-config.json)
 
 Bu dosya aşağıdaki kritik bilgileri içerir:
 
@@ -259,14 +261,14 @@ Uygulamada yetkilendirme iki katmanda ele alınır:
 
 ### Uygulama Katmanı
 
-- Kafe sahibi erişimi ve süper yönetici erişimi [src/accessConfig.ts](./src/accessConfig.ts) içinde değerlendirilir.
-- Erişim listeleri [access-emails.mjs](./access-emails.mjs) dosyasından beslenir.
+- Kafe sahibi erişimi ve süper yönetici erişimi [src/config/access.ts](./src/config/access.ts) içinde değerlendirilir.
+- Erişim listeleri [config/access/emails.mjs](./config/access/emails.mjs) dosyasından beslenir.
 - Google hesabı olmayan veya yetkili listede bulunmayan kullanıcılar yönetim ekranlarına erişemez.
 
 ### Firestore Katmanı
 
 - Kurallar [firestore.rules](./firestore.rules) dosyasında tutulur.
-- Asıl kaynak dosya [firestore.rules.template](./firestore.rules.template) dosyasıdır.
+- Asıl kaynak dosya [config/firebase/firestore.rules.template](./config/firebase/firestore.rules.template) dosyasıdır.
 - Kurallar üretilirken owner ve süper admin listeleri tek kaynaktan enjekte edilir.
 - `cafes` koleksiyonu için yazma yetkisi, doğrulanmış Google hesabı ve uygun owner e-posta eşleşmesi ile sınırlandırılmıştır.
 - Böylece istemci tarafındaki kontrol ile veritabanı tarafındaki gerçek güvenlik modeli uyumlu kalır.
@@ -303,7 +305,7 @@ Yalnızca veritabanı tarafındaki kuralları ve indeksleri yayınlamak için:
 - Uygulama anonim giriş kullanmaz; tüm yetkili işlemler Google hesabı ile yapılır.
 - Geliştirme sırasında Google giriş akışı için uygulamayı `http://localhost:3000` üzerinden açmanız gerekir.
 - Firestore rules deploy sürecinde named database hedefi yanlış seçilirse istemci tarafında `permission-denied` hataları görülebilir.
-- Erişim listesi güncellenirse önce `access-emails.mjs`, ardından `npm run deploy:rules` çalıştırılmalıdır.
+- Erişim listesi güncellenirse önce `config/access/emails.mjs`, ardından `npm run deploy:rules` çalıştırılmalıdır.
 
 ## VDS Deployment (Production Sunucusu)
 
@@ -320,7 +322,7 @@ Deploy script-ini çalıştırın:
 
 **Windows (PowerShell):**
 ```powershell
-.\deploy.ps1
+.\scripts/deploy/deploy.ps1
 ```
 
 **macOS/Linux:**
@@ -340,11 +342,11 @@ Script otomatik olarak:
 - **Web Sunucusu:** Nginx
 - **SSL:** Let's Encrypt (HTTPS)
 - **Domain:** `sharevibe.co`
-- **Deployment:** Nginx konfigürasyonu `nginx-sharevibe.conf` ile yönetilir
+- **Deployment:** Nginx konfigürasyonu `ops/nginx/sharevibe.conf` ile yönetilir
 
 ### Manuel Deploy
 
-Adım-adım işlemler için bkz: [VDS_DEPLOYMENT.md](./VDS_DEPLOYMENT.md)
+Adım-adım işlemler için bkz: [docs/deployment/VDS_SETUP_SCRIPTS.md](./docs/deployment/VDS_SETUP_SCRIPTS.md)
 
 ### Özellikler
 
@@ -357,7 +359,7 @@ Adım-adım işlemler için bkz: [VDS_DEPLOYMENT.md](./VDS_DEPLOYMENT.md)
 
 ### Sorun Giderme
 
-Bkz: [VDS_DEPLOYMENT.md](./VDS_DEPLOYMENT.md#troubleshooting) - Sorun Giderme bölümü
+Bkz: [docs/deployment/TROUBLESHOOTING_GUIDE.ts](./docs/deployment/TROUBLESHOOTING_GUIDE.ts) - Sorun Giderme bölümü
 
 ## Repository
 

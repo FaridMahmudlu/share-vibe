@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sistem Hatası (500) - ShareVibe</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        --color-bg: #130a06;
+        --color-accent: #d97706;
+        --color-text: #fef3c7;
+        --color-text-muted: #d97736;
+      }
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: var(--color-bg);
+        color: var(--color-text);
+        font-family: 'Plus Jakarta Sans', sans-serif;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        text-align: center;
+        box-sizing: border-box;
+      }
+      .container {
+        max-width: 500px;
+        padding: 40px 20px;
+      }
+      h1 {
+        font-size: 5rem;
+        margin: 0 0 10px 0;
+        color: var(--color-accent);
+        font-weight: 700;
+        letter-spacing: -2px;
+      }
+      h2 {
+        font-size: 1.5rem;
+        margin: 0 0 20px 0;
+        color: var(--color-text);
+        font-weight: 600;
+      }
+      p {
+        font-size: 0.95rem;
+        line-height: 1.6;
+        color: rgba(254, 243, 199, 0.7);
+        margin: 0 0 30px 0;
+      }
+      .btn {
+        display: inline-block;
+        background-color: var(--color-accent);
+        color: #fff;
+        text-decoration: none;
+        padding: 12px 30px;
+        border-radius: 12px;
+        font-weight: 600;
+        font-size: 0.9rem;
+        transition: transform 0.2s, background-color 0.2s;
+        box-shadow: 0 10px 20px rgba(217, 119, 6, 0.2);
+      }
+      .btn:hover {
+        transform: translateY(-2px);
+        background-color: #b45309;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>500</h1>
+      <h2>Sunucu Hatası</h2>
+      <p>
+        Üzgünüz, sunucumuzda beklenmeyen bir sorun oluştu. 
+        Güvenlik nedeniyle teknik detaylar gizlenmiştir. 
+        Lütfen daha sonra tekrar deneyin veya ana sayfaya dönün.
+      </p>
+      <a href="/" class="btn">Ana Sayfaya Dön</a>
+    </div>
+  </body>
+</html>

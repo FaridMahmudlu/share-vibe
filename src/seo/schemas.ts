@@ -37,31 +37,8 @@ export function createOrganizationSchema(): SchemaOrgData {
     '@type': 'Organization',
     name: 'ShareVibe',
     url: 'https://sharevibe.co',
-    logo: 'https://sharevibe.co/logo-600x600.png',
-    description: 'Topluluk odaklı kafe paylaşım platformu. QR kod ile fotoğraf paylaş.',
-    sameAs: [
-      'https://twitter.com/ShareVibe',
-      'https://instagram.com/ShareVibe',
-      'https://facebook.com/ShareVibe',
-      'https://linkedin.com/company/ShareVibe',
-    ],
-    contactPoint: {
-      '@type': 'ContactPoint',
-      email: 'info@sharevibe.co',
-      contactType: 'Customer Service',
-      telephone: '+90-XXX-XXX-XXXX',
-    },
-    founder: {
-      '@type': 'Person',
-      name: 'ShareVibe Team',
-    },
-    foundingDate: '2026',
-    address: {
-      '@type': 'PostalAddress',
-      streetAddress: 'İstanbul, Turkey',
-      addressLocality: 'İstanbul',
-      addressCountry: 'TR',
-    },
+    logo: 'https://sharevibe.co/sharevibe-logo.png',
+    description: 'Kafeler için QR fotoğraf paylaşımı, canlı galeri, kampanya ve yönetim paneli platformu.',
   };
 }
 
@@ -84,13 +61,12 @@ export function createLocalBusinessSchema(cafeData: {
     '@type': 'CafeOrCoffeeShop',
     name: cafeData.name,
     url: `https://sharevibe.co/cafe/${cafeData.slug}`,
-    image: cafeData.image || 'https://sharevibe.co/default-cafe.jpg',
+    ...(cafeData.image && { image: cafeData.image }),
     description: cafeData.description || `${cafeData.name} - ShareVibe'da`,
     ...(cafeData.address && {
       address: {
         '@type': 'PostalAddress',
         streetAddress: cafeData.address,
-        addressLocality: 'İstanbul',
         addressCountry: 'TR',
       },
     }),
@@ -103,8 +79,7 @@ export function createLocalBusinessSchema(cafeData: {
         ratingCount: cafeData.ratingCount || 1,
       },
     }),
-    servesCuisine: ['Coffee', 'Dessert'],
-    acceptsReservations: 'No',
+    servesCuisine: ['Kahve'],
   };
 }
 
@@ -261,7 +236,6 @@ export function createSocialProfileSchema(): SchemaOrgData {
   return {
     '@context': 'https://schema.org',
     '@type': 'ProfilePage',
-    dateCreated: '2026-01-01',
     dateModified: new Date().toISOString(),
   };
 }
@@ -275,15 +249,7 @@ export function createWebsiteSchema(): SchemaOrgData {
     '@type': 'WebSite',
     name: 'ShareVibe',
     url: 'https://sharevibe.co',
-    description: 'Topluluk odaklı kafe paylaşım platformu',
-    potentialAction: {
-      '@type': 'SearchAction',
-      target: {
-        '@type': 'EntryPoint',
-        urlTemplate: 'https://sharevibe.co/search?q={search_term_string}',
-      },
-      'query-input': 'required name=search_term_string',
-    },
+    description: 'Kafeler için QR fotoğraf paylaşımı, canlı galeri, kampanya ve yönetim paneli platformu.',
   };
 }
 

@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#16100c"/>
+      <stop offset="0.55" stop-color="#2b1b12"/>
+      <stop offset="1" stop-color="#080604"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="18%" r="62%">
+      <stop offset="0" stop-color="#d8a15d" stop-opacity="0.38"/>
+      <stop offset="1" stop-color="#d8a15d" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="28" stdDeviation="32" flood-color="#000000" flood-opacity="0.46"/>
+    </filter>
+  </defs>
+  <rect width="1080" height="1920" fill="url(#bg)"/>
+  <rect width="1080" height="1920" fill="url(#glow)"/>
+  <path d="M90 136c224 56 360 44 534-18 136-49 240-45 366 22" fill="none" stroke="#d8a15d" stroke-opacity="0.34" stroke-width="2"/>
+  <path d="M92 1780c208-66 362-58 520-4 158 54 272 55 382-8" fill="none" stroke="#f0c987" stroke-opacity="0.3" stroke-width="2"/>
+  <rect x="126" y="302" width="828" height="1216" rx="52" fill="#00ff00" filter="url(#soft)"/>
+  <rect x="126" y="302" width="828" height="1216" rx="52" fill="none" stroke="#f0c987" stroke-width="7"/>
+  <rect x="154" y="330" width="772" height="1160" rx="38" fill="none" stroke="#fff0cf" stroke-opacity="0.28" stroke-width="2"/>
+  <text x="540" y="196" text-anchor="middle" fill="#fff4df" font-family="Inter, Arial, sans-serif" font-size="46" font-weight="800" letter-spacing="5">SHAREVIBE</text>
+  <text x="540" y="252" text-anchor="middle" fill="#d8a15d" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="700" letter-spacing="7">KAFE ANISI</text>
+  <g fill="#fff4df" font-family="Inter, Arial, sans-serif" text-anchor="middle">
+    <text x="540" y="1628" font-size="62" font-weight="900">Bugünün en güzel karesi</text>
+    <text x="540" y="1686" font-size="27" font-weight="650" opacity="0.72">Anını paylaş, kafenin enerjisine katıl</text>
+  </g>
+  <rect x="360" y="1742" width="360" height="54" rx="27" fill="#d8a15d"/>
+  <text x="540" y="1777" text-anchor="middle" fill="#170f0a" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="900" letter-spacing="3">STORY</text>
+</svg>

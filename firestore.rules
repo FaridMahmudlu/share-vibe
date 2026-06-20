@@ -47,39 +47,134 @@ service cloud.firestore {
       return email is string ? email.trim().lower() : '';
     }
 
-    // MIGRATION NOTE: Custom Claims take precedence over email checks
-    // Set custom claims using Cloud Function: setAdminClaim(uid, true)
+    // Custom claims are synced from config/access/policy.json through Cloud Functions.
     function isSuperAdmin() {
-      return isAuthenticated() && request.auth.token.admin == true;
+      return isAuthenticated() &&
+        (
+          request.auth.token.sharevibeSuperOwner == true ||
+          request.auth.token.role == "super_owner"
+        );
     }
 
-    // Fallback to email verification (deprecated, for backward compatibility)
-    // TODO: Remove after all admins have Custom Claims set
+    // Static generated fallback keeps rules enforceable before a client refreshes claims.
     function hasSuperAdminEmailLegacy() {
       return isAuthenticated() &&
         request.auth.token.email_verified == true &&
         (
           normalizeEmail(request.auth.token.email) == "fariddmahmudlu2008@gmail.com" ||
-          normalizeEmail(request.auth.token.email) == "aslankerem182@gmail.com"
+          normalizeEmail(request.auth.token.email) == "seid2008ferid@gmail.com"
         );
     }
 
     function isAdmin() {
+      return isSuperAdminAccount() || 
+             (isAuthenticated() && 
+              (request.auth.token.role == "admin" || 
+               (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+                get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin")));
+    }
+
+    function isSuperAdminAccount() {
+      return isSuperAdmin() || hasSuperAdminEmailLegacy();
+    }
+
+    // Verified Google account. Cafe access still requires central policy.
+    function isOwnerPortalAccount() {
+      return isAuthenticated() && request.auth.token.email_verified == true;
+    }
+
+    function hasCafeOwnerClaim(cafeId) {
       return isAuthenticated() &&
+             (
+               (
+                 request.auth.token.sharevibeOwnerCafes is list &&
+                 cafeId in request.auth.token.sharevibeOwnerCafes
+               ) ||
+               (
+                 request.auth.token.role == "owner" &&
+                 request.auth.token.cafeIds is list &&
+                 cafeId in request.auth.token.cafeIds
+               )
+             );
+    }
+
+    function hasCafeManagerClaim(cafeId) {
+      return isAuthenticated() &&
+             (
+               (
+                 request.auth.token.sharevibeManagerCafes is list &&
+                 cafeId in request.auth.token.sharevibeManagerCafes
+               ) ||
+               (
+                 request.auth.token.role == "manager" &&
+                 request.auth.token.cafeIds is list &&
+                 cafeId in request.auth.token.cafeIds
+               )
+             );
+    }
+
+    function hasStaticCafeAccess(cafeId) {
+      return isOwnerPortalAccount() &&
         (
-          isSuperAdmin() ||
-          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
-          hasSuperAdminEmailLegacy()  // Fallback for backward compatibility
+          false
         );
     }
 
-    // Owner portal access via Custom Claims (preferred) or email verification
-    function isOwnerPortalAccount() {
-      return isAuthenticated() && (isSuperAdmin() || hasSuperAdminEmailLegacy());
+    function hasStaticCafeOwnerAccess(cafeId) {
+      return isOwnerPortalAccount() &&
+        (
+          false
+        );
+    }
+
+    function canManageCafe(cafeId) {
+      return isSuperAdminAccount() ||
+             hasCafeOwnerClaim(cafeId) ||
+             hasCafeManagerClaim(cafeId) ||
+             hasStaticCafeAccess(cafeId);
+    }
+
+    function canOwnCafe(cafeId) {
+      return isSuperAdminAccount() ||
+             hasCafeOwnerClaim(cafeId) ||
+             hasStaticCafeOwnerAccess(cafeId);
+    }
+
+    function canCreateCafeWorkspace(cafeId) {
+      return isOwnerPortalAccount() && canOwnCafe(cafeId);
     }
     
     function isValidUrl(url) {
       return url is string && (url.matches("^https://.*") || url.matches("^http://.*"));
+    }
+
+    function isValidStoryTemplateUrl(url) {
+      return url is string &&
+        (
+          url == "/story-templates/elegant.png" ||
+          url == "/story-templates/elegant.svg" ||
+          url == "/story-templates/modern.png" ||
+          url == "/story-templates/modern.svg" ||
+          url == "/story-templates/vintage.png" ||
+          url == "/story-templates/vintage.svg" ||
+          url == "/story-templates/neon.png" ||
+          url == "/story-templates/neon.svg" ||
+          url == "/story-templates/botanical.png" ||
+          url == "/story-templates/botanical.svg" ||
+          url == "/story-templates/marble.png" ||
+          url == "/story-templates/marble.svg" ||
+          url == "/story-templates/template-1.jpg" ||
+          url == "/story-templates/template-2.jpg" ||
+          url == "/story-templates/template-3.jpg" ||
+          url == "/story-templates/template-4.jpg" ||
+          url == "/story-templates/template-5.jpg" ||
+          url == "/story-templates/template-6.jpg" ||
+          url == "/story-templates/template-7.jpg"
+        );
+    }
+
+    function hasValidStoryTemplateSelection(data) {
+      return !('activeStoryTemplateUrl' in data) || isValidStoryTemplateUrl(data.activeStoryTemplateUrl);
     }
     
     function hasOnlyAllowedFields(allowedFields) {
@@ -92,7 +187,7 @@ service cloud.firestore {
     
     function isValidMediaItem(data) {
       return hasRequiredFields(['url', 'type', 'caption', 'likedBy', 'likesCount', 'rotation', 'date', 'tableNumber', 'cafeSlug', 'cafeName', 'authorUid', 'createdAt']) &&
-             hasOnlyAllowedFields(['url', 'type', 'caption', 'likedBy', 'likesCount', 'rotation', 'date', 'tableNumber', 'cafeSlug', 'cafeName', 'authorUid', 'createdAt']) &&
+             hasOnlyAllowedFields(['url', 'type', 'caption', 'likedBy', 'likesCount', 'rotation', 'date', 'tableNumber', 'cafeSlug', 'cafeName', 'authorUid', 'createdAt', 'viewsCount', 'shareCount', 'qrInteractionCount', 'status']) &&
              isValidUrl(data.url) &&
              data.type == 'image' &&
              data.caption is string && data.caption.size() <= 100 &&
@@ -104,19 +199,60 @@ service cloud.firestore {
              data.cafeSlug is string && data.cafeSlug.size() <= 80 &&
              data.cafeName is string && data.cafeName.size() <= 120 &&
              data.authorUid is string && data.authorUid == request.auth.uid &&
-             data.createdAt is timestamp;
+             data.createdAt is timestamp &&
+             (!('status' in data) || (data.status is string && data.status in ['approved', 'pending_review', 'rejected', 'published', 'draft', 'passive'])) &&
+             (!('viewsCount' in data) || (data.viewsCount is number && data.viewsCount >= 0)) &&
+             (!('shareCount' in data) || (data.shareCount is number && data.shareCount >= 0)) &&
+             (!('qrInteractionCount' in data) || (data.qrInteractionCount is number && data.qrInteractionCount >= 0));
     }
 
     function isValidCafeSettings(data, cafeId) {
       return data.keys().hasAll(['cafeSlug', 'cafeName', 'accentColor', 'handwritingFont', 'campaignTarget', 'campaignReward', 'ownerEmail']) &&
-             data.keys().hasOnly(['cafeSlug', 'cafeName', 'accentColor', 'handwritingFont', 'campaignTarget', 'campaignReward', 'ownerEmail']) &&
+             data.keys().hasOnly(['cafeSlug', 'cafeName', 'accentColor', 'handwritingFont', 'campaignTarget', 'campaignReward', 'ownerEmail', 'packageKey', 'adminEmails', 'admins', 'activeStoryTemplateUrl']) &&
              data.cafeSlug is string && data.cafeSlug == cafeId && data.cafeSlug.size() <= 80 &&
              data.cafeName is string && data.cafeName.size() <= 120 &&
              data.accentColor is string && data.accentColor.matches("^#[0-9A-Fa-f]{6}$") &&
              data.handwritingFont is string && data.handwritingFont.size() <= 120 &&
              data.campaignTarget is number && data.campaignTarget >= 1 && data.campaignTarget <= 20 &&
              data.campaignReward is string && data.campaignReward.size() <= 120 &&
-             data.ownerEmail is string && data.ownerEmail.size() <= 160;
+             data.ownerEmail is string && data.ownerEmail.size() <= 160 &&
+             (!('packageKey' in data) || data.packageKey in ['aylik', 'yillik', 'standart_aylik', 'standart_yillik', 'mail_aylik', 'mail_yillik']) &&
+             (!('adminEmails' in data) || data.adminEmails is list) &&
+             (!('admins' in data) || data.admins is list) &&
+             hasValidStoryTemplateSelection(data);
+    }
+
+    function isCafeManager(cafeId) {
+      return hasCafeManagerClaim(cafeId) || hasStaticCafeAccess(cafeId);
+    }
+
+    function isCafeManagerProfileUpdate(cafeId) {
+      return isCafeManager(cafeId) &&
+             normalizeEmail(request.resource.data.ownerEmail) == normalizeEmail(resource.data.ownerEmail) &&
+             request.resource.data.adminEmails == resource.data.adminEmails &&
+             (('admins' in request.resource.data) == ('admins' in resource.data)) &&
+             (!('admins' in request.resource.data) || request.resource.data.admins == resource.data.admins);
+    }
+
+    function isOptionalString(value, maxSize) {
+      return value == null || (value is string && value.size() <= maxSize);
+    }
+
+    function isValidWebsiteCampaign(data, cafeId) {
+      return data.keys().hasAll(['cafeSlug', 'subject', 'description', 'imageUrl', 'textContent', 'status', 'tag', 'createdBy', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['cafeSlug', 'subject', 'description', 'imageUrl', 'textContent', 'status', 'startDate', 'endDate', 'tag', 'createdBy', 'createdAt', 'updatedAt']) &&
+             data.cafeSlug is string && data.cafeSlug == cafeId && data.cafeSlug.size() <= 80 &&
+             data.subject is string && data.subject.size() > 0 && data.subject.size() <= 80 &&
+             isOptionalString(data.description, 500) &&
+             isOptionalString(data.imageUrl, 1000) &&
+             data.textContent is string && data.textContent.size() > 0 && data.textContent.size() <= 800 &&
+             data.status in ['published', 'archived'] &&
+             (!('startDate' in data) || isOptionalString(data.startDate, 20)) &&
+             (!('endDate' in data) || isOptionalString(data.endDate, 20)) &&
+             isOptionalString(data.tag, 60) &&
+             data.createdBy is string && data.createdBy.size() <= 160 &&
+             data.createdAt is timestamp &&
+             data.updatedAt is timestamp;
     }
 
     function isLikeToggle() {
@@ -140,40 +276,84 @@ service cloud.firestore {
       return onlyLikesChanged && (addedLike || removedLike);
     }
 
+    function isStoryShareUpdate() {
+      let diff = request.resource.data.diff(resource.data);
+      let affected = diff.affectedKeys();
+      let previousShareCount = ('shareCount' in resource.data && resource.data.shareCount is number) ? resource.data.shareCount : 0;
+
+      return affected.hasOnly(['shareCount', 'lastStorySharedAt', 'shareSources']) &&
+             request.resource.data.shareCount is number &&
+             request.resource.data.shareCount == previousShareCount + 1 &&
+             request.resource.data.shareCount <= 100000 &&
+             request.resource.data.lastStorySharedAt is timestamp &&
+             request.resource.data.shareSources is list &&
+             request.resource.data.shareSources.size() == 1 &&
+             request.resource.data.shareSources[0] == 'instagram_story';
+    }
+
     match /media/{mediaId} {
-      // Gallery feed is visible to guests; write actions still require authentication
-      allow read: if true;
+      // Gallery feed is visible to guests only for approved items; write actions require authentication
+      allow read: if !('status' in resource.data) ||
+                     resource.data.status == "approved" ||
+                     (isAuthenticated() && (resource.data.authorUid == request.auth.uid || canManageCafe(resource.data.cafeSlug) || isAdmin()));
       
       // Anyone authenticated can create if data is valid
       allow create: if isAuthenticated() && isValidMediaItem(request.resource.data);
       
-      // Updates allowed for toggling likes
-      allow update: if isAuthenticated() && isLikeToggle();
+      // Updates allowed for toggling likes, controlled story-share counters, or status changes by managers/admins
+      allow update: if isAuthenticated() && (
+        isLikeToggle() || 
+        isStoryShareUpdate() || 
+        (canManageCafe(resource.data.cafeSlug) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) && request.resource.data.status in ['approved', 'pending_review', 'rejected', 'published', 'draft', 'passive']) || 
+        isAdmin()
+      );
       
-      // Only the owner or admin can delete
-      allow delete: if isOwner() || isAdmin();
+      // Upload owner, Super Admin, or the cafe owner/manager can delete media.
+      allow delete: if isOwner() || isAdmin() || (resource.data.cafeSlug is string && canManageCafe(resource.data.cafeSlug));
     }
 
     match /cafes/{cafeId} {
       allow read: if true;
 
       allow create: if
-        isOwnerPortalAccount() &&
+        canCreateCafeWorkspace(cafeId) &&
         isValidCafeSettings(request.resource.data, cafeId) &&
-        normalizeEmail(request.resource.data.ownerEmail) == normalizeEmail(request.auth.token.email);
+        (isSuperAdminAccount() || normalizeEmail(request.resource.data.ownerEmail) == normalizeEmail(request.auth.token.email));
 
       allow update: if
-        isValidCafeSettings(request.resource.data, cafeId) &&
         (
-          isAdmin() ||
+          canManageCafe(cafeId) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['activeStoryTemplateUrl']) &&
+          hasValidStoryTemplateSelection(request.resource.data)
+        ) ||
+        (
+          isValidCafeSettings(request.resource.data, cafeId) &&
           (
-            isOwnerPortalAccount() &&
-            normalizeEmail(resource.data.ownerEmail) == normalizeEmail(request.auth.token.email) &&
-            normalizeEmail(request.resource.data.ownerEmail) == normalizeEmail(resource.data.ownerEmail)
+            isSuperAdminAccount() ||
+            (
+              canOwnCafe(cafeId) &&
+              normalizeEmail(request.resource.data.ownerEmail) == normalizeEmail(resource.data.ownerEmail)
+            ) ||
+            isCafeManagerProfileUpdate(cafeId)
           )
         );
 
-      allow delete: if isAdmin();
+      allow delete: if
+        canOwnCafe(cafeId);
+
+      match /campaigns/{campaignId} {
+        allow read: if true;
+
+        allow create: if
+          canManageCafe(cafeId) &&
+          isValidWebsiteCampaign(request.resource.data, cafeId);
+
+        allow update: if
+          canManageCafe(cafeId) &&
+          isValidWebsiteCampaign(request.resource.data, cafeId);
+
+        allow delete: if canManageCafe(cafeId);
+      }
     }
 
     match /settings/{document=**} {
@@ -181,9 +361,38 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    match /cafeOwnerAccess/{email} {
+      allow get: if isAuthenticated() &&
+        (isSuperAdminAccount() || email == normalizeEmail(request.auth.token.email));
+      allow list: if isSuperAdminAccount();
+
+      allow create, update: if isSuperAdminAccount() &&
+        request.resource.data.keys().hasAll(['email', 'active']) &&
+        request.resource.data.keys().hasOnly(['email', 'active', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy']) &&
+        request.resource.data.email == email &&
+        request.resource.data.email.size() <= 160 &&
+        request.resource.data.active is bool &&
+        (!('createdBy' in request.resource.data) || request.resource.data.createdBy is string || request.resource.data.createdBy == null) &&
+        (!('updatedBy' in request.resource.data) || request.resource.data.updatedBy is string || request.resource.data.updatedBy == null) &&
+        (!('createdAt' in request.resource.data) || request.resource.data.createdAt is timestamp) &&
+        (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt is timestamp);
+
+      allow delete: if isSuperAdminAccount();
+    }
+
     match /users/{userId} {
       allow read: if isAuthenticated() && request.auth.uid == userId || isAdmin();
       allow write: if isAdmin();
+    }
+
+    match /client_error_logs/{logId} {
+      allow create: if true;
+      allow read: if isSuperAdminAccount();
+    }
+
+    match /security_events/{eventId} {
+      allow create: if true;
+      allow read: if isSuperAdminAccount();
     }
   }
 }

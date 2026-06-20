@@ -1,10 +1,10 @@
-import React, { Suspense, startTransition, useDeferredValue, useEffect, useMemo, useRef, useState, useCallback, memo } from 'react';
+﻿import React, { Suspense, startTransition, useDeferredValue, useEffect, useMemo, useRef, useState, useCallback, memo } from 'react';
 import { AlertTriangle, Camera, Upload, Heart, X, Sparkles, MapPin, Clock, Instagram, Twitter, Facebook, Share2, Copy, Check, CheckCircle2, Trash2, RotateCw, Sun, Contrast, Coffee, ImageOff, Gift } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db, auth, storage, waitForAuthInitialization } from '@/lib/firebase/client';
-import { collection, addDoc, getDocs, onSnapshot, query, orderBy, doc, updateDoc, serverTimestamp, arrayUnion, arrayRemove, increment, limit, where } from 'firebase/firestore';
+import { collection, addDoc, getDocs, getDoc, onSnapshot, query, orderBy, doc, updateDoc, serverTimestamp, arrayUnion, arrayRemove, increment, limit, where } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
+import { onAuthStateChanged, onIdTokenChanged, signOut, type User } from 'firebase/auth';
 import { getGoogleSignInErrorMessage, resolveGoogleSignInRedirect, signInWithGoogle } from '@/lib/auth/googleAuth';
 import { deleteMediaRecord } from '@/lib/storage/mediaStorage';
 import { clearPendingUpload, getPendingUpload, savePendingUpload, type PendingUploadDraft } from '@/lib/storage/pendingUpload';
@@ -15,8 +15,17 @@ import { validateAndSanitizeCaption, validateAndSanitizeCafeSlug } from '@/secur
 import { CSRFProtection } from '@/security/browser';
 import { auditLogger } from '@/lib/audit/auditIntegration';
 import { emailService } from '@/services/api/emailService';
-import { shareToInstagramStory as storyShareService } from '@/services/sharing/storyShareService';
+import {
+  compositeTemplateWithPhoto,
+  shareToInstagramStory as storyShareService,
+} from '@/services/sharing/storyShareService';
+import { getSignedPhotoUrl } from '@/hooks/useSignedPhotoUrl';
 import { updatePageMeta, updateBreadcrumbs, trackPageView } from '@/seo/utils';
+import CookieConsentBanner from '@/components/common/CookieConsentBanner';
+import SignupForm from '@/components/common/SignupForm';
+import SignedImage from '@/components/common/SignedImage';
+import { invalidateSignedPhotoUrlCache } from '@/hooks/useSignedPhotoUrl';
+import { parseExif } from '@/utils/exifParser';
 import {
   buildCafePublicLink,
   DEFAULT_CAFE_SLUG,
@@ -70,7 +79,7 @@ type DemoCafeCandidate = {
   cafeName: string;
   mediaCount: number;
 };
-type AppView = 'landing' | 'app' | 'admin' | 'owner' | 'notFound';
+type AppView = 'landing' | 'app' | 'admin' | 'owner' | 'notFound' | 'securityPolicy' | 'signup' | 'redirect';
 
 const PUBLIC_LANDING_PATHS = new Set([
   '/',
@@ -79,6 +88,9 @@ const PUBLIC_LANDING_PATHS = new Set([
   '/contact',
   '/privacy-policy',
   '/terms-of-service',
+  '/security-policy',
+  '/signup',
+  '/redirect',
 ]);
 const DEMO_CAFE_MATCHER = /(ava|lumina)/i;
 const APP_EXPERIENCE_IMAGES = [
@@ -115,6 +127,15 @@ const MAX_UPLOAD_IMAGE_DIMENSION = 4096;
 const MAX_UPLOAD_IMAGE_SIZE = 8_000_000;
 const AdminPanel = React.lazy(() => import('@/pages/admin/AdminPanel'));
 const OWNER_PORTAL_INTENT_KEY = 'share-vibe-owner-portal-intent';
+const STORY_TEMPLATES = [
+  { key: 'template-1', name: 'Klasik', description: 'Temiz marka alanı ve net fotoğraf odağı.', url: '/story-templates/template-1.jpg', accent: '#22c55e' },
+  { key: 'template-2', name: 'Sade', description: 'Fotoğrafı öne çıkaran dengeli story görünümü.', url: '/story-templates/template-2.jpg', accent: '#16a34a' },
+  { key: 'template-3', name: 'Vurgu', description: 'Daha güçlü tipografiyle dikkat çeker.', url: '/story-templates/template-3.jpg', accent: '#84cc16' },
+  { key: 'template-4', name: 'Modern', description: 'Kampanya ve anı paylaşımı için ferah yapı.', url: '/story-templates/template-4.jpg', accent: '#14b8a6' },
+  { key: 'template-5', name: 'Dinamik', description: 'Canlı sosyal medya hissi verir.', url: '/story-templates/template-5.jpg', accent: '#65a30d' },
+  { key: 'template-6', name: 'Samimi', description: 'El yazısı etkisiyle sıcak bir paylaşım sağlar.', url: '/story-templates/template-6.jpg', accent: '#4ade80' },
+  { key: 'template-7', name: 'Cesur', description: 'Kalın mesaj ve yüksek görünürlük sunar.', url: '/story-templates/template-7.jpg', accent: '#94a3b8' },
+];
 
 const getUploadErrorMessage = (error: unknown) => {
   const code =
@@ -122,10 +143,8 @@ const getUploadErrorMessage = (error: unknown) => {
       ? String((error as { code?: unknown }).code)
       : '';
   const message =
-    error instanceof Error
-      ? error.message.toLowerCase()
-      : typeof error === 'string'
-        ? error.toLowerCase()
+    error instanceof Error error.message.toLowerCase()
+      : typeof error === 'string' error.toLowerCase()
         : '';
 
   if (code === 'storage/unauthorized' || message.includes('permission') || message.includes('unauthorized')) {
@@ -184,15 +203,15 @@ const getCafeSlugFromPath = (pathname: string) => {
 
 const getInitialCafeSlug = () =>
   normalizeCafeSlug(
-    (typeof window !== 'undefined' ? getCafeSlugFromPath(window.location.pathname) : null) ??
-      getInitialQueryParams().get('cafe') ??
-      getInitialQueryParams().get('kafe') ??
+    (typeof window !== 'undefined' ? getCafeSlugFromPath(window.location.pathname) : null) ||
+      getInitialQueryParams().get('cafe') ||
+      getInitialQueryParams().get('kafe') ||
       DEFAULT_CAFE_SLUG
   );
 
 const getInitialTableLabel = () =>
   normalizeTableLabel(
-    getInitialQueryParams().get('table') ?? getInitialQueryParams().get('masa'),
+    getInitialQueryParams().get('table') || getInitialQueryParams().get('masa'),
     ''
   );
 
@@ -206,6 +225,14 @@ const getInitialView = (): AppView => {
 
     if (normalizedPath === '/owner') {
       return 'owner';
+    }
+
+    if (normalizedPath === '/security-policy') {
+      return 'securityPolicy';
+    }
+
+    if (normalizedPath === '/signup') {
+      return 'signup';
     }
 
     if (getCafeSlugFromPath(normalizedPath) || normalizedPath === '/share') {
@@ -286,12 +313,14 @@ export default function App() {
   const [selectedMediaId, setSelectedMediaId] = useState<string | null>(null);
   const [shareMediaId, setShareMediaId] = useState<string | null>(null);
   const [activeStoryTemplateUrl, setActiveStoryTemplateUrl] = useState<string | null>(null);
+  const [selectedStoryTemplateUrl, setSelectedStoryTemplateUrl] = useState<string>(STORY_TEMPLATES[0].url);
   const [isStoryShareBusy, setIsStoryShareBusy] = useState(false);
+  const [isStoryPreviewLoading, setIsStoryPreviewLoading] = useState(false);
+  const [storyPreviewUrls, setStoryPreviewUrls] = useState<Record<string, string>>({});
   const [shareNotice, setShareNotice] = useState<{ tone: 'info' | 'success' | 'error'; text: string } | null>(null);
   const [mediaToDelete, setMediaToDelete] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState(false);
-  const [failedMediaIds, setFailedMediaIds] = useState<Record<string, true>>({});
   const [currentUserUid, setCurrentUserUid] = useState<string | null>(null);
   const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
   const [isAuthResolved, setIsAuthResolved] = useState(false);
@@ -309,6 +338,10 @@ export default function App() {
   const [editRotation, setEditRotation] = useState(0);
   const [editBrightness, setEditBrightness] = useState(100);
   const [editContrast, setEditContrast] = useState(100);
+  const [exifInfo, setExifInfo] = useState<any>(null);
+  const [redirectTarget, setRedirectTarget] = useState<string | null>(null);
+  const [redirectCountdown, setRedirectCountdown] = useState(3);
+  const [redirectError, setRedirectError] = useState<string | null>(null);
 
   // Calculate weekly uploads for the current user
   const userUploadsThisWeekCount = useMemo(() => {
@@ -373,6 +406,86 @@ export default function App() {
 
   const customerSyncKeyRef = useRef<string | null>(null);
 
+  // [NV-05] Redirection handlers
+  useEffect(() => {
+    if (currentView !== 'redirect') return;
+
+    let active = true;
+    const params = getInitialQueryParams();
+    const redirectId = params.get('redirectId') || params.get('id');
+
+    if (!redirectId) {
+      setRedirectError('Geçersiz yönlendirme ID\'si.');
+      return;
+    }
+
+    const fetchRedirect = async () => {
+      try {
+        const docRef = doc(db, 'redirects', redirectId);
+        const docSnap = await getDoc(docRef);
+        
+        if (!docSnap.exists()) {
+          setRedirectError('Yönlendirme adresi bulunamadı.');
+          return;
+        }
+
+        const data = docSnap.data();
+        const targetPath = data?.targetPath;
+
+        if (!targetPath || typeof targetPath !== 'string') {
+          setRedirectError('Yönlendirme adresi geçersiz.');
+          return;
+        }
+
+        // Whitelist validation: only allow relative paths or https://sharevibe.co/*
+        const isRelative = targetPath.startsWith('/') && !targetPath.startsWith('//');
+        const isWhitelistedDomain = targetPath.startsWith('https://sharevibe.co/');
+        
+        if (!isRelative && !isWhitelistedDomain) {
+          // Log suspicious redirect attempt to security_events
+          await addDoc(collection(db, 'security_events'), {
+            type: 'suspicious_redirect_attempt',
+            redirectId,
+            targetPath,
+            timestamp: serverTimestamp(),
+            ip: 'client-logged',
+          });
+
+          setRedirectError('Güvenlik nedeniyle bu adrese yönlendirme engellendi.');
+          return;
+        }
+
+        if (active) {
+          setRedirectTarget(targetPath);
+        }
+      } catch (err) {
+        console.error('Redirect fetch failed:', err);
+        setRedirectError('Sistem hatası. Lütfen daha sonra tekrar deneyin.');
+      }
+    };
+
+    void fetchRedirect();
+
+    return () => {
+      active = false;
+    };
+  }, [currentView]);
+
+  useEffect(() => {
+    if (currentView !== 'redirect' || !redirectTarget) return;
+
+    if (redirectCountdown <= 0) {
+      window.location.href = redirectTarget;
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setRedirectCountdown(prev => prev - 1);
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [currentView, redirectTarget, redirectCountdown]);
+
   useEffect(() => {
     const currentUser = auth.currentUser;
     const authProvider = currentUser?.providerData?.find((provider) => provider?.providerId)?.providerId;
@@ -432,10 +545,6 @@ export default function App() {
     }
   };
 
-  const markMediaAsFailed = useCallback((id: string) => {
-    setFailedMediaIds((current) => (current[id] ? current : { ...current, [id]: true }));
-  }, []);
-
   // SEO: Update page metadata based on current view
   useEffect(() => {
     if (currentView === 'landing') {
@@ -491,7 +600,7 @@ export default function App() {
         title: `${cafeName} - ShareVibe Kafe Galerisi | Fotoğraf Paylaşım`,
         description: `${cafeName} kafe galerisi. Fotoğraf paylaş, beğen, keşfet.`,
         keywords: ['kafe galeri', cafeName, 'fotoğraf', 'paylaşım'],
-        image: mediaItems[0]?.url || 'https://sharevibe.co/sharevibe-logo.png',
+        image: mediaItems[0]?.url ?? 'https://sharevibe.co/sharevibe-logo.png',
         type: 'product',
         url: fullUrl,
         canonical: fullUrl,
@@ -564,6 +673,7 @@ export default function App() {
     setEditRotation(0);
     setEditBrightness(100);
     setEditContrast(100);
+    setExifInfo(null);
     stopDesktopCamera();
     clearUploadInputValues();
   };
@@ -595,7 +705,7 @@ export default function App() {
       }
 
       syncCurrentUser(result.user);
-      // 📝 Audit: Log successful login
+      // Audit: Log successful login
       await auditLogger.logLogin(result.user.uid, result.user.email);
       return result.user;
     } catch (error) {
@@ -610,11 +720,21 @@ export default function App() {
   const handleLogout = async () => {
     try {
       const user = auth.currentUser;
-      // 📝 Audit: Log logout
+      // Audit: Log logout
       if (user) {
         await auditLogger.logLogout(user.uid, user.email);
       }
       
+      try {
+        const apiUrl = import.meta.env.VITE_API_URL || '';
+        await fetch(`${apiUrl}/api/session/logout`, {
+          method: 'POST',
+          credentials: 'include',
+        });
+      } catch (err) {
+        console.warn('Session logout API failed:', err);
+      }
+
       await signOut(auth);
       syncCurrentUser(null);
       setCurrentView('app');
@@ -631,6 +751,16 @@ export default function App() {
 
   const handleSwitchOwnerAccount = async () => {
     try {
+      try {
+        const apiUrl = import.meta.env.VITE_API_URL || '';
+        await fetch(`${apiUrl}/api/session/logout`, {
+          method: 'POST',
+          credentials: 'include',
+        });
+      } catch (err) {
+        console.warn('Session logout API failed:', err);
+      }
+
       await signOut(auth);
       syncCurrentUser(null);
       setOwnerAccessError(null);
@@ -838,26 +968,24 @@ export default function App() {
   };
 
   const prepareFileForUpload = async (draft: UploadDraft) => {
-    if (!draft.file.type.startsWith('image/')) {
-      throw new Error('Yalnız fotoğraf yükleyebilirsiniz.');
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic'];
+    if (!allowedTypes.includes(draft.file.type.toLowerCase())) {
+      throw new Error('Geçersiz dosya türü. Yalnızca JPEG, PNG, WebP ve HEIC fotoğrafları yükleyebilirsiniz.');
     }
 
-    const hasEdits = draft.editRotation !== 0 || draft.editBrightness !== 100 || draft.editContrast !== 100;
-    const needsCompression = draft.file.size > MAX_UPLOAD_IMAGE_SIZE;
+    if (draft.file.size > 15 * 1024 * 1024) {
+      throw new Error('Dosya boyutu çok büyük. Maksimum dosya boyutu 15MB olmalıdır.');
+    }
 
     setUploadStatus('Fotoğraf optimize ediliyor...');
     await new Promise<void>((resolve) => {
       window.requestAnimationFrame(() => resolve());
     });
+
     const image = await loadImageFromFile(draft.file);
     const scaleRatio = Math.min(1, MAX_UPLOAD_IMAGE_DIMENSION / Math.max(image.width, image.height));
     const targetWidth = Math.max(1, Math.round(image.width * scaleRatio));
     const targetHeight = Math.max(1, Math.round(image.height * scaleRatio));
-    const needsResize = targetWidth !== image.width || targetHeight !== image.height;
-
-    if (!hasEdits && !needsResize && !needsCompression) {
-      return draft.file;
-    }
 
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
@@ -897,8 +1025,18 @@ export default function App() {
       setUploadError('Giriş bilgisi doğrulanamadı. Lütfen tekrar deneyin.');
       return;
     }
+    // Ensure Firebase SDK has a valid auth state for Storage operations
+    if (!auth.currentUser) {
+      await waitForAuthInitialization();
+    }
 
-    await auth.currentUser?.getIdToken(true);
+    if (!auth.currentUser) {
+      setUploadStatus(null);
+      setUploadError('Oturum doğrulanamadı. Lütfen sayfayı yenileyip tekrar giriş yapın.');
+      return;
+    }
+
+    await auth.currentUser.getIdToken(true);
 
     if (countWeeklyUploadsForUser(uid) >= MAX_WEEKLY_UPLOADS) {
       setUploadError(`Haftalık paylaşım limitinize (${MAX_WEEKLY_UPLOADS}) ulaştınız. Lütfen daha sonra tekrar deneyin.`);
@@ -947,7 +1085,7 @@ export default function App() {
       const timeString = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
 
       setUploadStatus('Veritabanına kaydediliyor...');
-      // ✅ XSS Qoruması: Caption-u təmizlə
+      // Sanitize the caption before storing it.
       const sanitizedCaption = validateAndSanitizeCaption(draft.caption) || DEFAULT_MEDIA_CAPTION;
       
       const mediaDocRef = await addDoc(collection(db, 'media'), {
@@ -965,10 +1103,11 @@ export default function App() {
         cafeSlug: uploadCafeSlug,
         cafeName,
         authorUid: uid,
+        status: 'approved',
         createdAt: serverTimestamp()
       });
 
-      // 📝 Audit: Log media upload
+      // Audit: Log media upload
       const user = auth.currentUser;
       await auditLogger.logMediaUpload(
         uid,
@@ -1006,6 +1145,19 @@ export default function App() {
       return true;
     } catch (error: any) {
       console.error("Error uploading media:", error);
+      try {
+        await addDoc(collection(db, 'client_error_logs'), {
+          error: {
+            message: error?.message || String(error),
+            code: error?.code || null,
+            serverResponse: error?.serverResponse || null,
+          },
+          uid,
+          timestamp: serverTimestamp(),
+        });
+      } catch (err) {
+        console.error('Failed to log client error to Firestore:', err);
+      }
       setUploadError(getUploadErrorMessage(error));
       setUploadStatus(null);
       setUploadProgress(null);
@@ -1087,8 +1239,8 @@ export default function App() {
               return;
             }
 
-            const slug = normalizeCafeSlug(data.cafeSlug ?? DEFAULT_CAFE_SLUG);
-            mediaCountBySlug.set(slug, (mediaCountBySlug.get(slug) ?? 0) + 1);
+            const slug = normalizeCafeSlug(data.cafeSlug || DEFAULT_CAFE_SLUG);
+            mediaCountBySlug.set(slug, (mediaCountBySlug.get(slug) || 0) + 1);
           });
         }
 
@@ -1096,11 +1248,11 @@ export default function App() {
         if (cafesResult.status === 'fulfilled') {
           cafesResult.value.docs.forEach((entry) => {
             const data = entry.data();
-            const slug = normalizeCafeSlug(data.cafeSlug ?? entry.id, entry.id);
+            const slug = normalizeCafeSlug(data.cafeSlug || entry.id, entry.id);
             cafes.set(slug, {
               slug,
               cafeName: normalizeLegacyText(data.cafeName, DEFAULT_CAFE_NAME),
-              mediaCount: mediaCountBySlug.get(slug) ?? 0,
+              mediaCount: mediaCountBySlug.get(slug) || 0,
             });
           });
         }
@@ -1109,7 +1261,7 @@ export default function App() {
           cafes.set(DEFAULT_CAFE_SLUG, {
             slug: DEFAULT_CAFE_SLUG,
             cafeName: DEFAULT_CAFE_NAME,
-            mediaCount: mediaCountBySlug.get(DEFAULT_CAFE_SLUG) ?? 0,
+            mediaCount: mediaCountBySlug.get(DEFAULT_CAFE_SLUG) || 0,
           });
         }
 
@@ -1159,6 +1311,20 @@ export default function App() {
       url.searchParams.delete('table');
       url.searchParams.delete('masa');
       url.searchParams.delete('media');
+      window.history.replaceState({}, '', url);
+      return;
+    }
+
+    if (currentView === 'securityPolicy') {
+      url.pathname = '/security-policy';
+      url.searchParams.delete('screen');
+      window.history.replaceState({}, '', url);
+      return;
+    }
+
+    if (currentView === 'signup') {
+      url.pathname = '/signup';
+      url.searchParams.delete('screen');
       window.history.replaceState({}, '', url);
       return;
     }
@@ -1384,6 +1550,46 @@ export default function App() {
     return () => unsubscribeAuth();
   }, []);
 
+  // [NV-09] Real-time Custom Claims / User Role Synchronizer
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    // Listen to token changes
+    const unsubscribeIdToken = onIdTokenChanged(auth, async (updatedUser) => {
+      if (updatedUser) {
+        console.log('[Auth] ID Token changed/updated.');
+      }
+    });
+
+    // Listen to firestore /users/{uid} document
+    const userDocRef = doc(db, 'users', user.uid);
+    const unsubscribeUserDoc = onSnapshot(userDocRef, async (docSnap) => {
+      if (!docSnap.exists()) return;
+      const data = docSnap.data();
+      const firestoreRole = data?.role;
+
+      try {
+        const tokenResult = await user.getIdTokenResult();
+        const currentTokenRole = tokenResult.claims.role;
+
+        // If firestore role is different from the token claim role, force refresh
+        if (firestoreRole && firestoreRole !== currentTokenRole) {
+          console.log(`[Auth] Role change detected (Firestore: ${firestoreRole}, Token: ${currentTokenRole}). Refreshing token...`);
+          await user.getIdToken(true);
+          console.log('[Auth] Token successfully refreshed with new custom claims.');
+        }
+      } catch (err) {
+        console.error('[Auth] Custom claim check/refresh failed:', err);
+      }
+    });
+
+    return () => {
+      unsubscribeIdToken();
+      unsubscribeUserDoc();
+    };
+  }, [currentUserUid]);
+
   useEffect(() => {
     if (!isAuthResolved) {
       setMediaItems([]);
@@ -1399,7 +1605,6 @@ export default function App() {
         if (data.type === 'video') {
           return;
         }
-
         items.push({
           id: doc.id,
           url: typeof data.url === 'string' ? data.url : '',
@@ -1412,7 +1617,7 @@ export default function App() {
           rotation: typeof data.rotation === 'number' ? data.rotation : 0,
           date: normalizeLegacyText(data.date, '--:--'),
           tableNumber: normalizeTableLabel(data.tableNumber, 'Masa'),
-          cafeSlug: normalizeCafeSlug(data.cafeSlug ?? DEFAULT_CAFE_SLUG),
+          cafeSlug: normalizeCafeSlug(data.cafeSlug || DEFAULT_CAFE_SLUG),
           authorUid: typeof data.authorUid === 'string' ? data.authorUid : '',
           createdAt: data.createdAt
         });
@@ -1529,7 +1734,7 @@ export default function App() {
       return;
     }
 
-    let uid = currentUserUid ?? auth.currentUser?.uid ?? null;
+    let uid = currentUserUid || auth.currentUser?.uid || null;
 
     if (!uid) {
       const user = await ensureGoogleUser({
@@ -1565,7 +1770,7 @@ export default function App() {
 
     const userAgent = navigator.userAgent;
     return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent)
-      || (/Macintosh/i.test(userAgent) && navigator.maxTouchPoints > 1);
+      ? (/Macintosh/i.test(userAgent) && navigator.maxTouchPoints > 1);
   };
 
   const startDesktopCamera = async () => {
@@ -1632,6 +1837,15 @@ export default function App() {
     setEditRotation(0);
     setEditBrightness(100);
     setEditContrast(100);
+    setExifInfo(null);
+
+    parseExif(file).then((info) => {
+      if (info) {
+        setExifInfo(info);
+      }
+    }).catch((err) => {
+      console.warn('Exif reading failed:', err);
+    });
   };
 
   const captureDesktopPhoto = () => {
@@ -1680,7 +1894,7 @@ export default function App() {
       e.stopPropagation();
     }
     
-    let uid = currentUserUid ?? auth.currentUser?.uid ?? null;
+    let uid = currentUserUid || auth.currentUser?.uid || null;
     if (!uid) {
       const user = await ensureGoogleUser();
       if (!user) {
@@ -1728,6 +1942,7 @@ export default function App() {
     try {
       const item = getMediaItemById(id);
       await deleteMediaRecord(id, item?.url);
+      invalidateSignedPhotoUrlCache(id);
       if (selectedMediaId === id) {
         setSelectedMediaId(null);
       }
@@ -1741,8 +1956,8 @@ export default function App() {
     const item = getMediaItemById(id);
     const url = buildCafePublicLink({
       origin: window.location.origin,
-      cafeSlug: item?.cafeSlug ?? activeCafeSlug,
-      tableLabel: item?.tableNumber ?? resolvedTableLabel,
+      cafeSlug: item?.cafeSlug || activeCafeSlug,
+      tableLabel: item?.tableNumber || resolvedTableLabel,
     });
     const shareUrl = new URL(url);
     shareUrl.searchParams.set('media', id);
@@ -1757,6 +1972,39 @@ export default function App() {
     }
   }, [getMediaItemById, activeCafeSlug, resolvedTableLabel]);
 
+  const buildMediaShareUrl = useCallback((id: string) => {
+    const item = getMediaItemById(id);
+    const url = buildCafePublicLink({
+      origin: window.location.origin,
+      cafeSlug: item?.cafeSlug || activeCafeSlug,
+      tableLabel: item?.tableNumber || resolvedTableLabel,
+    });
+    const shareUrl = new URL(url);
+    shareUrl.searchParams.set('media', id);
+    return shareUrl.toString();
+  }, [getMediaItemById, activeCafeSlug, resolvedTableLabel]);
+
+  const openShareModal = useCallback((id: string) => {
+    const item = getMediaItemById(id);
+
+    if (!currentUserUid || !item || item.authorUid !== currentUserUid) {
+      setShareNotice({
+        tone: 'error',
+        text: 'Bu fotoğrafı yalnızca paylaşımı yapan hesap sosyal medyada paylaşabilir.',
+      });
+      return;
+    }
+
+    const defaultTemplate =
+      STORY_TEMPLATES.find((template) => template.url === activeStoryTemplateUrl)?.url ||
+      STORY_TEMPLATES[0].url;
+
+    setSelectedStoryTemplateUrl(defaultTemplate);
+    setShareNotice(null);
+    setIsCopied(false);
+    setShareMediaId(id);
+  }, [activeStoryTemplateUrl, currentUserUid, getMediaItemById]);
+
   const shareToInstagramStory = useCallback(async (mediaId: string) => {
     if (isStoryShareBusy) {
       return;
@@ -1765,14 +2013,22 @@ export default function App() {
     const item = getMediaItemById(mediaId);
     if (!item) return;
 
+    if (!currentUserUid || item.authorUid !== currentUserUid) {
+      setShareNotice({
+        tone: 'error',
+        text: 'Instagram Story paylaşımı yalnızca fotoğrafı paylaşan hesaba açıktır.',
+      });
+      return;
+    }
+
     setIsStoryShareBusy(true);
-    setShareNotice({ tone: 'info', text: 'Story görseli hazırlanıyor...' });
+    setShareNotice({ tone: 'info', text: 'Instagram Story görseli hazırlanıyor...' });
 
     try {
       const result = await storyShareService({
         mediaId,
         photoUrl: item.url,
-        activeStoryTemplateUrl,
+        activeStoryTemplateUrl: selectedStoryTemplateUrl,
         onShare: async () => {
           try {
             await updateDoc(doc(db, 'media', mediaId), {
@@ -1793,7 +2049,8 @@ export default function App() {
     } finally {
       setIsStoryShareBusy(false);
     }
-  }, [getMediaItemById, activeStoryTemplateUrl, isStoryShareBusy]);
+  }, [getMediaItemById, currentUserUid, selectedStoryTemplateUrl, isStoryShareBusy]);
+
 
   useEffect(() => {
     if (!shareMediaId) {
@@ -1802,6 +2059,75 @@ export default function App() {
       setIsCopied(false);
     }
   }, [shareMediaId]);
+
+  const selectedShareMedia = shareMediaId ? getMediaItemById(shareMediaId) ?? null : null;
+  const selectedShareUrl = shareMediaId ? buildMediaShareUrl(shareMediaId) : '';
+  const canShareSelectedMedia = Boolean(selectedShareMedia && currentUserUid && selectedShareMedia.authorUid === currentUserUid);
+  const selectedStoryTemplate =
+    STORY_TEMPLATES.find((template) => template.url === selectedStoryTemplateUrl) ?? STORY_TEMPLATES[0];
+
+  useEffect(() => {
+    if (!selectedShareMedia?.url || !canShareSelectedMedia) {
+      setStoryPreviewUrls((current) => {
+        Object.values(current).forEach((url) => URL.revokeObjectURL(url));
+        return {};
+      });
+      setIsStoryPreviewLoading(false);
+      return;
+    }
+
+    let isCancelled = false;
+    const createdUrls: string[] = [];
+    setIsStoryPreviewLoading(true);
+
+    const buildPreviews = async () => {
+      let previewPhotoUrl = selectedShareMedia.url;
+      try {
+        previewPhotoUrl = await getSignedPhotoUrl(selectedShareMedia.id);
+      } catch (error) {
+        console.warn('[Story Preview] Signed photo URL could not be fetched.', error);
+      }
+
+      const entries = await Promise.all(
+        STORY_TEMPLATES.map(async (template) => {
+          const blob = await compositeTemplateWithPhoto({
+            templateUrl: `${window.location.origin}${template.url}`,
+            photoUrl: previewPhotoUrl,
+            previewMaxWidth: 270,
+          });
+
+          if (!blob || isCancelled) {
+            return null;
+          }
+
+          const objectUrl = URL.createObjectURL(blob);
+          createdUrls.push(objectUrl);
+          return [template.url, objectUrl] as const;
+        })
+      );
+
+      if (isCancelled) {
+        createdUrls.forEach((url) => URL.revokeObjectURL(url));
+        return;
+      }
+
+      setStoryPreviewUrls((current) => {
+        Object.values(current).forEach((url) => URL.revokeObjectURL(url));
+        return Object.fromEntries(entries.filter((entry): entry is readonly [string, string] => Boolean(entry)));
+      });
+    };
+
+    void buildPreviews().finally(() => {
+      if (!isCancelled) {
+        setIsStoryPreviewLoading(false);
+      }
+    });
+
+    return () => {
+      isCancelled = true;
+      createdUrls.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [canShareSelectedMedia, selectedShareMedia?.id, selectedShareMedia?.url]);
 
   const cafeMediaItems = useMemo(
     () => mediaItems.filter((item) => item.cafeSlug === activeCafeSlug),
@@ -1816,9 +2142,8 @@ export default function App() {
   );
   const featuredPublicCampaign = visiblePublicCampaigns[0] ?? null;
   const appHeroPreviewItems = useMemo(() => {
-    const liveItems = isAuthenticated
-      ? cafeMediaItems
-          .filter((item) => item.url && !failedMediaIds[item.id])
+    const liveItems = isAuthenticated cafeMediaItems
+          .filter((item) => item.url)
           .slice(0, 3)
           .map((item) => ({
             id: item.id,
@@ -1835,7 +2160,7 @@ export default function App() {
     }));
 
     return [...liveItems, ...fallbackItems].slice(0, 3);
-  }, [cafeMediaItems, cafeName, failedMediaIds, isAuthenticated, resolvedTableLabel]);
+  }, [cafeMediaItems, cafeName, isAuthenticated, resolvedTableLabel]);
   const rewardPreviewItems = rewardCelebration?.items ?? [];
   const rewardShowcaseItems = useMemo(
     () =>
@@ -1923,7 +2248,7 @@ export default function App() {
           onBack={() => setCurrentView('landing')}
           portalMode="admin"
           currentUserEmail={currentUserEmail}
-          currentUserVerified={auth.currentUser?.emailVerified ?? null}
+          currentUserVerified={auth.currentUser?.emailVerified ?? false}
           onOpenCafeEnvironment={(slug) =>
             openCafeExperience({
               cafeSlug: slug,
@@ -1956,7 +2281,7 @@ export default function App() {
           onBack={() => setCurrentView('landing')}
           portalMode="owner"
           currentUserEmail={currentUserEmail}
-          currentUserVerified={auth.currentUser?.emailVerified ?? null}
+          currentUserVerified={auth.currentUser?.emailVerified ?? false}
           onOpenCafeEnvironment={(slug) =>
             openCafeExperience({
               cafeSlug: slug,
@@ -1983,7 +2308,114 @@ export default function App() {
             hasOwnerAccess={hasOwnerAccess}
             demoCafeName={demoCafeName}
             initialRoutePath={getCurrentLandingPath()}
+            onOpenSecurityPolicy={() => setCurrentView('securityPolicy')}
           />
+        </div>
+      </div>
+    );
+  }
+
+  if (currentView === 'securityPolicy') {
+    return (
+      <div className="min-h-screen pb-20 font-sans selection:bg-accent/20 relative text-cafe-50 bg-[#121211]">
+        <AnimatedBackground />
+        <div className="relative z-10 max-w-4xl mx-auto px-6 pt-12 sm:pt-20">
+          <button
+            onClick={() => setCurrentView('landing')}
+            className="mb-8 inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-cafe-100/60 hover:text-cafe-50 transition-colors"
+          >
+            ← Ana Sayfa
+          </button>
+          
+          <div className="rounded-[2.5rem] border border-white/8 bg-gradient-to-b from-[#251812]/90 to-[#120a07]/95 p-8 sm:p-12 shadow-2xl">
+            <h1 className="text-4xl sm:text-5xl font-serif font-semibold tracking-tight text-cafe-50 mb-6">
+              Güvenlik Politikası
+            </h1>
+            <p className="text-cafe-100/80 mb-8 leading-relaxed">
+              ShareVibe ekibi olarak kullanıcılarımızın verilerinin güvenliğini ciddiye alıyoruz. Platformumuzda bulduğunuz güvenlik açıklarını bildirmek için lütfen aşağıdaki kılavuzu takip edin.
+            </p>
+            
+            <h2 className="text-xl font-semibold text-cafe-100 mt-8 mb-4">Kapsam (Scope)</h2>
+            <p className="text-cafe-100/70 mb-4 leading-relaxed">
+              Bu politika, <strong>sharevibe.co</strong> alan adı altında çalışan tüm web uygulamalarını, arka uç servislerini ve Firebase bulut bileşenlerini kapsamaktadır.
+            </p>
+
+            <h2 className="text-xl font-semibold text-cafe-100 mt-8 mb-4">Bildirim ve Geri Dönüş Süresi</h2>
+            <p className="text-cafe-100/70 mb-4 leading-relaxed">
+              Tarafımıza iletilen tüm doğrulanabilir zafiyet raporları için ilk inceleme ve geri dönüş süremiz <strong>72 saattir</strong>. Bu süre zarfında zafiyetin durumu hakkında bilgilendirileceksiniz. Raporlarınızı <strong>security@sharevibe.co</strong> adresine gönderebilirsiniz.
+            </p>
+
+            <h2 className="text-xl font-semibold text-cafe-100 mt-8 mb-4">Kabul Edilmeyen Davranışlar</h2>
+            <ul className="list-disc list-inside space-y-2 text-cafe-100/70 mb-6 leading-relaxed">
+              <li>Hizmet kesintisine (DoS/DDoS) sebep olabilecek testler.</li>
+              <li>Sosyal mühendislik, oltalama (phishing) veya çalışanlarımıza yönelik fiziki saldırılar.</li>
+              <li>Sistemdeki verileri yok edici, bozucu veya sızdırıcı kötü niyetli istismarlar.</li>
+              <li>Tarafımızla koordineli olmayan kamuya açık ifşalar.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (currentView === 'signup') {
+    return (
+      <div className="min-h-screen pb-20 font-sans selection:bg-accent/20 relative text-cafe-50 bg-[#121211] flex items-center justify-center pt-12 sm:pt-20">
+        <AnimatedBackground />
+        <div className="relative z-10 w-full max-w-md px-6">
+          <div className="rounded-[2.5rem] border border-white/8 bg-gradient-to-b from-[#251812]/90 to-[#120a07]/95 p-8 sm:p-10 shadow-2xl">
+            <button
+              onClick={() => setCurrentView('landing')}
+              className="mb-6 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-cafe-100/60 hover:text-cafe-50 transition-colors"
+            >
+              ← Ana Sayfa
+            </button>
+            <h1 className="text-3xl font-serif font-semibold text-cafe-50 mb-6 text-center">
+              Yeni Hesap Oluştur
+            </h1>
+            <SignupForm onSignupSuccess={() => setCurrentView('landing')} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (currentView === 'redirect') {
+    return (
+      <div className="min-h-screen pb-20 font-sans selection:bg-accent/20 relative text-cafe-50 bg-[#121211] flex items-center justify-center pt-12 sm:pt-20">
+        <AnimatedBackground />
+        <div className="relative z-10 w-full max-w-md px-6">
+          <div className="rounded-[2.5rem] border border-white/8 bg-gradient-to-b from-[#251812]/90 to-[#120a07]/95 p-8 sm:p-10 shadow-2xl text-center space-y-6">
+            <h1 className="text-3xl font-serif font-semibold text-cafe-50">
+              Yönlendiriliyorsunuz
+            </h1>
+            
+            {redirectError ? (
+              <div className="space-y-4">
+                <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm font-semibold">
+                  {redirectError}
+                </div>
+                <button
+                  onClick={() => setCurrentView('landing')}
+                  className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-cafe-100/60 hover:text-cafe-50 transition-colors"
+                >
+                  ← Ana Sayfaya Dön
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <p className="text-cafe-100/80 text-sm">
+                  Sizi güvenli bir şekilde yönlendiriyoruz. Lütfen bekleyin...
+                </p>
+                <div className="text-5xl font-bold text-accent animate-pulse">
+                  {redirectCountdown}
+                </div>
+                <p className="text-xs text-cafe-100/40">
+                  Hedef: {redirectTarget || 'Yükleniyor...'}
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -2031,7 +2463,7 @@ export default function App() {
                 {isAuthenticated && (
                   <div
                     className="app-share-limit hidden lg:flex"
-                    title={currentUserEmail ?? 'Google hesabı açık'}
+                    title={currentUserEmail || 'Google hesabı açık'}
                   >
                     <span className={`h-2.5 w-2.5 rounded-full ${userUploadsThisWeekCount >= MAX_WEEKLY_UPLOADS ? 'bg-red-500' : 'bg-accent'}`} />
                     <span className="font-medium">
@@ -2142,7 +2574,7 @@ export default function App() {
                         animate={{ opacity: 1, rotateY: 0, y: 0 }}
                         transition={{ duration: 0.52, delay: 0.12 + index * 0.08, ease: [0.22, 1, 0.36, 1] }}
                       >
-                        <img src={item.url} alt="" loading={index === 0 ? 'eager' : 'lazy'} decoding="async" referrerPolicy="no-referrer" />
+                        <SignedImage photoId={item.id} fallbackUrl={item.url} alt="" loading={index === 0 ? 'eager' : 'lazy'} decoding="async" referrerPolicy="no-referrer" />
                         <span>{item.tableNumber}</span>
                       </motion.div>
                     ))}
@@ -2242,6 +2674,7 @@ export default function App() {
                 {deferredMediaItems.map((item) => {
                   const isLiked = Boolean(currentUserUid && item.likedBy.includes(currentUserUid));
                   const canDelete = currentUserUid === item.authorUid && isDeletable(item);
+                  const canShareSocial = currentUserUid === item.authorUid;
 
                   return (
                     <article key={item.id} className="gallery-grid-item">
@@ -2251,17 +2684,17 @@ export default function App() {
                           className="gallery-media"
                           onClick={() => void handleMediaSelection(item.id)}
                         >
-                          {!item.url || failedMediaIds[item.id] ? (
+                          {!item.url ? (
                             <BrokenMediaPlaceholder compact message="Görsel yüklenemedi" />
                           ) : (
-                            <img
-                              src={item.url}
+                            <SignedImage
+                              photoId={item.id}
+                              fallbackUrl={item.url}
                               alt={item.caption}
                               className={`w-full h-full object-cover transition-transform duration-500 ${isGuestPreview ? 'scale-[1.06] blur-[10px] brightness-[0.9]' : 'group-hover:scale-[1.03]'}`}
                               loading="lazy"
                               decoding="async"
                               referrerPolicy="no-referrer"
-                              onError={() => markMediaAsFailed(item.id)}
                             />
                           )}
 
@@ -2300,16 +2733,18 @@ export default function App() {
                                   <Trash2 className="w-4 h-4" />
                                 </button>
                               )}
-                              <button
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  setShareMediaId(item.id);
-                                }}
-                                className="icon-button gallery-action-button"
-                                aria-label="Paylaş"
-                              >
-                                <Share2 className="w-4 h-4" />
-                              </button>
+                              {canShareSocial && (
+                                <button
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    openShareModal(item.id);
+                                  }}
+                                  className="icon-button gallery-action-button"
+                                  aria-label="Paylaş"
+                                >
+                                  <Share2 className="w-4 h-4" />
+                                </button>
+                              )}
                               <button
                                 onClick={(event) => toggleLike(item.id, event)}
                                 className={`gallery-like-button ${isLiked ? 'is-liked' : ''}`}
@@ -2376,14 +2811,16 @@ export default function App() {
             >
               {/* Media Section */}
               <div className="flex-1 bg-black relative min-h-[45vh] md:min-h-[60vh] overflow-hidden">
-                {!selectedMedia.url || failedMediaIds[selectedMedia.id] ? (
+                {!selectedMedia.url ? (
                   <BrokenMediaPlaceholder message="Bu medya şu anda görüntülenemiyor" />
                 ) : (
-                  <img
-                    src={selectedMedia.url}
+                  <SignedImage
+                    photoId={selectedMedia.id}
+                    fallbackUrl={selectedMedia.url}
                     alt={selectedMedia.caption}
                     className="absolute inset-0 w-full h-full object-contain"
-                    onError={() => markMediaAsFailed(selectedMedia.id)}
+                    decoding="async"
+                    referrerPolicy="no-referrer"
                   />
                 )}
               </div>
@@ -2439,13 +2876,15 @@ export default function App() {
                         <Trash2 className="w-5 h-5" />
                       </button>
                     )}
-                    <button
-                      onClick={() => setShareMediaId(selectedMedia.id)}
-                      className="flex items-center justify-center bg-cafe-700 hover:bg-cafe-600 text-cafe-50 w-12 h-12 rounded-full transition-colors active:scale-95"
-                      aria-label="Paylaş"
-                    >
-                      <Share2 className="w-5 h-5" />
-                    </button>
+                    {currentUserUid === selectedMedia.authorUid && (
+                      <button
+                        onClick={() => openShareModal(selectedMedia.id)}
+                        className="flex items-center justify-center bg-cafe-700 hover:bg-cafe-600 text-cafe-50 w-12 h-12 rounded-full transition-colors active:scale-95"
+                        aria-label="Paylaş"
+                      >
+                        <Share2 className="w-5 h-5" />
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -2555,7 +2994,7 @@ export default function App() {
                 {/* Media Preview Container */}
                 <div className="relative w-full h-48 sm:h-64 rounded-xl overflow-hidden bg-cafe-900 border border-cafe-700 shadow-inner shrink-0 flex items-center justify-center">
                   <img
-                    src={previewUrl ?? ''}
+                    src={previewUrl || ''}
                     alt="Preview"
                     className="w-full h-full object-contain transition-all"
                     style={{
@@ -2564,6 +3003,28 @@ export default function App() {
                     }}
                   />
                 </div>
+
+                {exifInfo && (
+                  <div className="p-3.5 bg-[#1b120d]/60 border border-cafe-700/40 rounded-xl space-y-1.5 text-xs text-cafe-100/90 text-left shrink-0">
+                    <p className="font-semibold text-[color:var(--color-accent)]">Resim Detayları (EXIF):</p>
+                    {exifInfo.make || exifInfo.model ? (
+                      <p>Cihaz: {exifInfo.make} {exifInfo.model}</p>
+                    ) : (
+                      <p>Cihaz: Bilinmiyor</p>
+                    )}
+                    {exifInfo.dateTime && <p>Tarih: {exifInfo.dateTime}</p>}
+                    {exifInfo.hasGps ? (
+                      <p className="text-red-400 font-semibold flex items-center gap-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                        GPS/Konum verisi tespit edildi. Yükleme esnasında temizlenecektir.
+                      </p>
+                    ) : (
+                      <p className="text-green-400 font-semibold flex items-center gap-1.5">
+                        ✓ GPS verisi bulunamadı. Gizliliğiniz güvende.
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 <div className="space-y-4 shrink-0 bg-cafe-800/50 p-4 rounded-xl border border-cafe-700">
                   <div className="flex items-center justify-between gap-4">
@@ -2637,7 +3098,7 @@ export default function App() {
                       onChange={(e) => {
                         const value = e.target.value;
                         setCaption(value);
-                        // ✅ Real-time XSS validation
+                        // Validate the caption while the user types.
                         if (value && !validateAndSanitizeCaption(value)) {
                           setCaptionError('Not zararlı karakterler içeriyor');
                         } else {
@@ -2765,100 +3226,156 @@ export default function App() {
 
       {/* Share Modal */}
       <AnimatePresence>
-        {shareMediaId && (
+        {shareMediaId && selectedShareMedia && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-cafe-900/80 backdrop-blur-sm"
+            className="share-modal-backdrop"
             onClick={() => setShareMediaId(null)}
           >
             <motion.div
-              initial={{ scale: 0.95, y: 20 }}
+              initial={{ scale: 0.96, y: 18 }}
               animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.95, y: 20 }}
-              className="bg-cafe-800 rounded-2xl w-full max-w-sm flex flex-col overflow-hidden shadow-2xl border border-cafe-700"
+              exit={{ scale: 0.96, y: 18 }}
+              className="share-modal-panel"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="p-4 border-b border-cafe-700 flex justify-between items-center bg-cafe-800/50">
-                <h3 className="text-lg font-semibold text-cafe-50 flex items-center gap-2">
-                  <Share2 className="w-5 h-5 text-accent" />
-                  Paylaş
-                </h3>
+              <div className="share-modal-header">
+                <div>
+                  <span className="share-modal-kicker">Paylaş</span>
+                  <h3><Share2 className="h-5 w-5" /> Fotoğrafı paylaş</h3>
+                </div>
                 <button
+                  type="button"
                   onClick={() => setShareMediaId(null)}
-                  className="p-2 text-cafe-100/50 hover:text-cafe-50 transition-colors rounded-full hover:bg-cafe-700"
+                  className="share-modal-close"
+                  aria-label="Paylaşım penceresini kapat"
                 >
-                  <X className="w-5 h-5" />
+                  <X className="h-5 w-5" />
                 </button>
               </div>
-              <div className="p-5 space-y-5">
-                <div className="flex justify-center gap-6">
-                  {/* WhatsApp */}
-                  <a href={`https://wa.me/?text=${encodeURIComponent('Bu harika anıya göz at! ' + window.location.origin + '?media=' + shareMediaId)}`} target="_blank" rel="noopener noreferrer" className="w-12 h-12 rounded-full bg-[#25D366] flex items-center justify-center text-white hover:scale-110 transition-transform shadow-lg">
-                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-                  </a>
-                  {/* Twitter */}
-                  <a href={`https://twitter.com/intent/tweet?url=${encodeURIComponent(window.location.origin + '?media=' + shareMediaId)}&text=${encodeURIComponent('Bu harika anıya göz at!')}`} target="_blank" rel="noopener noreferrer" className="w-12 h-12 rounded-full bg-[#1DA1F2] flex items-center justify-center text-white hover:scale-110 transition-transform shadow-lg">
-                    <Twitter className="w-6 h-6 fill-current" />
-                  </a>
-                  {/* Facebook */}
-                  <a href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(window.location.origin + '?media=' + shareMediaId)}`} target="_blank" rel="noopener noreferrer" className="w-12 h-12 rounded-full bg-[#4267B2] flex items-center justify-center text-white hover:scale-110 transition-transform shadow-lg">
-                    <Facebook className="w-6 h-6 fill-current" />
-                  </a>
-                  {/* Story */}
-                  <button 
-                    onClick={() => shareToInstagramStory(shareMediaId)}
-                    disabled={isStoryShareBusy}
-                    aria-label="Story olarak paylaş"
-                    className="w-12 h-12 rounded-full bg-gradient-to-tr from-[#f09433] via-[#dc2743] to-[#bc1888] flex items-center justify-center text-white hover:scale-110 transition-transform shadow-lg disabled:cursor-wait disabled:opacity-60 disabled:hover:scale-100"
-                    title="Story olarak paylaş"
-                  >
-                    {isStoryShareBusy ? (
-                      <span className="w-5 h-5 rounded-full border-2 border-white/35 border-t-white animate-spin" />
-                    ) : (
-                      <Instagram className="w-6 h-6" />
-                    )}
-                  </button>
-                </div>
 
-                {shareNotice ? (
-                  <div
-                    className={`rounded-xl border px-3 py-2 text-sm font-medium ${
-                      shareNotice.tone === 'success'
-                        ? 'border-green-400/25 bg-green-500/10 text-green-100'
-                        : shareNotice.tone === 'error'
-                          ? 'border-red-400/25 bg-red-500/10 text-red-100'
-                          : 'border-accent/25 bg-accent/10 text-cafe-50'
-                    }`}
-                  >
-                    {shareNotice.text}
+              {canShareSelectedMedia ? (
+                <div className="share-modal-body">
+                  <div className="share-owner-note">
+                    Bu fotoğrafı yalnızca siz paylaşabilirsiniz.
                   </div>
-                ) : activeStoryTemplateUrl ? (
-                  <div className="rounded-xl border border-accent/20 bg-accent/10 px-3 py-2 text-sm font-medium text-cafe-50">
-                    Seçili story şablonu görsele uygulanır.
-                  </div>
-                ) : null}
-                
-                <div className="relative mt-2">
-                  <label className="block text-xs font-medium text-cafe-100/70 mb-1.5">Bağlantıyı Kopyala</label>
-                  <div className="flex items-center bg-cafe-900 border border-cafe-700 rounded-xl overflow-hidden">
-                    <input 
-                      type="text" 
-                      readOnly 
-                      value={`${window.location.origin}?media=${shareMediaId}`}
-                      className="flex-1 bg-transparent px-3 py-3 text-sm text-cafe-100/70 outline-none"
-                    />
-                    <button 
-                      onClick={() => handleCopyLink(shareMediaId)}
-                      className="px-4 py-3 bg-cafe-700 hover:bg-cafe-600 text-cafe-50 transition-colors flex items-center gap-2 font-medium text-sm border-l border-cafe-600"
+
+                  <section className="share-story-section" aria-labelledby="story-template-title">
+                    <div className="share-section-heading">
+                      <div>
+                        <h4 id="story-template-title">Story şablonu</h4>
+                        <p>Bir şablon seçin.</p>
+                      </div>
+                      <span>9:16</span>
+                    </div>
+
+                    <div
+                      className={`share-template-grid ${isStoryPreviewLoading ? 'is-loading' : ''}`}
+                      role="list"
+                      aria-label="Fotoğrafınızla hazırlanmış Instagram Story şablonları"
+                      aria-busy={isStoryPreviewLoading}
                     >
-                      {isCopied ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
-                      {isCopied ? 'Kopyalandı' : 'Kopyala'}
+                      {STORY_TEMPLATES.map((template) => {
+                        const isSelected = selectedStoryTemplateUrl === template.url;
+                        const previewUrl = storyPreviewUrls[template.url] ?? template.url;
+
+                        return (
+                          <button
+                            key={template.key}
+                            type="button"
+                            role="listitem"
+                            className={`share-template-card ${isSelected ? 'is-selected' : ''}`}
+                            style={{ '--share-template-accent': template.accent } as React.CSSProperties}
+                            onClick={() => setSelectedStoryTemplateUrl(template.url)}
+                            aria-pressed={isSelected}
+                          >
+                            <span className="share-template-thumb">
+                              <img
+                                src={previewUrl}
+                                alt={`${template.name} Story önizlemesi`}
+                                loading="lazy"
+                                decoding="async"
+                              />
+                              {isStoryPreviewLoading && !storyPreviewUrls[template.url] ? (
+                                <span className="share-template-loading" aria-hidden="true">
+                                  <span className="share-spinner" />
+                                </span>
+                              ) : null}
+                            </span>
+                            <span className="share-template-copy">
+                              <strong>{template.name}</strong>
+                            </span>
+                            {isSelected ? (
+                              <span className="share-template-check" aria-hidden="true">
+                                <Check className="h-4 w-4" />
+                              </span>
+                            ) : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => shareToInstagramStory(shareMediaId)}
+                      disabled={isStoryShareBusy}
+                      className="share-instagram-action"
+                    >
+                      <span className="share-instagram-icon">
+                        {isStoryShareBusy ? (
+                          <span className="share-spinner" />
+                        ) : (
+                          <Instagram className="h-5 w-5" />
+                        )}
+                      </span>
+                      <span>
+                        <strong>{isStoryShareBusy ? 'Hazırlanıyor…' : 'Story’de paylaş'}</strong>
+                        <small>Şablon fotoğrafınıza uygulanır</small>
+                      </span>
                     </button>
+                  </section>
+
+                  <div className="share-social-row" aria-label="Diğer paylaşım seçenekleri">
+                    <a href={`https://wa.me/?text=${encodeURIComponent('Bu anıya göz at: ' + selectedShareUrl)}`} target="_blank" rel="noopener noreferrer" className="share-social-button is-whatsapp" aria-label="WhatsApp ile paylaş">
+                      <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" /></svg>
+                      <span>WhatsApp</span>
+                    </a>
+                    <a href={`https://twitter.com/intent/tweet?url=${encodeURIComponent(selectedShareUrl)}&text=${encodeURIComponent('Bu anıya göz at')}`} target="_blank" rel="noopener noreferrer" className="share-social-button is-x" aria-label="X ile paylaş">
+                      <Twitter className="h-5 w-5 fill-current" />
+                      <span>X</span>
+                    </a>
+                    <a href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(selectedShareUrl)}`} target="_blank" rel="noopener noreferrer" className="share-social-button is-facebook" aria-label="Facebook ile paylaş">
+                      <Facebook className="h-5 w-5 fill-current" />
+                      <span>Facebook</span>
+                    </a>
+                  </div>
+
+                  {shareNotice ? (
+                    <div className={`share-notice is-${shareNotice.tone}`}>
+                      {shareNotice.text}
+                    </div>
+                  ) : null}
+
+                  <div className="share-copy-box">
+                    <label>Bağlantı</label>
+                    <div>
+                      <input type="text" readOnly value={selectedShareUrl} />
+                      <button type="button" onClick={() => handleCopyLink(shareMediaId)}>
+                        {isCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                        {isCopied ? 'Kopyalandı' : 'Kopyala'}
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
+              ) : (
+                <div className="share-modal-body">
+                  <div className="share-notice is-error">
+                    Bu fotoğrafı yalnızca paylaşımı yapan hesap sosyal medyada paylaşabilir.
+                  </div>
+                </div>
+              )}
             </motion.div>
           </motion.div>
         )}
@@ -2952,8 +3469,9 @@ export default function App() {
                   >
                     {item ? (
                       <>
-                        <img
-                          src={item.url}
+                        <SignedImage
+                          photoId={item.id}
+                          fallbackUrl={item.url}
                           alt={item.caption}
                           className="h-full w-full object-cover"
                           loading="lazy"
@@ -3036,6 +3554,7 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      <CookieConsentBanner />
     </div>
   );
 }

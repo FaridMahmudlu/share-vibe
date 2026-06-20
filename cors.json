@@ -1,0 +1,8 @@
+[
+  {
+    "origin": ["https://sharevibe.co"],
+    "method": ["GET", "PUT", "POST", "DELETE"],
+    "maxAgeSeconds": 3600,
+    "responseHeader": ["Content-Type", "Access-Control-Allow-Origin"]
+  }
+]

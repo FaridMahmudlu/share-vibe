@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { collection, onSnapshot, query, orderBy, where, limit } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db } from '../lib/firebase/client';
 import { logError } from '../utils/errorTracking';
 
 export interface MediaItem {

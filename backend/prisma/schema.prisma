@@ -1,0 +1,340 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  firebaseId String  @unique
+  email     String   @unique
+  name      String?
+  role      String   @default("user") // user, cafe_admin, super_admin
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  cafes      Cafe[]
+  campaigns  Campaign[]
+  emailTemplates EmailTemplate[]
+  qrStandRequests QrStandRequest[]
+}
+
+model Cafe {
+  id              String   @id @default(cuid())
+  name            String
+  ownerId         String
+  owner           User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  supportEmail    String?  // Optional Reply-To email for cafe
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  customers       Customer[]
+  campaigns       Campaign[]
+  emailTemplates  EmailTemplate[]
+  emailLogs       EmailLog[]
+  unsubscribed    UnsubscribedEmail[]
+  dailyLimit      DailyLimit?
+  qrStands        QrStand[]
+  qrStandRequests QrStandRequest[]
+  mediaStats      MediaStat[]
+  settings        CafeSettings?
+
+  @@index([ownerId])
+}
+
+model CafeSettings {
+  id          String   @id @default(cuid())
+  cafeId      String   @unique
+  cafe        Cafe     @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+
+  businessName String
+  sector       String   @default("Yiyecek & İçecek")
+  description  String?
+  logoUrl      String?
+
+  email        String?
+  phone        String?
+  address      String?
+  website      String?
+
+  language     String   @default("tr")
+  timezone     String   @default("Europe/Istanbul")
+  dateFormat   String   @default("DD.MM.YYYY")
+  timeFormat   String   @default("24h")
+
+  primaryColor   String   @default("#C98B5A")
+  secondaryColor String   @default("#3B2E24")
+  darkMode       Boolean  @default(true)
+
+  notifyNewQrStand Boolean @default(true)
+  notifyNewCustomer Boolean @default(true)
+  emailReports Boolean @default(true)
+  weeklySummary Boolean @default(false)
+
+  billingPlan  String   @default("standart_aylik")
+  invoiceEmail String?
+  adminEmails  String[] @default([])
+  integrations Json?
+  domains      Json?
+  security     Json?
+  extra         Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([cafeId])
+}
+
+model QrStand {
+  id          String   @id @default(cuid())
+  cafeId      String
+  cafe        Cafe     @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+
+  name        String
+  location    String
+  tableCount  Int      @default(1)
+  status      String   @default("active") // active, inactive, pending
+  notes       String?
+  photoCount  Int      @default(0)
+  publicUrl   String?
+  lastActivityAt DateTime?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  requests    QrStandRequest[]
+
+  @@index([cafeId])
+  @@index([cafeId, status])
+  @@index([cafeId, photoCount])
+  @@index([cafeId, lastActivityAt])
+}
+
+model QrStandRequest {
+  id             String   @id @default(cuid())
+  cafeId         String
+  cafe           Cafe     @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+
+  requestedById   String?
+  requestedBy     User?    @relation(fields: [requestedById], references: [id], onDelete: SetNull)
+
+  standId        String?
+  stand          QrStand?  @relation(fields: [standId], references: [id], onDelete: SetNull)
+
+  contactName    String
+  contactEmail   String
+  contactPhone   String?
+  standName      String?
+  location       String?
+  placement      String?
+  tableCount     Int      @default(1)
+  preferredDate  DateTime?
+  notes          String?
+  status         String   @default("pending") // pending, contacted, scheduled, completed, cancelled
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([cafeId])
+  @@index([requestedById])
+  @@index([standId])
+  @@index([status])
+}
+
+model Customer {
+  id          String   @id @default(cuid())
+  cafeId      String
+  cafe        Cafe     @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+  email       String
+  name        String?
+  phone       String?
+  segment     String   @default("Yeni Musteri")
+  tags        String[] @default([])
+  emailSubscribed Boolean @default(true)
+  smsSubscribed   Boolean @default(false)
+  totalSpent  Float    @default(0)
+  lastInteractionAt   DateTime?
+  lastInteractionType String   @default("site_visit")
+  metadata    Json?    // Custom fields for cafe
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  recipients  EmailRecipient[]
+
+  @@unique([cafeId, email])
+  @@index([cafeId])
+  @@index([cafeId, segment])
+  @@index([cafeId, totalSpent])
+  @@index([cafeId, lastInteractionAt])
+}
+
+model Campaign {
+  id            String   @id @default(cuid())
+  createdBy     String
+  creator       User     @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+  cafeId        String
+  cafe          Cafe     @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+  
+  subject       String
+  description   String?
+  imageUrl      String?
+  htmlContent   String
+  textContent   String
+  
+  recipientCount Int      @default(0)
+  sentCount      Int      @default(0)
+  failedCount    Int      @default(0)
+  
+  status        String   @default("draft") // draft, scheduled, sending, completed, failed
+  scheduledAt   DateTime?
+  sentAt        DateTime?
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  recipients    EmailRecipient[]
+  logs          EmailLog[]
+
+  @@index([cafeId])
+  @@index([createdBy])
+}
+
+model EmailTemplate {
+  id          String   @id @default(cuid())
+  cafeId      String
+  cafe        Cafe     @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+  createdBy   String?
+  creator     User?    @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+
+  slug        String
+  title       String
+  subject     String
+  description String?
+  type        String   @default("email")
+  category    String   @default("Kampanya")
+  tone        String   @default("dark")
+  imageUrl    String?
+  ctaLabel    String?
+  htmlContent String
+  textContent String
+  isSystem    Boolean  @default(false)
+  status      String   @default("active") // active, archived
+  usageCount  Int      @default(0)
+  lastUsedAt  DateTime?
+  sortOrder   Int      @default(0)
+  metadata    Json?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([cafeId, slug])
+  @@index([cafeId])
+  @@index([cafeId, type])
+  @@index([cafeId, category])
+  @@index([cafeId, status])
+  @@index([createdBy])
+}
+
+model EmailRecipient {
+  id          String   @id @default(cuid())
+  campaignId  String
+  campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  customerId  String
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  
+  email       String   // Denormalized for quick access
+  status      String   @default("pending") // pending, sent, failed, blocked
+  brevoMessageId String?
+  failureReason String?
+  
+  sentAt      DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([campaignId, customerId])
+  @@index([campaignId])
+  @@index([customerId])
+}
+
+model EmailLog {
+  id            String   @id @default(cuid())
+  campaignId    String
+  campaign      Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  cafeId        String
+  cafe          Cafe     @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+  
+  email         String
+  status        String   // sent, failed, bounced, complained, opened, clicked
+  brevoMessageId String?
+  brevoResponse Json?
+  
+  createdAt     DateTime @default(now())
+
+  @@index([campaignId])
+  @@index([cafeId])
+  @@index([createdAt])
+}
+
+model MediaStat {
+  id                 String   @id @default(cuid())
+  cafeId             String
+  cafe               Cafe     @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+
+  externalId         String
+  source             String   @default("qr") // qr, gallery, story, email, email_template, other
+  tableNumber        String?
+  status             String   @default("published")
+  mediaCreatedAt     DateTime @default(now())
+  viewsCount         Int      @default(0)
+  likesCount         Int      @default(0)
+  shareCount         Int      @default(0)
+  qrInteractionCount Int      @default(0)
+  syncedAt           DateTime @default(now())
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([cafeId, externalId])
+  @@index([cafeId])
+  @@index([cafeId, mediaCreatedAt])
+  @@index([cafeId, source])
+  @@index([cafeId, status])
+}
+
+model UnsubscribedEmail {
+  id        String   @id @default(cuid())
+  cafeId    String
+  cafe      Cafe     @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+  email     String
+  token     String   @unique
+  unsubscribedAt DateTime @default(now())
+
+  @@unique([cafeId, email])
+  @@index([cafeId])
+}
+
+model DailyLimit {
+  id          String   @id @default(cuid())
+  cafeId      String   @unique
+  cafe        Cafe     @relation(fields: [cafeId], references: [id], onDelete: Cascade)
+  date        DateTime
+  sentCount   Int      @default(0)
+  updatedAt   DateTime @updatedAt
+
+  @@index([cafeId, date])
+}
+
+model GlobalLimit {
+  id        String   @id @default(cuid())
+  date      DateTime @unique
+  sentCount Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@index([date])
+}

@@ -34,6 +34,11 @@ interface ImportMetaEnv {
   readonly VITE_MAX_IMAGE_HEIGHT?: string;
   readonly VITE_MAX_WEEKLY_UPLOADS?: string;
   readonly VITE_MEDIA_RETENTION_DAYS?: string;
+  readonly VITE_EMAIL_API_BASE?: string;
+  readonly VITE_SUPER_ADMIN_EMAILS?: string;
+  readonly VITE_RECAPTCHA_ENTERPRISE_SITE_KEY?: string;
+  readonly VITE_RECAPTCHA_SITE_KEY?: string;
+  readonly VITE_APPCHECK_DEBUG_TOKEN?: string;
 }
 
 interface ImportMeta {

@@ -71,6 +71,7 @@ import {
   X,
   QrCode,
   type LucideIcon,
+  User,
   UserPlus,
   Users,
 } from 'lucide-react';
@@ -88,6 +89,8 @@ import {
 import { deleteMediaRecord } from '../../lib/storage/mediaStorage';
 import DropdownSelect, { type DropdownOption } from '../../components/ui/DropdownSelect';
 import BrandSignature from '../../components/brand/BrandSignature';
+import SignedImage from '../../components/common/SignedImage';
+import { invalidateSignedPhotoUrlCache } from '../../hooks/useSignedPhotoUrl';
 import {
   buildCafePublicLink,
   DEFAULT_ACCENT_COLOR,
@@ -307,7 +310,7 @@ const createInitialAccessPolicy = (): AccessPolicyPayload => ({
     .map((rule) => ({
       cafeSlug: normalizeAccessSlug(rule.cafeSlug),
       ownerEmails: uniqueAccessEmails(rule.ownerEmails),
-      managerEmails: uniqueAccessEmails(rule.managerEmails || []),
+      managerEmails: uniqueAccessEmails(rule.managerEmails ? []),
     }))
     .filter((rule) => rule.cafeSlug),
 });
@@ -318,7 +321,7 @@ const normalizeAccessPolicyPayload = (policy: AccessPolicyPayload): AccessPolicy
     .map((rule) => ({
       cafeSlug: normalizeAccessSlug(rule.cafeSlug),
       ownerEmails: uniqueAccessEmails(rule.ownerEmails),
-      managerEmails: uniqueAccessEmails(rule.managerEmails || []),
+      managerEmails: uniqueAccessEmails(rule.managerEmails ? []),
     }))
     .filter((rule) => rule.cafeSlug && (rule.ownerEmails.length > 0 || rule.managerEmails.length > 0))
     .sort((left, right) => left.cafeSlug.localeCompare(right.cafeSlug)),
@@ -344,7 +347,7 @@ const resolveAccessAssignments = (policy: AccessPolicyPayload): AccessAssignment
         return;
       }
 
-      const current = rows.get(email) || {
+      const current = rows.get(email) ? {
         email,
         role: 'owner' as AccessRole,
         cafeIds: [],
@@ -367,7 +370,7 @@ const resolveAccessAssignments = (policy: AccessPolicyPayload): AccessAssignment
         return;
       }
 
-      const current = existing || {
+      const current = existing ? {
         email,
         role: 'manager' as AccessRole,
         cafeIds: [],
@@ -416,11 +419,11 @@ const applyAccessAssignment = (
   cafeSlugs.forEach((cafeSlug) => {
     const index = cafeAccess.findIndex((rule) => rule.cafeSlug === cafeSlug);
     const current = index >= 0
-      ? cafeAccess[index]
+ cafeAccess[index]
       : { cafeSlug, ownerEmails: [], managerEmails: [] };
 
     const nextRule = form.role === 'owner'
-      ? { ...current, ownerEmails: uniqueAccessEmails([...current.ownerEmails, email]) }
+ ? { ...current, ownerEmails: uniqueAccessEmails([...current.ownerEmails, email]) }
       : { ...current, managerEmails: uniqueAccessEmails([...current.managerEmails, email]) };
 
     if (index >= 0) {
@@ -681,10 +684,10 @@ const buildCampaignHtmlContent = (
     ? `<p style="margin:0 0 18px;font-size:17px;line-height:1.55;color:#2b211b;font-weight:700;">${escapeHtml(description)}</p>`
     : '';
   const imageHtml = imageUrl
-    ? `<img src="${escapeHtml(imageUrl)}" alt="" style="width:100%;max-height:280px;object-fit:cover;border-radius:18px;display:block;margin:0 0 24px;" />`
+ `<img src="${escapeHtml(imageUrl)}" alt="" style="width:100%;max-height:280px;object-fit:cover;border-radius:18px;display:block;margin:0 0 24px;" />`
     : '';
   const actionHtml = actionUrl
-    ? `<a href="${escapeHtml(actionUrl)}" style="display:inline-block;margin-top:8px;padding:14px 20px;border-radius:14px;background:#c67b4d;color:#ffffff;text-decoration:none;font-size:15px;font-weight:800;">${escapeHtml(actionLabel)}</a>`
+ `<a href="${escapeHtml(actionUrl)}" style="display:inline-block;margin-top:8px;padding:14px 20px;border-radius:14px;background:#c67b4d;color:#ffffff;text-decoration:none;font-size:15px;font-weight:800;">${escapeHtml(actionLabel)}</a>`
     : '';
 
   return `<!doctype html>
@@ -728,7 +731,7 @@ const buildCampaignHtmlContent = (
 };
 
 const getTemplateEmailTheme = (tone?: string | null) => {
-  switch ((tone ?? '').toLowerCase()) {
+  switch ((tone || '').toLowerCase()) {
     case 'light':
       return {
         pageBg: '#f4eee8',
@@ -783,7 +786,7 @@ const buildTemplateMatchedEmailHtml = (
   const actionUrl = options.actionUrl || '{{actionUrl}}';
   const bodyHtml = convertPlainTextToHtml(options.textContent || template.textContent);
   const imageLayer = imageUrl
-    ? `<img src="${escapeHtml(imageUrl)}" alt="" width="640" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;border:0;opacity:.74;" />`
+ `<img src="${escapeHtml(imageUrl)}" alt="" width="640" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;border:0;opacity:.74;" />`
     : '';
 
   return `<!doctype html>
@@ -989,7 +992,7 @@ const CAMPAIGN_CATEGORY_OPTIONS: Array<{
 ];
 
 const getCampaignCategoryOption = (value?: string | null) =>
-  CAMPAIGN_CATEGORY_OPTIONS.find((option) => option.value === value) ?? CAMPAIGN_CATEGORY_OPTIONS[0];
+  CAMPAIGN_CATEGORY_OPTIONS.find((option) => option.value === value) || CAMPAIGN_CATEGORY_OPTIONS[0];
 
 const normalizeCampaignCategoryValue = (value?: string | null) => getCampaignCategoryOption(value).value;
 
@@ -1139,7 +1142,7 @@ const CAFE_PACKAGE_OPTIONS: Array<{
   badge: plan.badge,
   price: `${plan.price} ${plan.billingLabel}`,
   limits: plan.mailIncluded
-    ? 'QR stand, canlı galeri, kampanya, raporlama ve mail pazarlama'
+ 'QR stand, canlı galeri, kampanya, raporlama ve mail pazarlama'
     : 'QR stand, canlı galeri, temel kampanya ve raporlama',
   features: plan.features.slice(0, 5),
 }));
@@ -1179,7 +1182,7 @@ const STORY_TEMPLATE_LEGACY_URL_MAP: Record<string, string> = {
 };
 
 const normalizeStoryTemplateUrl = (value: string | null) =>
-  value ? STORY_TEMPLATE_LEGACY_URL_MAP[value] ?? value : null;
+  value ? STORY_TEMPLATE_LEGACY_URL_MAP[value] ? value : null;
 
 const isAllowedStoryTemplateUrl = (value: string | null) => {
   const normalizedValue = normalizeStoryTemplateUrl(value);
@@ -1281,13 +1284,13 @@ const toEndExclusive = (value: Date) => {
 };
 
 const getDateRangePresetByKey = (preset: DateRangePreset) =>
-  DATE_RANGE_PRESETS.find((item) => item.key === preset) ?? null;
+  DATE_RANGE_PRESETS.find((item) => item.key === preset) || null;
 
 const createDateRange = (preset: DateRangePreset = 'last7') => {
   const endDate = toStartOfDay(new Date());
   const presetMeta = getDateRangePresetByKey(preset);
   const startDate = new Date(endDate);
-  startDate.setDate(endDate.getDate() - ((presetMeta?.days ?? 7) - 1));
+  startDate.setDate(endDate.getDate() - ((presetMeta?.days || 7) - 1));
 
   return {
     preset,
@@ -1360,7 +1363,7 @@ const isDateInsideRange = (value: Date | null, range: AdminDateRange) => {
 };
 
 const getStatsTrendOption = (value: StatsTrendGranularity) =>
-  STATS_TREND_OPTIONS.find((option) => option.value === value) ?? STATS_TREND_OPTIONS[0];
+  STATS_TREND_OPTIONS.find((option) => option.value === value) || STATS_TREND_OPTIONS[0];
 
 const addStatsTrendInterval = (value: Date, granularity: StatsTrendGranularity) => {
   const next = new Date(value);
@@ -1406,14 +1409,14 @@ const createStatsTrendBuckets = (range: AdminDateRange, granularity: StatsTrendG
     const nextInterval = addStatsTrendInterval(cursor, granularity);
     const bucketEndExclusive = nextInterval < endExclusive ? nextInterval : endExclusive;
 
-    buckets.push({
+    ? buckets.push({
       date: new Date(cursor),
       endExclusive: new Date(bucketEndExclusive),
       isoDate: toDateInputValue(cursor),
       label: formatStatsTrendBucketLabel(cursor, bucketEndExclusive, granularity),
       shortLabel:
         granularity === 'day'
-          ? formatDateLabel(cursor)
+ formatDateLabel(cursor)
           : formatStatsTrendBucketLabel(cursor, bucketEndExclusive, granularity),
       value: 0,
       photos: 0,
@@ -1433,7 +1436,7 @@ const createStatsTrendBuckets = (range: AdminDateRange, granularity: StatsTrendG
 };
 
 const findStatsTrendBucket = (buckets: StatsTrendBucket[], value: Date) =>
-  buckets.find((bucket) => value >= bucket.date && value < bucket.endExclusive) ?? null;
+  buckets.find((bucket) => value >= bucket.date && value < bucket.endExclusive) || null;
 
 const getStatsTrendChartMax = (values: number[]) => {
   const max = Math.max(0, ...values);
@@ -1451,7 +1454,7 @@ const normalizePackageKey = (value: unknown): CafePackageKey =>
   normalizePricingPlanKey(value);
 
 const getPackageMeta = (packageKey: CafePackageKey) =>
-  CAFE_PACKAGE_OPTIONS.find((item) => item.key === packageKey) ?? CAFE_PACKAGE_OPTIONS[0];
+  CAFE_PACKAGE_OPTIONS.find((item) => item.key === packageKey) || CAFE_PACKAGE_OPTIONS[0];
 
 const getNumericField = (data: Record<string, unknown>, keys: string[]) => {
   for (const key of keys) {
@@ -1576,7 +1579,7 @@ const getCustomerInitials = (customer: EmailCustomer) => {
 };
 
 const normalizeCustomerLookup = (value?: string | null) =>
-  String(value ?? '')
+  String(value || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/ı/g, 'i')
@@ -1605,7 +1608,7 @@ const getCustomerSegmentMeta = (segment?: string | null) =>
   CUSTOMER_SEGMENT_META[normalizeCustomerSegmentKey(segment)];
 
 const getCustomerInteractionMeta = (interaction?: string | null) =>
-  CUSTOMER_INTERACTION_META[interaction || ''] ?? CUSTOMER_INTERACTION_META.site_visit;
+  CUSTOMER_INTERACTION_META[interaction || ''] || CUSTOMER_INTERACTION_META.site_visit;
 
 const getCampaignStatusLabel = (status: string) => {
   switch (status) {
@@ -1657,7 +1660,7 @@ const getWebsiteCampaignStatusLabel = (status: string) =>
   status === 'archived' ? 'Yayından Kaldırıldı' : 'Yayında';
 
 const getCampaignRecipientCount = (campaign: AdminCampaign) =>
-  campaign.recipientCount ?? campaign._count?.recipients ?? 0;
+  campaign.recipientCount ?? campaign._count?.recipients || 0;
 
 const getCampaignMetricCount = (value: unknown) =>
   typeof value === 'number' && Number.isFinite(value) ? value : 0;
@@ -1711,11 +1714,11 @@ const formatCampaignDateTimeInline = (value?: string | null) =>
 
 const getCampaignTimelineValue = (campaign: AdminCampaign) => {
   if (campaign.status === 'completed' || campaign.status === 'sending' || campaign.status === 'failed') {
-    return campaign.sentAt ?? campaign.createdAt ?? null;
+    return campaign.sentAt ?? campaign.createdAt || null;
   }
 
   if (campaign.status === 'scheduled') {
-    return campaign.scheduledAt ?? null;
+    return campaign.scheduledAt || null;
   }
 
   return null;
@@ -1807,7 +1810,7 @@ const getFileNameFromUrl = (value: string) => {
 
     const decodedPath = decodeURIComponent(encodedPath);
     const segments = decodedPath.split('/');
-    return segments[segments.length - 1] ?? '';
+    return segments[segments.length - 1] || '';
   } catch {
     return '';
   }
@@ -1878,7 +1881,7 @@ const hasCustomerEmail = (customer: EmailCustomer) =>
   Boolean(customer.email?.trim());
 
 const getRecipientCampaignCount = (customer: EmailCustomer) =>
-  customer._count?.recipients ?? 0;
+  customer._count?.recipients || 0;
 
 const buildEmailAudienceGroups = (customers: EmailCustomer[]): EmailAudienceGroup[] => [
   {
@@ -1911,7 +1914,7 @@ const buildEmailAudienceGroups = (customers: EmailCustomer[]): EmailAudienceGrou
 ];
 
 const getRecipientStatusLabel = (status?: string | null) => {
-  switch ((status ?? '').toLowerCase()) {
+  switch ((status || '').toLowerCase()) {
     case 'sent':
       return 'Gönderildi';
     case 'failed':
@@ -1926,7 +1929,7 @@ const getRecipientStatusLabel = (status?: string | null) => {
 };
 
 const getFirstUrlFromText = (value?: string | null) =>
-  value?.match(/https?:\/\/[^\s)]+/)?.[0]?.replace(/[.,;]+$/, '') ?? null;
+  value?.match(/https?:\/\/[^\s)]+/)?.[0]?.replace(/[.,;]+$/, '') || null;
 
 const getMediaDate = (value: AdminMediaItem['createdAt']) => {
   if (!value) {
@@ -1953,7 +1956,7 @@ const getOptionalDate = (value?: string | null) => {
 const getCustomerCreatedDate = (customer: EmailCustomer) => getOptionalDate(customer.createdAt);
 
 const getCampaignActivityDate = (campaign: AdminCampaign) =>
-  getOptionalDate(campaign.sentAt) ?? getOptionalDate(campaign.updatedAt) ?? getOptionalDate(campaign.createdAt);
+  getOptionalDate(campaign.sentAt) || getOptionalDate(campaign.updatedAt) || getOptionalDate(campaign.createdAt);
 
 const normalizeFirestoreDate = (value: unknown) => {
   if (!value) {
@@ -1974,16 +1977,16 @@ const normalizeFirestoreDate = (value: unknown) => {
 
 const getErrorCode = (error: unknown) =>
   typeof error === 'object' && error !== null && 'code' in error
-    ? String(error.code)
+ String(error.code)
     : '';
 
 const getAdminFriendlyErrorMessage = (error: unknown, fallback: string) => {
   const code = getErrorCode(error);
   const rawMessage =
     error instanceof Error
-      ? error.message
+ error.message
       : typeof error === 'string'
-        ? error
+ error
         : '';
   const message = rawMessage.toLowerCase();
 
@@ -2022,17 +2025,17 @@ const normalizeAdminSettings = (raw: Record<string, unknown> = {}, slug = DEFAUL
   const extraRaw = isRecordValue(raw.extra) ? raw.extra : {};
   const accentColor =
     typeof raw.accentColor === 'string' && raw.accentColor
-      ? raw.accentColor
+ raw.accentColor
       : typeof raw.primaryColor === 'string' && raw.primaryColor
-        ? raw.primaryColor
+ raw.primaryColor
         : DEFAULT_ADMIN_SETTINGS.accentColor;
   const primaryColor =
     typeof raw.primaryColor === 'string' && raw.primaryColor
-      ? raw.primaryColor
+ raw.primaryColor
       : accentColor;
   const packageKey = normalizePackageKey(raw.packageKey ?? raw.billingPlan);
   const adminEmails = Array.isArray(raw.adminEmails)
-    ? Array.from(
+ Array.from(
         new Set(
           raw.adminEmails
             .filter((entry): entry is string => typeof entry === 'string')
@@ -2044,7 +2047,7 @@ const normalizeAdminSettings = (raw: Record<string, unknown> = {}, slug = DEFAUL
 
   return {
     ...DEFAULT_ADMIN_SETTINGS,
-    cafeName: normalizeSettingsText(raw.cafeName ?? raw.businessName, DEFAULT_ADMIN_SETTINGS.cafeName),
+    cafeName: normalizeSettingsText(raw.cafeName || raw.businessName, DEFAULT_ADMIN_SETTINGS.cafeName),
     sector: normalizeSettingsText(raw.sector, DEFAULT_ADMIN_SETTINGS.sector),
     description: normalizeSettingsText(raw.description, DEFAULT_ADMIN_SETTINGS.description),
     logoUrl: normalizeSettingsText(raw.logoUrl, ''),
@@ -2064,7 +2067,7 @@ const normalizeAdminSettings = (raw: Record<string, unknown> = {}, slug = DEFAUL
     emailReports: normalizeSettingsBoolean(raw.emailReports, DEFAULT_ADMIN_SETTINGS.emailReports),
     weeklySummary: normalizeSettingsBoolean(raw.weeklySummary, DEFAULT_ADMIN_SETTINGS.weeklySummary),
     billingPlan: packageKey,
-    invoiceEmail: normalizeSettingsText(raw.invoiceEmail ?? raw.email, DEFAULT_ADMIN_SETTINGS.invoiceEmail),
+    invoiceEmail: normalizeSettingsText(raw.invoiceEmail || raw.email, DEFAULT_ADMIN_SETTINGS.invoiceEmail),
     adminEmails,
     integrations: {
       ...DEFAULT_SETTINGS_INTEGRATIONS,
@@ -2075,7 +2078,7 @@ const normalizeAdminSettings = (raw: Record<string, unknown> = {}, slug = DEFAUL
     },
     domains: {
       customDomain: normalizeSettingsText(domainsRaw.customDomain, ''),
-      publicSlug: normalizeCafeSlug(domainsRaw.publicSlug ?? slug),
+      publicSlug: normalizeCafeSlug(domainsRaw.publicSlug || slug),
     },
     security: {
       ...DEFAULT_SETTINGS_SECURITY,
@@ -2092,7 +2095,7 @@ const normalizeAdminSettings = (raw: Record<string, unknown> = {}, slug = DEFAUL
     handwritingFont: normalizeHandwritingFont(raw.handwritingFont),
     campaignTarget:
       typeof raw.campaignTarget === 'number' && Number.isFinite(raw.campaignTarget)
-        ? raw.campaignTarget
+ raw.campaignTarget
         : DEFAULT_ADMIN_SETTINGS.campaignTarget,
     campaignReward: normalizeSettingsText(raw.campaignReward, DEFAULT_ADMIN_SETTINGS.campaignReward),
     packageKey,
@@ -2235,6 +2238,28 @@ export default function AdminPanel({
   const [hasSeenNotifications, setHasSeenNotifications] = useState(false);
   const [hoveredChartIndex, setHoveredChartIndex] = useState<number | null>(null);
   const [hoveredStatsTrendIndex, setHoveredStatsTrendIndex] = useState<number | null>(null);
+  const [cspViolations, setCspViolations] = useState<any[]>([]);
+
+  const hourlyCspChartData = useMemo(() => {
+    const points = [];
+    const now = Date.now();
+    for (let i = 23; i >= 0; i--) {
+      const hourStart = new Date(now - i * 60 * 60 * 1000);
+      hourStart.setMinutes(0, 0, 0);
+      const hourEnd = new Date(hourStart.getTime() + 60 * 60 * 1000);
+      const count = cspViolations.filter(v => {
+        const t = v.timestamp?.toDate ? v.timestamp.toDate().getTime() : 
+                  v.timestamp?.seconds ? v.timestamp.seconds * 1000 : 0;
+        return t >= hourStart.getTime() && t < hourEnd.getTime();
+      }).length;
+      points.push({
+        label: `${hourStart.getHours()}:00`,
+        value: count
+      });
+    }
+    return points;
+  }, [cspViolations]);
+
   const [workspaceSlug, setWorkspaceSlug] = useState(() => normalizeCafeSlug(cafeSlug, DEFAULT_CAFE_SLUG));
   const [workspaceSlugDraft, setWorkspaceSlugDraft] = useState(() => normalizeCafeSlug(cafeSlug, DEFAULT_CAFE_SLUG));
   const [workspaceOwnerEmail, setWorkspaceOwnerEmail] = useState<string | null>(null);
@@ -2494,6 +2519,27 @@ export default function AdminPanel({
   );
 
   useEffect(() => {
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const q = query(
+      collection(db, 'security_events'),
+      where('type', '==', 'csp_violation'),
+      where('timestamp', '>=', oneDayAgo)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const docs = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setCspViolations(docs);
+    }, (error) => {
+      console.error('Failed to listen to CSP violations:', error);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
     if (currentUserEmail) {
       console.log('[AdminPanel] Syncing email from props:', currentUserEmail);
       setUserEmail(currentUserEmail);
@@ -2692,7 +2738,7 @@ export default function AdminPanel({
       
       if (user) {
         console.log('[AdminPanel] Local listener: user logged in', user.email);
-        setUserEmail(user.email ?? null);
+        setUserEmail(user.email || null);
         setIsEmailVerified(user.emailVerified);
         setFirebaseAccessClaims(createEmptyFirebaseAccessClaims());
         setUserProfile({
@@ -2701,8 +2747,8 @@ export default function AdminPanel({
             user.email?.split('@')[0] ||
             DEFAULT_CAFE_NAME ||
             'Kullanıcı',
-          photoUrl: user.photoURL ?? null,
-          email: user.email ?? null,
+          photoUrl: user.photoURL || null,
+          email: user.email || null,
         });
         if (!user.emailVerified) {
           console.warn('[ADMIN_PANEL] User email is not verified:', user.email);
@@ -2808,7 +2854,7 @@ export default function AdminPanel({
         .filter(Boolean);
 
       return {
-        slug: normalizeCafeSlug(data.cafeSlug ?? entry.id, entry.id),
+        slug: normalizeCafeSlug(data.cafeSlug || entry.id, entry.id),
         cafeName: normalizeLegacyText(data.cafeName, 'İsimsiz Kafe'),
         ownerEmail: normalizeAccessEmail(data.ownerEmail) || null,
         adminEmails: Array.from(new Set(adminEmails)),
@@ -2857,7 +2903,7 @@ export default function AdminPanel({
     const publishConfiguredWorkspaces = () => {
       publishWorkspaces(
         configuredSlugs.map((slug) =>
-          workspaceMap.get(slug) ?? {
+          workspaceMap.get(slug) ? {
             slug,
             cafeName: slug,
             ownerEmail: null,
@@ -2989,7 +3035,7 @@ export default function AdminPanel({
             id: entry.id,
             url,
             caption: normalizeLegacyText(data.caption, DEFAULT_MEDIA_CAPTION),
-            cafeSlug: normalizeCafeSlug(data.cafeSlug ?? DEFAULT_CAFE_SLUG),
+            cafeSlug: normalizeCafeSlug(data.cafeSlug || DEFAULT_CAFE_SLUG),
             tableNumber: normalizeTableLabel(data.tableNumber, 'Masa'),
             date: normalizeLegacyText(data.date, '--:--'),
             likesCount: typeof data.likesCount === 'number' ? data.likesCount : 0,
@@ -3092,7 +3138,7 @@ export default function AdminPanel({
         return;
       }
 
-      const row = rows.get(ownerEmail) ?? {
+      const row = rows.get(ownerEmail) ? {
         email: ownerEmail,
         isAllowed: false,
         ownedCafes: [],
@@ -3112,9 +3158,9 @@ export default function AdminPanel({
   const isWorkspaceAssignedToCurrentUser =
     Boolean(normalizedUserEmail) && (isConfiguredWorkspaceOwner || isConfiguredWorkspaceManager);
   const hasPortalAccess = isLocalDevelopmentHost
-    ? true
+ true
     : isOwnerPortal
-      ? hasConfiguredPortalAccess
+ hasConfiguredPortalAccess
       : canAccessCafeWorkspace(normalizedUserEmail, workspaceSlug);
   const canViewActiveWorkspace =
     isLocalDevelopmentHost ||
@@ -3169,7 +3215,7 @@ export default function AdminPanel({
 
     const counters = new Map<string, number>();
     for (const item of selectedRangeMediaItems) {
-      counters.set(item.tableNumber, (counters.get(item.tableNumber) ?? 0) + 1);
+      counters.set(item.tableNumber, (counters.get(item.tableNumber) || 0) + 1);
     }
 
     return Array.from(counters.entries()).sort((left, right) => right[1] - left[1])[0] ?? null;
@@ -3178,7 +3224,7 @@ export default function AdminPanel({
   const tableActivity = useMemo(() => {
     const counters = new Map<string, number>();
     for (const item of selectedRangeMediaItems) {
-      counters.set(item.tableNumber, (counters.get(item.tableNumber) ?? 0) + 1);
+      counters.set(item.tableNumber, (counters.get(item.tableNumber) || 0) + 1);
     }
 
     return Array.from(counters.entries())
@@ -3187,19 +3233,19 @@ export default function AdminPanel({
       .slice(0, 6);
   }, [selectedRangeMediaItems]);
   const averageLikesPerPostLabel = selectedRangeMediaItems.length > 0
-    ? (totalLikes / selectedRangeMediaItems.length).toLocaleString('tr-TR', { maximumFractionDigits: 1 })
+ ? (totalLikes / selectedRangeMediaItems.length).toLocaleString('tr-TR', { maximumFractionDigits: 1 })
     : '0';
   const topTableSharePercent = topTable && selectedRangeMediaItems.length > 0
-    ? Math.round((topTable[1] / selectedRangeMediaItems.length) * 100)
+ Math.round((topTable[1] / selectedRangeMediaItems.length) * 100)
     : 0;
   const campaignProgressPercent = settings.campaignTarget > 0
-    ? Math.min(100, Math.round((selectedRangeMediaItems.length / settings.campaignTarget) * 100))
+ Math.min(100, Math.round((selectedRangeMediaItems.length / settings.campaignTarget) * 100))
     : 0;
-  const emailSentToday = emailDashboard?.sentToday ?? 0;
-  const emailRemainingToday = emailDashboard?.dailyLimitRemaining ?? 0;
+  const emailSentToday = emailDashboard?.sentToday || 0;
+  const emailRemainingToday = emailDashboard?.dailyLimitRemaining || 0;
   const emailLimitTotal = emailSentToday + emailRemainingToday;
   const emailLimitUsagePercent = emailLimitTotal > 0
-    ? Math.round((emailSentToday / emailLimitTotal) * 100)
+ Math.round((emailSentToday / emailLimitTotal) * 100)
     : 0;
 
   const filteredMediaItems = useMemo(() => {
@@ -3221,8 +3267,8 @@ export default function AdminPanel({
           return right.likesCount - left.likesCount;
         }
 
-        const leftDate = getMediaDate(left.createdAt)?.getTime() ?? 0;
-        const rightDate = getMediaDate(right.createdAt)?.getTime() ?? 0;
+        const leftDate = getMediaDate(left.createdAt)?.getTime() || 0;
+        const rightDate = getMediaDate(right.createdAt)?.getTime() || 0;
         return rightDate - leftDate;
       });
   }, [galleryStatusFilter, workspaceMediaItems, searchTerm, sortMode, tableFilter]);
@@ -3398,7 +3444,7 @@ export default function AdminPanel({
     Boolean(userEmail) &&
     canViewActiveWorkspace;
   const canManageWorkspace = workspaceDraftChanged
-    ? Boolean(userEmail) && (isLocalDevelopmentHost || canAccessCafeWorkspace(userEmail, effectiveWorkspaceSlug))
+ Boolean(userEmail) && (isLocalDevelopmentHost || canAccessCafeWorkspace(userEmail, effectiveWorkspaceSlug))
     : canManageActiveWorkspace;
   const canManageSettingsAdmins =
     Boolean(userEmail) &&
@@ -3457,7 +3503,7 @@ export default function AdminPanel({
     [activeStoryTemplateUrl]
   );
   const selectedStoryTemplate = useMemo(
-    () => STORY_TEMPLATES.find((template) => template.url === effectiveActiveStoryTemplateUrl) ?? null,
+    () => STORY_TEMPLATES.find((template) => template.url === effectiveActiveStoryTemplateUrl) || null,
     [effectiveActiveStoryTemplateUrl]
   );
   const previewStoryTemplate = selectedStoryTemplate ?? STORY_TEMPLATES[0];
@@ -3513,7 +3559,7 @@ export default function AdminPanel({
   const isStoryTemplatesView = activeView === 'templates' && templatesSubView === 'story';
   const panelTitle = isStoryTemplatesView ? 'Story Şablonları' : currentPageCopy.title;
   const panelDescription = isStoryTemplatesView
-    ? 'Müşteri fotoğrafını seçili yeşil ekran alanına yerleştiren story şablonunu yönetin.'
+ 'Müşteri fotoğrafını seçili yeşil ekran alanına yerleştiren story şablonunu yönetin.'
     : currentPageCopy.description;
   const panelKicker = isStoryTemplatesView ? 'Story Akışı' : currentPageCopy.kicker;
   const panelPill = isOwnerPortal ? 'Kafe Sahibi Merkezi' : 'Yönetim Merkezi';
@@ -3542,10 +3588,28 @@ export default function AdminPanel({
   };
 
   const handleLogout = async () => {
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      await fetch(`${apiUrl}/api/session/logout`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+    } catch (err) {
+      console.warn('Session logout API failed:', err);
+    }
     await signOut(auth);
   };
 
   const handleSwitchAccount = async () => {
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      await fetch(`${apiUrl}/api/session/logout`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+    } catch (err) {
+      console.warn('Session logout API failed:', err);
+    }
     try {
       await signOut(auth);
     } catch (error) {
@@ -3651,13 +3715,14 @@ export default function AdminPanel({
       for (const entry of relatedMediaSnapshot.docs) {
         const data = entry.data();
         await deleteMediaRecord(entry.id, typeof data.url === 'string' ? data.url : undefined);
+        invalidateSignedPhotoUrlCache(entry.id);
       }
 
       await deleteDoc(doc(db, 'cafes', normalizedSlug));
 
       const remainingWorkspaces = ownedWorkspaces.filter((workspace) => workspace.slug !== normalizedSlug);
       if (workspaceSlug === normalizedSlug) {
-        const fallbackSlug = remainingWorkspaces[0]?.slug ?? DEFAULT_CAFE_SLUG;
+        const fallbackSlug = remainingWorkspaces[0]?.slug || DEFAULT_CAFE_SLUG;
         setWorkspaceSlug(fallbackSlug);
         setWorkspaceSlugDraft(fallbackSlug);
         setNewWorkspaceNameDraft('');
@@ -3717,14 +3782,14 @@ export default function AdminPanel({
         key: 'active',
         label: 'Çok aktif misafirler',
         description: 'En az 3 kez geri dönüş yapanlar',
-        customers: allCustomers.filter((customer) => (customer._count?.recipients ?? 0) >= 3),
+        customers: allCustomers.filter((customer) => (customer._count?.recipients || 0) >= 3),
       },
       {
         key: 'regular',
         label: 'Düzenli misafirler',
         description: '1 veya 2 kez geri dönüş yapanlar',
         customers: allCustomers.filter((customer) => {
-          const count = customer._count?.recipients ?? 0;
+          const count = customer._count?.recipients || 0;
           return count >= 1 && count < 3;
         }),
       },
@@ -3732,18 +3797,18 @@ export default function AdminPanel({
         key: 'new',
         label: 'Yeni misafirler',
         description: 'Henüz mesaj gönderilmemiş olanlar',
-        customers: allCustomers.filter((customer) => (customer._count?.recipients ?? 0) === 0),
+        customers: allCustomers.filter((customer) => (customer._count?.recipients || 0) === 0),
       },
     ];
   }, [emailCustomers]); */
 
   const selectedAudience = emailAudienceGroups.find((group) => group.key === selectedAudienceKey) ?? emailAudienceGroups[0];
-  const selectedAudienceCustomers = selectedAudience?.customers ?? [];
+  const selectedAudienceCustomers = selectedAudience?.customers ? [];
   const selectedAudienceCategory = recipientCategoryGroups.find((group) => group.key === selectedAudienceKey) ?? recipientCategoryGroups[0];
-  const selectedAudienceInactiveCustomers = selectedAudienceCategory?.customers.filter((customer) => customer.emailSubscribed === false) ?? [];
+  const selectedAudienceInactiveCustomers = selectedAudienceCategory?.customers.filter((customer) => customer.emailSubscribed === false) ? [];
   const selectedRecipientCategory = recipientCategoryGroups.find((group) => group.key === recipientManagerCategoryKey) ?? recipientCategoryGroups[0];
-  const selectedRecipientCategoryActiveCustomers = selectedRecipientCategory?.customers.filter(isMarketingListCustomer) ?? [];
-  const selectedRecipientCategoryInactiveCustomers = selectedRecipientCategory?.customers.filter((customer) => customer.emailSubscribed === false) ?? [];
+  const selectedRecipientCategoryActiveCustomers = selectedRecipientCategory?.customers.filter(isMarketingListCustomer) ? [];
+  const selectedRecipientCategoryInactiveCustomers = selectedRecipientCategory?.customers.filter((customer) => customer.emailSubscribed === false) ? [];
   const excludedAudienceEmailSet = new Set(excludedAudienceEmails);
   const selectedAudienceEmails = Array.from(new Set(selectedAudienceCustomers
     .map((customer) => customer.email)
@@ -3751,20 +3816,20 @@ export default function AdminPanel({
   const selectedAudienceCount = selectedAudienceEmails.length;
   const normalizedRecipientSearchTerm = recipientSearchTerm.trim().toLocaleLowerCase('tr');
   const filteredRecipientCustomers = normalizedRecipientSearchTerm
-    ? allRecipientCustomers.filter((customer) => {
+ allRecipientCustomers.filter((customer) => {
         const haystack = `${customer.name ?? ''} ${customer.email}`.toLocaleLowerCase('tr');
         return haystack.includes(normalizedRecipientSearchTerm);
       })
     : allRecipientCustomers;
   const visibleRecipientCustomers = filteredRecipientCustomers.slice(0, 12);
   const availableEmailTemplates = emailTemplateRows.length > 0 ? emailTemplateRows : EMAIL_TEMPLATES;
-  const selectedTemplate = availableEmailTemplates.find((template) => template.key === selectedTemplateKey) ?? availableEmailTemplates[0] ?? EMAIL_TEMPLATES[0];
+  const selectedTemplate = availableEmailTemplates.find((template) => template.key === selectedTemplateKey) ?? availableEmailTemplates[0] || EMAIL_TEMPLATES[0];
   const emailTemplateAllCount = emailTemplateCategoryCounts.reduce((sum, item) => sum + item.count, 0);
   const templateCategoryStats = TEMPLATE_CATEGORY_FILTERS.map((category) => ({
     category,
     count: category === 'Tümü'
-      ? (!templateSearchTerm.trim() && emailTemplateAllCount > 0 ? emailTemplateAllCount : emailTemplateTotal)
-      : emailTemplateCategoryCounts.find((item) => item.name === category)?.count ?? emailTemplateRows.filter((template) => template.category === category).length,
+ ? (!templateSearchTerm.trim() && emailTemplateAllCount > 0 ? emailTemplateAllCount : emailTemplateTotal)
+      : emailTemplateCategoryCounts.find((item) => item.name === category)?.count || emailTemplateRows.filter((template) => template.category === category).length,
   }));
   const templatePaginationItems = useMemo<(number | 'ellipsis')[]>(() => {
     if (templatePageCount <= 7) {
@@ -3784,9 +3849,9 @@ export default function AdminPanel({
       return items;
     }, []);
   }, [templatePage, templatePageCount]);
-  const emailCustomerTotal = emailDashboard?.totalCustomers ?? emailCustomers.length;
+  const emailCustomerTotal = emailDashboard?.totalCustomers || emailCustomers.length;
   const customerStatsReady = customerOverview !== null;
-  const customerStats = customerOverview?.stats ?? {
+  const customerStats = customerOverview?.stats ? {
     totalCustomers: customerTotal,
     newCustomers: 0,
     loyalCustomers: 0,
@@ -3820,9 +3885,9 @@ export default function AdminPanel({
   };
   const customerRatioDetail = (value: number, suffix: string) =>
     customerStatsReady ? `${formatPercent(value)} ${suffix}` : 'Veri bekleniyor';
-  const customerSegments = customerOverview?.segments ?? [];
-  const customerInteractions = customerOverview?.interactions ?? [];
-  const customerTopRows = customerOverview?.topCustomers ?? [];
+  const customerSegments = customerOverview?.segments ? [];
+  const customerInteractions = customerOverview?.interactions ? [];
+  const customerTopRows = customerOverview?.topCustomers ? [];
   const customerSegmentSelectOptions: DropdownOption[] = useMemo(
     () => [
       { value: 'all', label: 'Tüm Segmentler' },
@@ -3872,8 +3937,8 @@ export default function AdminPanel({
     () =>
       [...selectedRangeMediaItems]
         .sort((left, right) => {
-          const leftDate = getMediaDate(left.createdAt)?.getTime() ?? 0;
-          const rightDate = getMediaDate(right.createdAt)?.getTime() ?? 0;
+          const leftDate = getMediaDate(left.createdAt)?.getTime() || 0;
+          const rightDate = getMediaDate(right.createdAt)?.getTime() || 0;
           return rightDate - leftDate;
         })
         .slice(0, 5),
@@ -3954,30 +4019,30 @@ export default function AdminPanel({
   }, [chartMaxValue, dashboardChartData]);
   const activeChartIndex =
     hoveredChartIndex !== null && hoveredChartIndex >= 0 && hoveredChartIndex < chartGeometry.points.length
-      ? hoveredChartIndex
+ hoveredChartIndex
       : null;
   const activeChartPoint = activeChartIndex !== null ? chartGeometry.points[activeChartIndex] : null;
   const emailRecipientTotal =
-    emailAnalyticsSummary?.recipientCount ??
-    rangeCampaignRows.reduce((sum, campaign) => sum + (campaign.recipientCount ?? 0), 0);
+    emailAnalyticsSummary?.recipientCount ?
+    rangeCampaignRows.reduce((sum, campaign) => sum + (campaign.recipientCount || 0), 0);
   const emailDeliveredTotal =
-    emailAnalyticsSummary?.sentCount ??
-    rangeCampaignRows.reduce((sum, campaign) => sum + (campaign.sentCount ?? 0), 0);
+    emailAnalyticsSummary?.sentCount ?
+    rangeCampaignRows.reduce((sum, campaign) => sum + (campaign.sentCount || 0), 0);
   const emailFailedTotal =
-    emailAnalyticsSummary?.failedCount ??
-    rangeCampaignRows.reduce((sum, campaign) => sum + (campaign.failedCount ?? 0), 0);
+    emailAnalyticsSummary?.failedCount ?
+    rangeCampaignRows.reduce((sum, campaign) => sum + (campaign.failedCount || 0), 0);
   const emailDeliveryRate =
-    emailAnalyticsSummary?.deliveryRate ??
+    emailAnalyticsSummary?.deliveryRate ?
     (emailRecipientTotal > 0 ? Math.round((emailDeliveredTotal / emailRecipientTotal) * 100) : 0);
   const emailFailureRate =
-    emailAnalyticsSummary?.failureRate ??
+    emailAnalyticsSummary?.failureRate ?
     (emailRecipientTotal > 0 ? Math.round((emailFailedTotal / emailRecipientTotal) * 100) : 0);
-  const rangeCustomerCount = emailAnalyticsSummary?.customersCreated ?? rangeCustomerRows.length;
-  const dashboardCustomerTotal = emailAnalyticsSummary?.totalCustomers ?? emailDashboard?.totalCustomers ?? emailCustomerTotal;
-  const registeredEmailTotal = emailAnalyticsSummary?.registeredEmails ?? emailDashboard?.registeredEmails ?? emailCustomerTotal;
-  const rangeCampaignCount = emailAnalyticsSummary?.campaignsCreated ?? rangeCampaignRows.length;
+  const rangeCustomerCount = emailAnalyticsSummary?.customersCreated || rangeCustomerRows.length;
+  const dashboardCustomerTotal = emailAnalyticsSummary?.totalCustomers ?? emailDashboard?.totalCustomers || emailCustomerTotal;
+  const registeredEmailTotal = emailAnalyticsSummary?.registeredEmails ?? emailDashboard?.registeredEmails || emailCustomerTotal;
+  const rangeCampaignCount = emailAnalyticsSummary?.campaignsCreated || rangeCampaignRows.length;
   const rangeSentCampaignCount =
-    emailAnalyticsSummary?.campaignsSent ??
+    emailAnalyticsSummary?.campaignsSent ?
     rangeCampaignRows.filter((campaign) => Boolean(campaign.sentAt)).length;
   const remainingRewardCount = Math.max(0, settings.campaignTarget - selectedRangeMediaItems.length);
   const campaignParticipantCount = Math.min(selectedRangeMediaItems.length, settings.campaignTarget);
@@ -3994,7 +4059,7 @@ export default function AdminPanel({
       const lastActivityAt = tableMediaItems
         .map((item) => getMediaDate(item.createdAt))
         .filter((date): date is Date => Boolean(date))
-        .sort((left, right) => right.getTime() - left.getTime())[0] ?? null;
+        .sort((left, right) => right.getTime() - left.getTime())[0] || null;
 
       return {
         table,
@@ -4008,7 +4073,7 @@ export default function AdminPanel({
       };
     });
   }, [effectiveWorkspaceSlug, uniqueTables, workspaceMediaItems]);
-  const qrDashboardSummary = qrDashboard?.summary ?? {
+  const qrDashboardSummary = qrDashboard?.summary ? {
     totalStands: 0,
     totalTables: 0,
     activeStands: 0,
@@ -4025,7 +4090,7 @@ export default function AdminPanel({
     latestActivityAt: null,
     latestRequestAt: null,
   };
-  const qrDashboardRows = qrDashboard?.stands ?? [];
+  const qrDashboardRows = qrDashboard?.stands ? [];
   const pricingTableCount = Math.max(1, qrDashboardSummary.totalStands || qrStandRows.length || 1);
   const currentPackageQuote = getPricingQuote(settings.packageKey, pricingTableCount);
   const qrDashboardMetrics: Array<{
@@ -4038,36 +4103,36 @@ export default function AdminPanel({
     {
       label: 'Toplam QR masa',
       value: formatCompactNumber(qrDashboardSummary.totalStands),
-      helper: `${formatCompactNumber(qrDashboardSummary.activeStands)} aktif, ${formatCompactNumber(qrDashboardSummary.inactiveStands ?? 0)} pasif`,
+      helper: `${formatCompactNumber(qrDashboardSummary.activeStands)} aktif, ${formatCompactNumber(qrDashboardSummary.inactiveStands || 0)} pasif`,
       icon: QrCode,
       tone: 'violet',
     },
     {
       label: 'Fotoğraf sayısı',
-      value: formatCompactNumber(qrDashboardSummary.totalQrPhotos ?? 0),
-      helper: `${formatCompactNumber(qrDashboardSummary.photoActiveStands ?? 0)} masadan fotoğraf geldi`,
+      value: formatCompactNumber(qrDashboardSummary.totalQrPhotos || 0),
+      helper: `${formatCompactNumber(qrDashboardSummary.photoActiveStands || 0)} masadan fotoğraf geldi`,
       icon: ImageIcon,
       tone: 'mint',
     },
     {
       label: 'Masa başına fotoğraf',
-      value: formatCompactNumber(qrDashboardSummary.averagePhotosPerStand ?? 0),
+      value: formatCompactNumber(qrDashboardSummary.averagePhotosPerStand || 0),
       helper: 'Her masa için ortalama fotoğraf',
       icon: BarChart3,
       tone: 'blue',
     },
     {
       label: 'Aktif masa oranı',
-      value: `%${formatCompactNumber(qrDashboardSummary.activityRate ?? 0)}`,
+      value: `%${formatCompactNumber(qrDashboardSummary.activityRate || 0)}`,
       helper: 'Fotoğraf gelen masaların oranı',
       icon: TrendingUp,
       tone: 'amber',
     },
     {
       label: 'En çok kullanılan masa',
-      value: qrDashboardSummary.topStand?.name ?? '-',
+      value: qrDashboardSummary.topStand?.name || '-',
       helper: qrDashboardSummary.topStand
-        ? `${formatCompactNumber(qrDashboardSummary.topStand.photoCount)} fotoğraf yüklenmiş`
+ `${formatCompactNumber(qrDashboardSummary.topStand.photoCount)} fotoğraf yüklenmiş`
         : 'Henüz fotoğraf yok',
       icon: Crown,
       tone: 'rose',
@@ -4098,7 +4163,7 @@ export default function AdminPanel({
       label: 'Müşteriler',
       value: formatCompactNumber(dashboardCustomerTotal),
       trend: rangeCustomerCount > 0
-        ? `${formatCompactNumber(rangeCustomerCount)} yeni kayıt bu aralıkta`
+ `${formatCompactNumber(rangeCustomerCount)} yeni kayıt bu aralıkta`
         : 'Toplam müşteri kaydı',
       icon: Users,
       tone: 'violet',
@@ -4142,15 +4207,15 @@ export default function AdminPanel({
     },
   ];
   const emailClickTotal =
-    emailAnalyticsSummary?.clickCount ??
+    emailAnalyticsSummary?.clickCount ?
     rangeCampaignRows.reduce((sum, campaign) => sum + getCampaignClickCount(campaign), 0);
   const emailOpenTotal = Math.max(
-    emailAnalyticsSummary?.openCount ??
+    emailAnalyticsSummary?.openCount ?
       rangeCampaignRows.reduce((sum, campaign) => sum + getCampaignOpenCount(campaign), 0),
     emailClickTotal
   );
   const emailOpenRate = getPercent(emailOpenTotal, emailDeliveredTotal);
-  const emailClickRate = emailAnalyticsSummary?.clickRate ?? getPercent(emailClickTotal, emailDeliveredTotal);
+  const emailClickRate = emailAnalyticsSummary?.clickRate || getPercent(emailClickTotal, emailDeliveredTotal);
   const emailPendingTotal = Math.max(0, emailRecipientTotal - emailDeliveredTotal - emailFailedTotal);
   const emailUnopenedTotal = Math.max(0, emailDeliveredTotal - emailOpenTotal);
   const previousRangeMediaItems = useMemo(() => {
@@ -4168,18 +4233,18 @@ export default function AdminPanel({
       return itemDate ? itemDate >= previousStart && itemDate <= previousEnd : false;
     });
   }, [dateRange, workspaceMediaItems]);
-  const statsMetric = (key: string) => statsDashboard?.metrics?.[key] ?? { value: 0, previousValue: 0, change: 0 };
+  const statsMetric = (key: string) => statsDashboard?.metrics?.[key] ? { value: 0, previousValue: 0, change: 0 };
   const statsTrendOption = getStatsTrendOption(statsTrendGranularity);
   const statsTrendSubtitle = `${statsTrendOption.label} paylaşım hareketi`;
   const statsTrendData = useMemo<StatsTrendPoint[]>(() => {
     if (statsDashboard?.trend?.length) {
       return statsDashboard.trend.map((point) => {
-        const pointDate = resolveDateInput(point.date) ?? getOptionalDate(point.startDate) ?? new Date();
+        const pointDate = resolveDateInput(point.date) ?? getOptionalDate(point.startDate) || new Date();
         const pointEndDate = getOptionalDate(point.endDate) ?? pointDate;
         const bucketEndExclusive = new Date(pointEndDate);
         bucketEndExclusive.setDate(bucketEndExclusive.getDate() + 1);
         const label = point.label || formatStatsTrendBucketLabel(pointDate, bucketEndExclusive, statsTrendGranularity);
-        const storyShares = point.storyShares ?? point.templateShares ?? 0;
+        const storyShares = point.storyShares ?? point.templateShares || 0;
 
         return {
           date: pointDate,
@@ -4187,14 +4252,14 @@ export default function AdminPanel({
           label,
           shortLabel: label,
           value: point.value,
-          photos: point.photos ?? 0,
-          qrShares: point.qrShares ?? point.photos ?? 0,
-          galleryShares: point.galleryShares ?? 0,
+          photos: point.photos || 0,
+          qrShares: point.qrShares ?? point.photos || 0,
+          galleryShares: point.galleryShares || 0,
           storyShares,
           templateShares: storyShares,
-          emailShares: point.emailShares ?? 0,
-          otherShares: point.otherShares ?? 0,
-          customerAdds: point.customerAdds ?? 0,
+          emailShares: point.emailShares || 0,
+          otherShares: point.otherShares || 0,
+          customerAdds: point.customerAdds || 0,
         };
       });
     }
@@ -4253,7 +4318,7 @@ export default function AdminPanel({
   }, [isMobileViewport, statsTrendData, statsTrendMax]);
   const activeStatsTrendIndex =
     hoveredStatsTrendIndex !== null && hoveredStatsTrendIndex >= 0 && hoveredStatsTrendIndex < statsTrendGeometry.points.length
-      ? hoveredStatsTrendIndex
+ hoveredStatsTrendIndex
       : null;
   const activeStatsTrendPoint = activeStatsTrendIndex !== null ? statsTrendGeometry.points[activeStatsTrendIndex] : null;
   const statsRangeLikes = totalLikes;
@@ -4261,7 +4326,7 @@ export default function AdminPanel({
   const statsRangeViews = selectedRangeMediaItems.reduce((sum, item) => sum + item.viewsCount, 0);
   const statsPreviousViews = previousRangeMediaItems.reduce((sum, item) => sum + item.viewsCount, 0);
   const statsSourceRows = useMemo(() => {
-    const backendRows = statsDashboard?.sources ?? [];
+    const backendRows = statsDashboard?.sources ? [];
     const byKey = new Map(backendRows.map((row) => [row.key, row]));
     const getBackendValue = (...keys: string[]) => {
       for (const key of keys) {
@@ -4351,7 +4416,7 @@ export default function AdminPanel({
   const totalShareMetric = resolveStatsMetric('totalShares', statsSourceTotal, previousShareFallback);
   const totalViewMetric = resolveStatsMetric('totalViews', statsRangeViews + emailOpenTotal, statsPreviousViews);
   const totalLikeMetric = resolveStatsMetric('totalLikes', statsRangeLikes, statsPreviousLikes);
-  const storyTemplateMetric = resolveStatsMetric('storyTemplateShares', statsDashboard?.storyTemplates?.shareCount ?? 0, 0);
+  const storyTemplateMetric = resolveStatsMetric('storyTemplateShares', statsDashboard?.storyTemplates?.shareCount || 0, 0);
   const newCustomerMetric = resolveStatsMetric('newCustomers', rangeCustomerCount, 0);
   const statsKpiCards = [
     {
@@ -4391,28 +4456,28 @@ export default function AdminPanel({
     },
   ];
   const statsTopTemplates = statsDashboard?.topStoryTemplates?.length
-    ? statsDashboard.topStoryTemplates
+ statsDashboard.topStoryTemplates
     : [];
   const statsTopTemplateMax = Math.max(1, ...statsTopTemplates.map((template) => template.count));
   const statsImpactCards = [
     {
       key: 'reach',
       title: 'Erişim',
-      value: statsDashboard?.impact?.reachIncrease ?? getPercentChangeValue(statsRangeViews + emailDeliveredTotal, statsPreviousViews),
+      value: statsDashboard?.impact?.reachIncrease || getPercentChangeValue(statsRangeViews + emailDeliveredTotal, statsPreviousViews),
       description: 'Gösterim, QR ve e-posta erişimindeki dönem farkı',
       icon: TrendingUp,
     },
     {
       key: 'engagement',
       title: 'Etkileşim',
-      value: statsDashboard?.impact?.engagementIncrease ?? getPercentChangeValue(statsRangeLikes + emailOpenTotal + emailClickTotal, statsPreviousLikes),
+      value: statsDashboard?.impact?.engagementIncrease || getPercentChangeValue(statsRangeLikes + emailOpenTotal + emailClickTotal, statsPreviousLikes),
       description: 'Beğeni, açılma ve tıklamalardan gelen toplam hareket',
       icon: Users,
     },
     {
       key: 'loyal',
       title: 'Sadık Müşteri',
-      value: statsDashboard?.impact?.loyalCustomerIncrease ?? getPercentChangeValue(rangeCustomerCount, 0),
+      value: statsDashboard?.impact?.loyalCustomerIncrease || getPercentChangeValue(rangeCustomerCount, 0),
       description: 'Müşteri listesindeki sadık segment oranı',
       icon: UserPlus,
     },
@@ -4422,11 +4487,11 @@ export default function AdminPanel({
     [websiteCampaigns]
   );
   const selectedMarketingSourceCampaign =
-    marketingSourceCampaigns.find((campaign) => campaign.id === selectedMarketingSourceCampaignId) ??
-    marketingSourceCampaigns[0] ??
+    marketingSourceCampaigns.find((campaign) => campaign.id === selectedMarketingSourceCampaignId) ?
+    marketingSourceCampaigns[0] ?
     null;
   const marketingSourceCampaignOptions: DropdownOption[] = marketingSourceCampaigns.length > 0
-    ? marketingSourceCampaigns.map((campaign) => ({
+ marketingSourceCampaigns.map((campaign) => ({
         value: campaign.id,
         label: campaign.subject,
         hint: campaign.description || getCampaignCategoryLabel(campaign.tag),
@@ -4487,13 +4552,13 @@ export default function AdminPanel({
       const leftScore =
         getCampaignOpenCount(left) * 4 +
         getCampaignClickCount(left) * 6 +
-        Math.max(0, left.sentCount ?? 0) +
-        Math.max(0, left.recipientCount ?? 0) * 0.1;
+        Math.max(0, left.sentCount || 0) +
+        Math.max(0, left.recipientCount || 0) * 0.1;
       const rightScore =
         getCampaignOpenCount(right) * 4 +
         getCampaignClickCount(right) * 6 +
-        Math.max(0, right.sentCount ?? 0) +
-        Math.max(0, right.recipientCount ?? 0) * 0.1;
+        Math.max(0, right.sentCount || 0) +
+        Math.max(0, right.recipientCount || 0) * 0.1;
 
       return rightScore - leftScore;
     })[0];
@@ -4550,7 +4615,7 @@ export default function AdminPanel({
     })
     .join(', ');
   const marketingDonutBackground = marketingPerformanceSegments.some((segment) => segment.value > 0)
-    ? `conic-gradient(${marketingDonutGradient})`
+ `conic-gradient(${marketingDonutGradient})`
     : 'conic-gradient(rgba(149, 160, 182, 0.42) 0% 100%)';
   const marketingKpiCards: Array<{
     label: string;
@@ -4642,7 +4707,7 @@ export default function AdminPanel({
     const normalizedSearch = campaignSearchTerm.trim().toLocaleLowerCase('tr');
 
     const rowsForTab = campaignTab === 'all'
-      ? websiteCampaigns
+ websiteCampaigns
       : websiteCampaigns.filter((campaign) => getCampaignTabKey(campaign.status) === campaignTab);
 
     return rowsForTab
@@ -4679,7 +4744,7 @@ export default function AdminPanel({
       });
   }, [campaignDataFilter, campaignSearchTerm, campaignTab, websiteCampaigns]);
   const campaignDataFilterLabel =
-    CAMPAIGN_DATA_FILTERS.find((filter) => filter.key === campaignDataFilter)?.label ?? 'Tüm kampanyalar';
+    CAMPAIGN_DATA_FILTERS.find((filter) => filter.key === campaignDataFilter)?.label || 'Tüm kampanyalar';
   const campaignTotalPages = Math.max(1, Math.ceil(campaignFilteredRows.length / campaignPageSize));
   const campaignVisibleRows = useMemo(() => {
     const startIndex = (campaignPage - 1) * campaignPageSize;
@@ -4777,7 +4842,7 @@ export default function AdminPanel({
       key: 'stats',
       label: 'İstatistikler',
       description: 'Performans',
-      value: topTable?.[0] ?? `${uniqueTables.length} masa`,
+      value: topTable?.[0] || `${uniqueTables.length} masa`,
       icon: BarChart3,
     },
     {
@@ -4989,7 +5054,7 @@ export default function AdminPanel({
       const response = await accessPolicyService.syncClaims(email, DEFAULT_CAFE_SLUG);
       const missingCount = response.result.missingUsers.length;
       const message = missingCount > 0
-        ? `${response.result.synced} kullanıcı güncellendi. ${missingCount} kullanıcı henüz Firebase Auth içinde bulunamadı.`
+ `${response.result.synced} kullanıcı güncellendi. ${missingCount} kullanıcı henüz Firebase Auth içinde bulunamadı.`
         : response.message || 'Firebase custom claims güncellendi.';
       setAccessPolicyNotice(message);
       showToast(message, missingCount > 0 ? 'info' : 'success');
@@ -5151,8 +5216,8 @@ export default function AdminPanel({
         const nextSettings = normalizeAdminSettings(
           {
             ...response.settings,
-            cafeName: response.settings.businessName ?? response.settings.cafeName ?? response.cafe.name,
-            packageKey: response.settings.packageKey ?? response.settings.billingPlan,
+            cafeName: response.settings.businessName ?? response.settings.cafeName || response.cafe.name,
+            packageKey: response.settings.packageKey || response.settings.billingPlan,
             accentColor: response.settings.primaryColor,
           },
           workspaceSlug
@@ -5203,7 +5268,7 @@ export default function AdminPanel({
           status: 'active',
           notes:
             stand.shareCount > 0
-              ? `${stand.shareCount} fotoğraf bu QR masasıyla eşleşiyor.`
+ `${stand.shareCount} fotoğraf bu QR masasıyla eşleşiyor.`
               : 'Website QR masası hazır.',
         })),
         settings.cafeName
@@ -5279,7 +5344,7 @@ export default function AdminPanel({
             status: 'active',
             notes:
               stand.shareCount > 0
-                ? `${stand.shareCount} fotoğraf bu QR masasıyla eşleşiyor.`
+ `${stand.shareCount} fotoğraf bu QR masasıyla eşleşiyor.`
                 : 'Website QR masası hazır.',
           })),
           settings.cafeName
@@ -5347,48 +5412,48 @@ export default function AdminPanel({
       setEmailNotice(null);
     }
 
-    try {
+    ? try {
       const [dashboardResponse, campaignsResponse, customersResponse, analyticsSummaryResponse] = await Promise.all([
         emailService.getCafeDashboard(firebaseIdentity, workspaceSlug),
         emailService.listCampaigns(firebaseIdentity, workspaceSlug, 100, 0),
         includeCustomers
-          ? emailService.listCustomers(firebaseIdentity, workspaceSlug, 500, 0)
+ emailService.listCustomers(firebaseIdentity, workspaceSlug, 500, 0)
           : Promise.resolve({ customers: emailCustomersRef.current, total: emailCustomersRef.current.length }),
         emailService.getCafeAnalyticsSummary(firebaseIdentity, workspaceSlug, dateRange.start, dateRange.end),
       ]);
 
-      const resolvedCustomers = (customersResponse.customers ?? []).filter(hasCustomerEmail);
+      const resolvedCustomers = (customersResponse.customers ? []).filter(hasCustomerEmail);
       const activeCustomerCount = resolvedCustomers.filter(isMarketingListCustomer).length;
       const customerFallbackCount = includeCustomers ? activeCustomerCount : emailCustomersRef.current.filter(isMarketingListCustomer).length;
 
       setEmailDashboard({
-        sentToday: dashboardResponse.stats?.sentToday ?? 0,
-        dailyLimitRemaining: dashboardResponse.stats?.dailyLimitRemaining ?? 0,
-        totalCustomers: analyticsSummaryResponse.stats?.totalCustomers ?? dashboardResponse.stats?.totalCustomers ?? customerFallbackCount,
-        registeredEmails: analyticsSummaryResponse.stats?.registeredEmails ?? dashboardResponse.stats?.registeredEmails ?? customerFallbackCount,
-        totalCampaigns: dashboardResponse.stats?.totalCampaigns ?? campaignsResponse.campaigns?.length ?? 0,
+        sentToday: dashboardResponse.stats?.sentToday || 0,
+        dailyLimitRemaining: dashboardResponse.stats?.dailyLimitRemaining || 0,
+        totalCustomers: analyticsSummaryResponse.stats?.totalCustomers ?? dashboardResponse.stats?.totalCustomers || customerFallbackCount,
+        registeredEmails: analyticsSummaryResponse.stats?.registeredEmails ?? dashboardResponse.stats?.registeredEmails || customerFallbackCount,
+        totalCampaigns: dashboardResponse.stats?.totalCampaigns ?? campaignsResponse.campaigns?.length || 0,
       });
-      setEmailCampaigns(campaignsResponse.campaigns ?? []);
+      setEmailCampaigns(campaignsResponse.campaigns ? []);
       if (includeCustomers) {
         emailCustomersRef.current = resolvedCustomers;
         setEmailCustomers(resolvedCustomers);
       }
       setEmailAnalyticsSummary({
-        totalCustomers: analyticsSummaryResponse.stats?.totalCustomers ?? dashboardResponse.stats?.totalCustomers ?? customerFallbackCount,
-        registeredEmails: analyticsSummaryResponse.stats?.registeredEmails ?? dashboardResponse.stats?.registeredEmails ?? customerFallbackCount,
-        customersCreated: analyticsSummaryResponse.stats?.customersCreated ?? 0,
-        campaignsCreated: analyticsSummaryResponse.stats?.campaignsCreated ?? 0,
-        campaignsSent: analyticsSummaryResponse.stats?.campaignsSent ?? 0,
-        recipientCount: analyticsSummaryResponse.stats?.recipientCount ?? 0,
-        sentCount: analyticsSummaryResponse.stats?.sentCount ?? 0,
-        failedCount: analyticsSummaryResponse.stats?.failedCount ?? 0,
-        openCount: analyticsSummaryResponse.stats?.openCount ?? 0,
-        clickCount: analyticsSummaryResponse.stats?.clickCount ?? 0,
-        deliveryRate: analyticsSummaryResponse.stats?.deliveryRate ?? 0,
-        failureRate: analyticsSummaryResponse.stats?.failureRate ?? 0,
-        openRate: analyticsSummaryResponse.stats?.openRate ?? 0,
-        clickRate: analyticsSummaryResponse.stats?.clickRate ?? 0,
-        latestCampaignSubject: analyticsSummaryResponse.latestCampaign?.subject ?? null,
+        totalCustomers: analyticsSummaryResponse.stats?.totalCustomers ?? dashboardResponse.stats?.totalCustomers || customerFallbackCount,
+        registeredEmails: analyticsSummaryResponse.stats?.registeredEmails ?? dashboardResponse.stats?.registeredEmails || customerFallbackCount,
+        customersCreated: analyticsSummaryResponse.stats?.customersCreated || 0,
+        campaignsCreated: analyticsSummaryResponse.stats?.campaignsCreated || 0,
+        campaignsSent: analyticsSummaryResponse.stats?.campaignsSent || 0,
+        recipientCount: analyticsSummaryResponse.stats?.recipientCount || 0,
+        sentCount: analyticsSummaryResponse.stats?.sentCount || 0,
+        failedCount: analyticsSummaryResponse.stats?.failedCount || 0,
+        openCount: analyticsSummaryResponse.stats?.openCount || 0,
+        clickCount: analyticsSummaryResponse.stats?.clickCount || 0,
+        deliveryRate: analyticsSummaryResponse.stats?.deliveryRate || 0,
+        failureRate: analyticsSummaryResponse.stats?.failureRate || 0,
+        openRate: analyticsSummaryResponse.stats?.openRate || 0,
+        clickRate: analyticsSummaryResponse.stats?.clickRate || 0,
+        latestCampaignSubject: analyticsSummaryResponse.latestCampaign?.subject || null,
       });
     } catch (error) {
       console.error('Email panel data load failed:', error);
@@ -5456,9 +5521,9 @@ export default function AdminPanel({
       });
       const templates = response.templates.map(mapEmailTemplateToPreset);
       setEmailTemplateRows(templates);
-      setEmailTemplateCategoryCounts(response.categories ?? []);
-      setEmailTemplateTotal(response.total ?? templates.length);
-      setTemplatePageCount(Math.max(1, response.pageCount ?? Math.ceil((response.total ?? templates.length) / TEMPLATE_PAGE_SIZE)));
+      setEmailTemplateCategoryCounts(response.categories ? []);
+      setEmailTemplateTotal(response.total || templates.length);
+      setTemplatePageCount(Math.max(1, response.pageCount ?? Math.ceil((response.total || templates.length) / TEMPLATE_PAGE_SIZE)));
     } catch (error) {
       console.error('Email templates load failed:', error);
       setEmailTemplateRows(EMAIL_TEMPLATES);
@@ -5509,9 +5574,9 @@ export default function AdminPanel({
       ]);
 
       setCustomerOverview(overviewResponse);
-      setCustomerRows(customersResponse.customers ?? []);
-      setCustomerTotal(customersResponse.total ?? 0);
-      setCustomerPageCount(customersResponse.pageCount ?? Math.max(1, Math.ceil((customersResponse.total ?? 0) / 10)));
+      setCustomerRows(customersResponse.customers ? []);
+      setCustomerTotal(customersResponse.total || 0);
+      setCustomerPageCount(customersResponse.pageCount || Math.max(1, Math.ceil((customersResponse.total || 0) / 10)));
     } catch (error) {
       console.error('Customer panel data load failed:', error);
       setCustomerOverview(null);
@@ -5618,7 +5683,7 @@ export default function AdminPanel({
   }, [notificationSignature]);
 
   useEffect(() => {
-    const nextTemplate = availableEmailTemplates.find((template) => template.key === selectedTemplateKey) ?? availableEmailTemplates[0] ?? EMAIL_TEMPLATES[0];
+    const nextTemplate = availableEmailTemplates.find((template) => template.key === selectedTemplateKey) ?? availableEmailTemplates[0] || EMAIL_TEMPLATES[0];
     setCampaignSubjectInput(nextTemplate.subject);
     setCampaignDescriptionInput(nextTemplate.title);
     setCampaignTextInput(nextTemplate.textContent);
@@ -5843,7 +5908,7 @@ export default function AdminPanel({
         lastInteractionAt: new Date().toISOString(),
         lastInteractionType: 'form_submit',
         metadata: {
-          ...(customer.metadata ?? {}),
+          ...(customer.metadata ? {}),
           removedFrom: 'email-marketing',
           removedAt: new Date().toISOString(),
         },
@@ -5874,7 +5939,7 @@ export default function AdminPanel({
         lastInteractionAt: new Date().toISOString(),
         lastInteractionType: 'form_submit',
         metadata: {
-          ...(customer.metadata ?? {}),
+          ...(customer.metadata ? {}),
           restoredFrom: 'email-marketing',
           restoredAt: new Date().toISOString(),
         },
@@ -5925,7 +5990,7 @@ export default function AdminPanel({
 
       setEmailNotice(
         emailSubscribed
-          ? `${result.updated} alıcı e-posta listesine eklendi.`
+ `${result.updated} alıcı e-posta listesine eklendi.`
           : `${result.updated} alıcı e-posta listesinden çıkarıldı.`
       );
       await loadEmailData();
@@ -6093,16 +6158,16 @@ export default function AdminPanel({
       return;
     }
 
-    setEditingTemplate(template ?? null);
+    setEditingTemplate(template || null);
     setTemplateForm({
-      title: template?.title ?? '',
-      subject: template?.subject ?? '',
-      description: template?.description ?? '',
-      category: template?.category ?? 'Kampanya',
-      imageUrl: template?.imageUrl ?? '',
-      ctaLabel: template?.ctaLabel ?? 'Kullan',
-      textContent: template?.textContent ?? '',
-      tone: template?.tone ?? 'dark',
+      title: template?.title || '',
+      subject: template?.subject || '',
+      description: template?.description || '',
+      category: template?.category || 'Kampanya',
+      imageUrl: template?.imageUrl || '',
+      ctaLabel: template?.ctaLabel || 'Kullan',
+      textContent: template?.textContent || '',
+      tone: template?.tone || 'dark',
     });
     setTemplateEditorOpen(true);
   };
@@ -6209,9 +6274,9 @@ export default function AdminPanel({
     setCampaignComposerPurpose('website');
     setSelectedCampaign(campaign);
     setCampaignSubjectInput(campaign.subject);
-    setCampaignDescriptionInput(campaign.description ?? '');
-    setCampaignImageUrlInput(campaign.imageUrl ?? '');
-    setCampaignImageFileName(getFileNameFromUrl(campaign.imageUrl ?? ''));
+    setCampaignDescriptionInput(campaign.description || '');
+    setCampaignImageUrlInput(campaign.imageUrl || '');
+    setCampaignImageFileName(getFileNameFromUrl(campaign.imageUrl || ''));
     setCampaignTextInput(campaign.textContent);
     setCampaignStartDate('');
     setCampaignEndDate('');
@@ -6226,9 +6291,9 @@ export default function AdminPanel({
     setCampaignComposerPurpose('website');
     setSelectedCampaign(campaign);
     setCampaignSubjectInput(campaign.subject);
-    setCampaignDescriptionInput(campaign.description ?? '');
-    setCampaignImageUrlInput(campaign.imageUrl ?? '');
-    setCampaignImageFileName(getFileNameFromUrl(campaign.imageUrl ?? ''));
+    setCampaignDescriptionInput(campaign.description || '');
+    setCampaignImageUrlInput(campaign.imageUrl || '');
+    setCampaignImageFileName(getFileNameFromUrl(campaign.imageUrl || ''));
     setCampaignTextInput(campaign.textContent);
     setCampaignStartDate('');
     setCampaignEndDate('');
@@ -6248,9 +6313,9 @@ export default function AdminPanel({
     setCampaignComposerPurpose('email');
     setSelectedCampaign(campaign as AdminCampaign);
     setCampaignSubjectInput(campaign.subject);
-    setCampaignDescriptionInput(campaign.description ?? '');
-    setCampaignImageUrlInput(campaign.imageUrl ?? '');
-    setCampaignImageFileName(getFileNameFromUrl(campaign.imageUrl ?? ''));
+    setCampaignDescriptionInput(campaign.description || '');
+    setCampaignImageUrlInput(campaign.imageUrl || '');
+    setCampaignImageFileName(getFileNameFromUrl(campaign.imageUrl || ''));
     setCampaignTextInput(campaign.textContent);
     setCampaignStartDate('');
     setCampaignEndDate('');
@@ -6282,9 +6347,9 @@ export default function AdminPanel({
     setCampaignComposerPurpose('email');
     setSelectedCampaign(campaign);
     setCampaignSubjectInput(campaign.subject);
-    setCampaignDescriptionInput(campaign.description ?? '');
-    setCampaignImageUrlInput(campaign.imageUrl ?? '');
-    setCampaignImageFileName(getFileNameFromUrl(campaign.imageUrl ?? ''));
+    setCampaignDescriptionInput(campaign.description || '');
+    setCampaignImageUrlInput(campaign.imageUrl || '');
+    setCampaignImageFileName(getFileNameFromUrl(campaign.imageUrl || ''));
     setCampaignTextInput(campaign.textContent);
     setCampaignSchedule(campaign.scheduledAt ? 'tomorrow-morning' : SEND_TIME_OPTIONS[0].value);
     setSelectedAudienceKey('all');
@@ -6304,7 +6369,7 @@ export default function AdminPanel({
       endDate: campaignEndDate,
       tag: normalizeCampaignCategoryValue(campaignTag),
       htmlContent: campaignComposerPurpose === 'email'
-        ? buildTemplateMatchedEmailHtml(selectedTemplate, {
+ buildTemplateMatchedEmailHtml(selectedTemplate, {
             subject: campaignSubjectInput.trim(),
             description: campaignDescriptionInput.trim(),
             imageUrl: campaignImageUrlInput.trim(),
@@ -6325,8 +6390,8 @@ export default function AdminPanel({
           ),
       textContent: campaignTextInput.trim(),
       scheduledAt: scheduledDate ? scheduledDate.toISOString() : null,
-      sourceCampaignId: campaignComposerPurpose === 'email' ? selectedMarketingSourceCampaign?.id ?? null : null,
-      sourceCampaignTitle: campaignComposerPurpose === 'email' ? selectedMarketingSourceCampaign?.subject ?? null : null,
+      sourceCampaignId: campaignComposerPurpose === 'email' ? selectedMarketingSourceCampaign?.id ? null : null,
+      sourceCampaignTitle: campaignComposerPurpose === 'email' ? selectedMarketingSourceCampaign?.subject ? null : null,
       sourceCampaignUrl: campaignComposerPurpose === 'email' ? publicGalleryLink : null,
       templateKey: campaignComposerPurpose === 'email' ? selectedTemplateKey : null,
     };
@@ -6352,7 +6417,7 @@ export default function AdminPanel({
       };
       const campaign =
         campaignComposerMode === 'edit' && selectedCampaign
-          ? await emailService.updateCampaign(firebaseIdentity, selectedCampaign.id, payload)
+ await emailService.updateCampaign(firebaseIdentity, selectedCampaign.id, payload)
           : await emailService.createCampaign(firebaseIdentity, workspaceSlug, payload);
 
       setEmailNotice('E-posta kampanyası taslak olarak kaydedildi.');
@@ -6382,7 +6447,7 @@ export default function AdminPanel({
       const nowIso = new Date().toISOString();
       const campaignRef =
         (campaignComposerMode === 'edit' || campaignComposerMode === 'detail') && selectedCampaign
-          ? doc(db, 'cafes', workspaceSlug, 'campaigns', selectedCampaign.id)
+ doc(db, 'cafes', workspaceSlug, 'campaigns', selectedCampaign.id)
           : doc(collection(db, 'cafes', workspaceSlug, 'campaigns'));
       const payload = {
         cafeSlug: workspaceSlug,
@@ -6412,7 +6477,7 @@ export default function AdminPanel({
       const campaign: AdminCampaign = {
         id: campaignRef.id,
         ...payload,
-        createdAt: selectedCampaign?.createdAt ?? nowIso,
+        createdAt: selectedCampaign?.createdAt || nowIso,
         updatedAt: nowIso,
         scheduledAt: null,
         sentAt: null,
@@ -6425,7 +6490,7 @@ export default function AdminPanel({
 
       setEmailNotice(
         campaignComposerMode === 'create'
-          ? 'Kampanya yayınlandı.'
+ 'Kampanya yayınlandı.'
           : 'Kampanya güncellendi.'
       );
       if (campaignComposerMode === 'create') {
@@ -6454,9 +6519,9 @@ export default function AdminPanel({
     }
 
     setCampaignSubjectInput(campaign.subject);
-    setCampaignDescriptionInput(campaign.description ?? '');
-    setCampaignImageUrlInput(campaign.imageUrl ?? '');
-    setCampaignImageFileName(getFileNameFromUrl(campaign.imageUrl ?? ''));
+    setCampaignDescriptionInput(campaign.description || '');
+    setCampaignImageUrlInput(campaign.imageUrl || '');
+    setCampaignImageFileName(getFileNameFromUrl(campaign.imageUrl || ''));
     setCampaignTextInput(campaign.textContent);
     closeCampaignComposer();
     openAdminView('marketing');
@@ -6537,7 +6602,7 @@ export default function AdminPanel({
 
     const existingRecipientCount = getCampaignRecipientCount(campaign);
 
-    if (!firebaseIdentity || (!selectedAudienceEmails.length && existingRecipientCount === 0)) {
+    if (!firebaseIdentity ? (!selectedAudienceEmails.length && existingRecipientCount === 0)) {
       setEmailNotice('Gönderim için en az bir gerçek misafir e-postası gerekir.');
       return;
     }
@@ -6584,7 +6649,7 @@ export default function AdminPanel({
       const payload = getCampaignComposerPayload(true);
       const campaign =
         campaignComposerMode === 'edit' && selectedCampaign
-          ? await emailService.updateCampaign(firebaseIdentity, selectedCampaign.id, payload)
+ await emailService.updateCampaign(firebaseIdentity, selectedCampaign.id, payload)
           : await emailService.createCampaign(firebaseIdentity, workspaceSlug, payload);
 
       await emailService.sendCampaign(firebaseIdentity, campaign.id, selectedAudienceEmails);
@@ -6626,7 +6691,7 @@ export default function AdminPanel({
       const payload = getCampaignComposerPayload(false);
       const campaign =
         campaignComposerMode === 'edit' && selectedCampaign
-          ? await emailService.updateCampaign(firebaseIdentity, selectedCampaign.id, payload)
+ await emailService.updateCampaign(firebaseIdentity, selectedCampaign.id, payload)
           : await emailService.createCampaign(firebaseIdentity, workspaceSlug, payload);
 
       await emailService.scheduleCampaign(
@@ -6789,7 +6854,7 @@ export default function AdminPanel({
 
     try {
       const tokenResult = await currentUser.getIdTokenResult(true);
-      const authenticatedEmail = normalizeAccessEmail(tokenResult.claims.email ?? currentUser.email ?? userEmail);
+      const authenticatedEmail = normalizeAccessEmail(tokenResult.claims.email ?? currentUser.email || userEmail);
 
       if (!authenticatedEmail) {
         showToast('Google hesabı doğrulanamadı. Lütfen tekrar giriş yapın.', 'error');
@@ -6842,7 +6907,7 @@ export default function AdminPanel({
         nextWorkspaceSlug
       );
       const activeTemplateToSave = isAllowedStoryTemplateUrl(activeStoryTemplateUrl)
-        ? normalizeStoryTemplateUrl(activeStoryTemplateUrl)
+ normalizeStoryTemplateUrl(activeStoryTemplateUrl)
         : null;
 
       await setDoc(targetRef, {
@@ -6909,7 +6974,7 @@ export default function AdminPanel({
 
     try {
       const tokenResult = await currentUser.getIdTokenResult(true);
-      const authenticatedEmail = normalizeAccessEmail(tokenResult.claims.email ?? currentUser.email ?? userEmail);
+      const authenticatedEmail = normalizeAccessEmail(tokenResult.claims.email ?? currentUser.email || userEmail);
 
       if (!authenticatedEmail) {
         showToast('Google hesabı doğrulanamadı. Lütfen tekrar giriş yapın.', 'error');
@@ -6961,10 +7026,10 @@ export default function AdminPanel({
       await emailService.updateCafeSettings(currentUser.uid, nextWorkspaceSlug, settingsPayload);
 
       const requestedTemplateUrl = overrideTemplateUrl !== undefined
-        ? overrideTemplateUrl
+ overrideTemplateUrl
         : activeStoryTemplateUrl;
       const activeTemplateToSave = isAllowedStoryTemplateUrl(requestedTemplateUrl)
-        ? normalizeStoryTemplateUrl(requestedTemplateUrl)
+ normalizeStoryTemplateUrl(requestedTemplateUrl)
         : null;
 
       const publicCafeSettingsPayload = {
@@ -7011,9 +7076,9 @@ export default function AdminPanel({
 
     setStoryTemplateSavingKey(template.key);
 
-    try {
+    ? try {
       const targetSlug = settingsDirty || workspaceDraftChanged
-        ? await handleSave(template.url)
+ await handleSave(template.url)
         : effectiveWorkspaceSlug;
 
       if (!targetSlug) {
@@ -7160,13 +7225,13 @@ export default function AdminPanel({
   };
 
   const handleOpenCafePage = async () => {
-    if (!onOpenCafeEnvironment || (isOwnerPortal && !canViewActiveWorkspace)) {
+    if (!onOpenCafeEnvironment ? (isOwnerPortal && !canViewActiveWorkspace)) {
       return;
     }
 
     const targetSlug =
       settingsDirty || workspaceDraftChanged
-        ? await handleSave()
+ await handleSave()
         : effectiveWorkspaceSlug;
 
     if (targetSlug) {
@@ -7190,6 +7255,7 @@ export default function AdminPanel({
 
     try {
       await deleteMediaRecord(target.id, target.url);
+      invalidateSignedPhotoUrlCache(target.id);
       setMediaToDelete(null);
     } catch (error) {
       console.error('Admin media delete failed:', error);
@@ -7287,7 +7353,7 @@ export default function AdminPanel({
     const clickRate = getPercent(clickCount, deliveredCount);
     const clickToOpenRate = getPercent(clickCount, openCount);
     const campaignUrl = getFirstUrlFromText(campaign.textContent) || getFirstUrlFromText(campaign.htmlContent);
-    const recipientRows = campaign.recipients ?? [];
+    const recipientRows = campaign.recipients ? [];
     const reportCards = [
       { label: 'Gönderildi', value: deliveredCount, icon: SendHorizontal, tone: 'sent' },
       { label: 'Açıldı', value: openCount, icon: Eye, tone: 'open' },
@@ -7349,7 +7415,7 @@ export default function AdminPanel({
             </div>
             <p className="admin-email-report-insight">
               {clickCount > 0
-                ? 'Bu kampanyada tıklama yapan her alıcı aynı zamanda açılma istatistiğine dahil edilir.'
+ 'Bu kampanyada tıklama yapan her alıcı aynı zamanda açılma istatistiğine dahil edilir.'
                 : 'Henüz tıklama yok. İlk tıklama geldiğinde açılma oranı da birlikte güncellenir.'}
             </p>
           </section>
@@ -7387,7 +7453,7 @@ export default function AdminPanel({
                 <div key={`${recipient.email}-${recipient.status}`}>
                   <span>{recipient.email}</span>
                   <strong>{getRecipientStatusLabel(recipient.status)}</strong>
-                  <small>{recipient.sentAt ? formatCampaignDateTime(recipient.sentAt) : recipient.failureReason ?? 'Kayıt bekleniyor'}</small>
+                  <small>{recipient.sentAt ? formatCampaignDateTime(recipient.sentAt) : recipient.failureReason || 'Kayıt bekleniyor'}</small>
                 </div>
               ))}
             </div>
@@ -7434,7 +7500,7 @@ export default function AdminPanel({
           <h1 className="mt-4 text-3xl font-semibold text-cafe-50">{loginTitle}</h1>
           <p className="mt-3 text-sm leading-7 text-cafe-100/72">
             {isOwnerPortal
-              ? 'Tanımlı Google hesabınızla giriş yapın. Ardından kendi kafe çalışma alanınızı oluşturup ad, renk, font ve kampanya ayarlarınızı belirleyebilirsiniz.'
+ 'Tanımlı Google hesabınızla giriş yapın. Ardından kendi kafe çalışma alanınızı oluşturup ad, renk, font ve kampanya ayarlarınızı belirleyebilirsiniz.'
               : 'Kafe ayarlarını kurmak için Google hesabınızla giriş yapın. Girişten sonra kendi kafe çalışma alanınızı oluşturabilir ve yönetebilirsiniz.'}
           </p>
 
@@ -7495,7 +7561,7 @@ export default function AdminPanel({
           <h1 className="mt-4 text-3xl font-semibold text-cafe-50">Erişim izni bulunamadı</h1>
           <p className="mt-3 text-sm leading-7 text-cafe-100/72">
             {isOwnerPortal
-              ? 'Bu Google hesabı kafe sahibi erişim listesinde yer almıyor. Yetkili hesapla giriş yapmanız gerekiyor.'
+ 'Bu Google hesabı kafe sahibi erişim listesinde yer almıyor. Yetkili hesapla giriş yapmanız gerekiyor.'
                 : 'Bu kafe için yönetim izni bulunan kafe sahibi/yönetici hesabı ile giriş yapmanız gerekiyor.'}
           </p>
           <div className="mt-5 rounded-2xl border border-cafe-700/75 bg-cafe-900/45 px-4 py-3 text-sm text-cafe-100/72">
@@ -7545,6 +7611,15 @@ export default function AdminPanel({
       <header className="admin-topbar">
         <div className="admin-topbar-inner">
           <div className="admin-topbar-main">
+            <button
+              type="button"
+              className="admin-topbar-menu-toggle"
+              onClick={() => setIsMenuCollapsed((prev) => !prev)}
+              aria-label={isMenuCollapsed ? 'Menüyü aç' : 'Menüyü kapat'}
+              title={isMenuCollapsed ? 'Menüyü aç' : 'Menüyü kapat'}
+            >
+              <Menu className="h-5 w-5" />
+            </button>
             <button
               type="button"
               className="admin-topbar-brand admin-brand-home"
@@ -7663,12 +7738,12 @@ export default function AdminPanel({
               onClick={() => {
                 void handleSave();
               }}
-              disabled={isSaving || isCreatingWorkspace || (!settingsDirty && !workspaceDraftChanged) || !canManageWorkspace}
+              disabled={isSaving || isCreatingWorkspace ? (!settingsDirty && !workspaceDraftChanged) || !canManageWorkspace}
               className="admin-topbar-save"
             >
               <Save className="w-4 h-4" />
               <span className="sm:hidden">Kaydet</span>
-              <span className="hidden sm:inline">{isSaving || isCreatingWorkspace ? 'Kaydediliyor...' : workspaceDraftChanged ? 'Kafe ortamını kaydet' : isOwnerPortal ? 'Kafe ortamını kaydet' : 'Kaydet'}</span>
+              <span className="hidden sm:inline">{isSaving ? isCreatingWorkspace ? 'Kaydediliyor...' : workspaceDraftChanged ? 'Kafe ortamını kaydet' : isOwnerPortal ? 'Kafe ortamını kaydet' : 'Kaydet'}</span>
             </button>
           </div>
         </div>
@@ -7688,6 +7763,17 @@ export default function AdminPanel({
           <div className="admin-side-top">
             <button
               type="button"
+              className={`admin-menu-toggle ${isMenuCollapsed ? '' : 'is-open'}`}
+              onClick={() => setIsMenuCollapsed((current) => !current)}
+              aria-label={isMenuCollapsed ? 'Menüyü aç' : 'Menüyü kapat'}
+              aria-expanded={!isMenuCollapsed}
+              title={isMenuCollapsed ? 'Menüyü aç' : 'Menüyü kapat'}
+            >
+              <Menu className="h-5 w-5" />
+              <span className="admin-menu-toggle-copy">{isMenuCollapsed ? 'Aç' : 'Kapat'}</span>
+            </button>
+            <button
+              type="button"
               className="admin-side-brand admin-side-brand-button"
               onClick={onBack}
               aria-label="ShareVibe ana sayfasina don"
@@ -7698,17 +7784,6 @@ export default function AdminPanel({
                 <strong>ShareVibe</strong>
                 <span>Admin</span>
               </span>
-            </button>
-            <button
-              type="button"
-              className={`admin-menu-toggle ${isMenuCollapsed ? '' : 'is-open'}`}
-              onClick={() => setIsMenuCollapsed((current) => !current)}
-              aria-label={isMenuCollapsed ? 'Menüyü aç' : 'Menüyü kapat'}
-              aria-expanded={!isMenuCollapsed}
-              title={isMenuCollapsed ? 'Menüyü aç' : 'Menüyü kapat'}
-            >
-              <Menu className="h-5 w-5" />
-              <span className="admin-menu-toggle-copy">{isMenuCollapsed ? 'Aç' : 'Kapat'}</span>
             </button>
           </div>
 
@@ -7844,7 +7919,7 @@ export default function AdminPanel({
               )}
             </div>
             <div className="admin-side-user-copy">
-              <strong>{userProfile.name || (userEmail ? userEmail.split('@')[0] : 'Kullanıcı')}</strong>
+              <strong>{userProfile.name ? (userEmail ? userEmail.split('@')[0] : 'Kullanıcı')}</strong>
               <span>{userRoleLabel}</span>
               <small>{userProfile.email || userEmail || 'Google hesabı bağlı değil'}</small>
             </div>
@@ -7879,6 +7954,43 @@ export default function AdminPanel({
           {isSettingsBackendLoading ? <div className="admin-settings-loading">Ayarlar backend ile eşitleniyor...</div> : null}
 
           <div className="admin-settings-unified-grid">
+            <motion.article
+              className="admin-settings-card admin-settings-section admin-settings-user-profile"
+              initial={{ opacity: 0, y: 18 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1], delay: 0 }}
+            >
+              <div className="admin-settings-section-head">
+                <span className="admin-settings-section-icon"><User className="h-5 w-5" /></span>
+                <div>
+                  <h3>Aktif Kullanıcı Profili</h3>
+                  <p>Oturum açmış Google hesabınızın bilgileri.</p>
+                </div>
+              </div>
+              <div className="admin-settings-section-body p-4">
+                <div className="flex items-center gap-4 bg-[#1b120d]/40 border border-white/5 rounded-2xl p-4">
+                  <div className="relative h-16 w-16 shrink-0 rounded-full overflow-hidden border border-white/10 bg-cafe-850 flex items-center justify-center text-xl font-bold text-cafe-100">
+                    {userProfile.photoUrl ? (
+                      <img src={userProfile.photoUrl} alt="Google Profile" className="h-full w-full object-cover" />
+                    ) : (
+                      <span>{(userProfile.name || userEmail || 'G').slice(0, 1).toLocaleUpperCase('tr')}</span>
+                    )}
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="text-base font-semibold text-cafe-50">{userProfile.name || 'Google Kullanıcısı'}</h4>
+                    <p className="text-xs text-cafe-100/60">{userProfile.email || userEmail}</p>
+                    <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold tracking-wider uppercase bg-green-500/10 text-green-400 border border-green-500/20 mt-1">
+                      Google Hesabı Bağlı
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-4 p-3.5 bg-[#1b120d]/20 border border-white/5 rounded-xl text-xs text-cafe-100/70 space-y-1.5">
+                  <p><strong>ℹ️ Google ile Giriş Hakkında Bilgi:</strong></p>
+                  <p>Sistem güvenliği için kimlik doğrulama işlemleri tamamen Google altyapısı üzerinden gerçekleştirilir. Şifre değiştirme, e-posta güncelleme veya hesap güvenliği ayarlarınızı yönetmek için Google Hesabım (Google Account Security) panelini ziyaret etmelisiniz.</p>
+                </div>
+              </div>
+            </motion.article>
+
             {canShowCafeWorkspaces ? (
               <motion.article
                 className="admin-settings-card admin-settings-section admin-settings-workspace-setup"
@@ -7903,11 +8015,11 @@ export default function AdminPanel({
                         const workspaceCanDelete = canDeleteOwnedWorkspace(workspace);
                         const managerCount = workspace.adminEmails.length;
                         const accessLabel = isSuperAdmin
-                          ? 'Süper Admin'
+ 'Süper Admin'
                           : isWorkspaceOwner
-                            ? 'Kafe sahibi'
+ 'Kafe sahibi'
                             : isWorkspaceManager
-                              ? 'Yönetici'
+ 'Yönetici'
                               : 'Panel erişimi';
 
                         return (
@@ -8167,16 +8279,16 @@ export default function AdminPanel({
 
                   <div className="admin-manager-list">
                     {managedAccessAssignments.length > 0 ? (
-                      managedAccessAssignments.map((assignment) => {
+                      ? managedAccessAssignments.map((assignment) => {
                         const roleLabel = assignment.role === 'super_owner'
-                          ? 'Super Owner'
+ 'Super Owner'
                           : assignment.role === 'owner'
-                            ? 'Admin / Owner'
+ 'Admin / Owner'
                             : 'Manager';
                         const cafeLabel = assignment.role === 'super_owner'
-                          ? 'Tüm kafeler'
+ 'Tüm kafeler'
                           : assignment.cafeIds.length > 0
-                            ? assignment.cafeIds.join(', ')
+ ? assignment.cafeIds.join(', ')
                             : 'Cafe atanmamış';
 
                         return (
@@ -8480,7 +8592,7 @@ export default function AdminPanel({
                   showHeader={false}
                   showTrustBar={false}
                   initialTableCount={pricingTableCount}
-                  selectedKey={selectedPlanKey ?? settings.packageKey}
+                  selectedKey={selectedPlanKey || settings.packageKey}
                   onSelect={(key) => {
                     setSelectedPlanKey(key);
                     setSettings((current) => ({
@@ -8490,7 +8602,7 @@ export default function AdminPanel({
                     }));
                   }}
                 />
-                <button type="button" className="admin-settings-action" onClick={() => void handlePlanContact(CAFE_PACKAGE_OPTIONS.find((option) => option.key === (selectedPlanKey ?? settings.packageKey)) ?? CAFE_PACKAGE_OPTIONS[0])}>
+                <button type="button" className="admin-settings-action" onClick={() => void handlePlanContact(CAFE_PACKAGE_OPTIONS.find((option) => option.key === (selectedPlanKey || settings.packageKey)) || CAFE_PACKAGE_OPTIONS[0])}>
                   <span><ExternalLink className="h-5 w-5" /></span>
                   <div>
                     <strong>WhatsApp ile İletişime Geç</strong>
@@ -8542,7 +8654,7 @@ export default function AdminPanel({
               disabled={isSaving || isCreatingWorkspace || isLogoUploading || !canManageWorkspace}
             >
               <Save className="h-5 w-5" />
-              {isSaving || isCreatingWorkspace ? 'Kaydediliyor...' : canCreateCafeWorkspaces && workspaceDraftChanged ? 'Yeni Kafe Ortamını Oluştur' : 'Tüm Ayarları Kaydet'}
+              {isSaving ? isCreatingWorkspace ? 'Kaydediliyor...' : canCreateCafeWorkspaces && workspaceDraftChanged ? 'Yeni Kafe Ortamını Oluştur' : 'Tüm Ayarları Kaydet'}
             </button>
             {settingsDirty || workspaceDraftChanged ? (
               <span className="admin-settings-dirty-hint">Kaydedilmemiş değişiklikler var</span>
@@ -8703,13 +8815,13 @@ export default function AdminPanel({
                   ) : null}
                 </AnimatePresence>
                 <div
-                  className="admin-chart-label-row"
+                  ? className="admin-chart-label-row"
                   style={{ gridTemplateColumns: `repeat(${dashboardChartData.length}, minmax(0, 1fr))` }}
                 >
                   {dashboardChartData.map((point, index) => (
                     <span key={point.isoDate}>
                       {index % chartGeometry.labelStep === 0 || index === dashboardChartData.length - 1
-                        ? point.label
+ point.label
                         : point.shortLabel}
                     </span>
                   ))}
@@ -8735,8 +8847,9 @@ export default function AdminPanel({
                         key={item.id}
                         className="admin-campaign-collage-tile"
                       >
-                        <img
-                          src={item.url}
+                        <SignedImage
+                          photoId={item.id}
+                          fallbackUrl={item.url}
                           alt={item.caption}
                           loading="lazy"
                           decoding="async"
@@ -8780,7 +8893,7 @@ export default function AdminPanel({
                 {recentMediaItems.length > 0 ? (
                   recentMediaItems.map((item) => (
                     <button key={item.id} type="button" onClick={() => openAdminView('posts')} className="admin-recent-photo">
-                      <img src={item.url} alt={item.caption} loading="lazy" decoding="async" referrerPolicy="no-referrer" />
+                      <SignedImage photoId={item.id} fallbackUrl={item.url} alt={item.caption} loading="lazy" decoding="async" referrerPolicy="no-referrer" />
                       <span><Heart className="h-3.5 w-3.5" /> {item.likesCount}</span>
                     </button>
                   ))
@@ -8812,7 +8925,7 @@ export default function AdminPanel({
                 })}
               </div>
               <p className="admin-email-campaign-note">
-                Son kampanya: {emailAnalyticsSummary?.latestCampaignSubject ?? emailCampaigns[0]?.subject ?? 'Henüz gönderim yok'}
+                Son kampanya: {emailAnalyticsSummary?.latestCampaignSubject || emailCampaigns[0]?.subject || 'Henüz gönderim yok'}
               </p>
             </article>
 
@@ -9105,13 +9218,13 @@ export default function AdminPanel({
                   ) : null}
                 </AnimatePresence>
                 <div
-                  className="admin-stats-chart-labels"
+                  ? className="admin-stats-chart-labels"
                   style={{ gridTemplateColumns: `repeat(${statsTrendData.length}, minmax(0, 1fr))` }}
                 >
                   {statsTrendData.map((point, index) => (
                     <span key={point.isoDate}>
                       {index % statsTrendGeometry.labelStep === 0 || index === statsTrendData.length - 1
-                        ? point.shortLabel
+ point.shortLabel
                         : ''}
                     </span>
                   ))}
@@ -9129,11 +9242,11 @@ export default function AdminPanel({
 
               <div className="admin-stats-source-body">
                 <div
-                  className="admin-stats-donut"
+                  ? className="admin-stats-donut"
                   style={{
                     background:
                       statsSourceTotal > 0
-                        ? `conic-gradient(${statsSourceGradient})`
+ `conic-gradient(${statsSourceGradient})`
                         : 'conic-gradient(#2a2a2a 0% 100%)',
                   }}
                 >
@@ -9174,7 +9287,7 @@ export default function AdminPanel({
 
                     return (
                       <div key={template.id || `${template.name}-${index}`} className="admin-stats-ranking-row">
-                        <span>{template.rank ?? index + 1}</span>
+                        <span>{template.rank || index + 1}</span>
                         <strong>{template.name}</strong>
                         <div className="admin-stats-ranking-track">
                           <i style={{ width: `${ratio}%` }} />
@@ -9185,7 +9298,7 @@ export default function AdminPanel({
                   })
                 ) : (
                   <p className="admin-stats-empty">
-                    {statsDashboard?.storyTemplates?.message ?? 'Story şablonları henüz aktif değil; özellik açıldığında bu alan otomatik dolacak.'}
+                    {statsDashboard?.storyTemplates?.message || 'Story şablonları henüz aktif değil; özellik açıldığında bu alan otomatik dolacak.'}
                   </p>
                 )}
               </div>
@@ -9220,12 +9333,124 @@ export default function AdminPanel({
             </article>
           </div>
 
+          {(() => {
+            const maxCspCount = Math.max(1, ...hourlyCspChartData.map(p => p.value));
+            const cspWidth = 600;
+            const cspHeight = 150;
+            const cspPadding = 20;
+            const cspPoints = hourlyCspChartData.map((pt, idx) => {
+              const x = cspPadding + (idx * (cspWidth - 2 * cspPadding)) / 23;
+              const y = cspHeight - cspPadding - (pt.value * (cspHeight - 2 * cspPadding)) / maxCspCount;
+              return { x, y, label: pt.label, value: pt.value };
+            });
+            const cspPathD = cspPoints.map((pt, idx) => `${idx === 0 ? 'M' : 'L'} ${pt.x} ${pt.y}`).join(' ');
+
+            return (
+              <div className="admin-stats-bottom-grid mt-6">
+                <article className="admin-stats-panel admin-stats-csp-panel col-span-2">
+                  <div className="admin-stats-panel-head">
+                    <div>
+                      <h3 className="flex items-center gap-2">
+                        <ShieldCheck className="h-5 w-5 text-accent" />
+                        CSP İhlal Raporları (Son 24 Saat)
+                      </h3>
+                      <p>Güvenlik Politikası (Content Security Policy) ihlallerinin saatlik trendi</p>
+                    </div>
+                    <span className="rounded-full bg-red-950/65 px-3 py-1.5 text-xs text-red-400 font-semibold border border-red-500/20">
+                      Toplam İhlal: {cspViolations.length}
+                    </span>
+                  </div>
+
+                  <div className="admin-stats-line-chart mt-4">
+                    {cspViolations.length === 0 ? (
+                      <div className="h-48 flex flex-col items-center justify-center text-cafe-100/40 text-sm">
+                        <ShieldCheck className="w-8 h-8 text-green-400 mb-2 animate-pulse" />
+                        Son 24 saat içinde herhangi bir CSP ihlali tespit edilmedi.
+                      </div>
+                    ) : (
+                      <>
+                        <svg
+                          viewBox={`0 0 ${cspWidth} ${cspHeight}`}
+                          role="img"
+                          aria-label="CSP İhlalleri Grafiği"
+                          preserveAspectRatio="none"
+                          className="w-full h-48"
+                        >
+                          {/* Grid Lines */}
+                          {[0, 1, 2, 3, 4].map((line) => {
+                            const y = cspPadding + line * ((cspHeight - 2 * cspPadding) / 4);
+                            const value = Math.round(maxCspCount - (line * maxCspCount) / 4);
+                            return (
+                              <g key={line} className="opacity-30">
+                                <text x="5" y={y + 4} fill="#8c7a6e" fontSize="10">{value}</text>
+                                <line x1="30" x2={cspWidth - 10} y1={y} y2={y} stroke="#3b2e24" strokeWidth="1" strokeDasharray="3 3" />
+                              </g>
+                            );
+                          })}
+                          
+                          {/* Area under the line */}
+                          <path
+                            d={`${cspPathD} L ${cspPoints[cspPoints.length - 1].x} ${cspHeight - cspPadding} L ${cspPoints[0].x} ${cspHeight - cspPadding} Z`}
+                            fill="url(#cspAreaGrad)"
+                            className="opacity-20"
+                          />
+                          
+                          {/* Line Path */}
+                          <path
+                            d={cspPathD}
+                            fill="none"
+                            stroke="var(--color-accent, #C98B5A)"
+                            strokeWidth="2.5"
+                          />
+
+                          {/* Dots */}
+                          {cspPoints.map((pt, idx) => (
+                            <circle
+                              key={idx}
+                              cx={pt.x}
+                              cy={pt.y}
+                              r="4"
+                              fill="var(--color-accent, #C98B5A)"
+                              className="hover:r-6 transition-all cursor-pointer"
+                            >
+                              <title>{pt.label}: {pt.value} ihlal</title>
+                            </circle>
+                          ))}
+
+                          {/* Gradients */}
+                          <defs>
+                            <linearGradient id="cspAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="var(--color-accent, #C98B5A)" />
+                              <stop offset="100%" stopColor="var(--color-accent, #C98B5A)" stopOpacity="0" />
+                            </linearGradient>
+                          </defs>
+                        </svg>
+
+                        <div
+                          className="admin-stats-chart-labels text-[10px] text-cafe-100/40 mt-2 flex justify-between px-6"
+                        >
+                          {hourlyCspChartData.map((point, index) => {
+                            // Display label every 4 hours to avoid cluttering
+                            if (index % 4 === 0 || index === hourlyCspChartData.length - 1) {
+                              return <span key={index}>{point.label}</span>;
+                            }
+                            return null;
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </article>
+              </div>
+            );
+          })()}
+
           <div className="admin-stats-live-foot">
             <span className={statsLoading ? 'is-loading' : ''} />
             <p>
               Veriler canlı güncellenir. Son güncelleme:{' '}
               {statsDashboard?.range?.updatedAt
-                ? new Intl.DateTimeFormat('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(statsDashboard.range.updatedAt))
+ ? new Intl.DateTimeFormat('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(statsDashboard.range.updatedAt))
                 : 'şimdi'}
             </p>
           </div>
@@ -9296,9 +9521,9 @@ export default function AdminPanel({
                   {tableActivity.length === 0 ? (
                     <p className="admin-empty-insight">Henüz masa aktivitesi oluşmadı.</p>
                   ) : (
-                    tableActivity.map((entry, index) => {
+                    ? tableActivity.map((entry, index) => {
                       const ratio = topTable
-                        ? Math.max(8, Math.round((entry.count / topTable[1]) * 100))
+ Math.max(8, Math.round((entry.count / topTable[1]) * 100))
                         : 0;
 
                       return (
@@ -9429,7 +9654,7 @@ export default function AdminPanel({
             </div>
           ) : null}
 
-          {typeof document !== 'undefined' && campaignComposerMode !== 'closed' ? createPortal(
+          {typeof document !== 'undefined' && campaignComposerMode !== 'closed' || createPortal(
             <div className="admin-root admin-campaign-portal-root">
               <AnimatePresence>
               <motion.div
@@ -9454,20 +9679,20 @@ export default function AdminPanel({
                         <span>{campaignComposerPurpose === 'email' ? 'E-posta Kampanyası' : campaignComposerMode === 'create' ? 'Kampanya Yönetimi' : 'Kampanya Merkezi'}</span>
                         <h3>
                           {campaignComposerMode === 'create'
-                            ? campaignComposerPurpose === 'email'
-                              ? 'E-posta Kampanyası Hazırla'
+ campaignComposerPurpose === 'email'
+ 'E-posta Kampanyası Hazırla'
                               : 'Yeni Kampanya Oluştur'
                             : campaignComposerMode === 'edit'
-                              ? campaignComposerPurpose === 'email'
-                                ? 'E-posta Kampanyasını Düzenle'
+ campaignComposerPurpose === 'email'
+ 'E-posta Kampanyasını Düzenle'
                                 : 'Kampanyayı Düzenle'
-                              : selectedCampaign?.subject ?? 'Kampanya Detayları'}
+                              : selectedCampaign?.subject || 'Kampanya Detayları'}
                         </h3>
                         {campaignComposerMode === 'create' ? (
                           <>
                             <p className="admin-campaign-create-note">
                               {campaignComposerPurpose === 'email'
-                                ? 'Web sitenizdeki kampanyayı Brevo üzerinden e-posta listesine uygun bir tasarımla gönderin.'
+ 'Web sitenizdeki kampanyayı Brevo üzerinden e-posta listesine uygun bir tasarımla gönderin.'
                                 : 'Kafenizin en etkili kampanyasını burada tasarlayın. Her detay müşteri deneyimini güzelleştirecektir.'}
                             </p>
                             <div className="admin-campaign-composer-highlights" aria-label="Kampanya oluşturma özellikleri">
@@ -9495,7 +9720,7 @@ export default function AdminPanel({
 
                   <div
                     className={`admin-campaign-composer-grid ${
-                      campaignComposerMode === 'detail' || campaignComposerMode === 'create' || campaignComposerMode === 'edit' ? 'is-single' : ''
+                      campaignComposerMode === 'detail' ? campaignComposerMode === 'create' || campaignComposerMode === 'edit' ? 'is-single' : ''
                     } ${campaignComposerMode === 'create' ? 'is-create' : ''}`}
                   >
                     {campaignComposerMode === 'edit' ? (
@@ -9521,7 +9746,7 @@ export default function AdminPanel({
                         <div className="admin-campaign-audience-summary">
                           <span>Seçili Hedef Kitle</span>
                           <strong>{selectedAudienceCount}</strong>
-                          <small>{selectedAudience?.label ?? 'Alıcı grubu'} içinde gönderime hazır adres</small>
+                          <small>{selectedAudience?.label || 'Alıcı grubu'} içinde gönderime hazır adres</small>
                         </div>
                         <div className="admin-campaign-recipient-list">
                           <span>E-Posta Adresleri</span>
@@ -9539,9 +9764,9 @@ export default function AdminPanel({
                                     onClick={() =>
                                       setExcludedAudienceEmails((current) =>
                                         isExcluded
-                                          ? current.filter((item) => item !== email)
+ current.filter((item) => item !== email)
                                           : current.includes(email)
-                                            ? current
+ current
                                             : [...current, email]
                                       )
                                     }
@@ -9578,11 +9803,11 @@ export default function AdminPanel({
                               </div>
                               <div>
                                 <span>Açılma</span>
-                                <strong>{formatPercent(getPercent(getCampaignOpenCount(selectedCampaign), selectedCampaign.sentCount ?? 0))}</strong>
+                                <strong>{formatPercent(getPercent(getCampaignOpenCount(selectedCampaign), selectedCampaign.sentCount || 0))}</strong>
                               </div>
                               <div>
                                 <span>Tıklama</span>
-                                <strong>{formatPercent(getPercent(getCampaignClickCount(selectedCampaign), selectedCampaign.sentCount ?? 0))}</strong>
+                                <strong>{formatPercent(getPercent(getCampaignClickCount(selectedCampaign), selectedCampaign.sentCount || 0))}</strong>
                               </div>
                             </div>
                             <div className="admin-campaign-message-preview">
@@ -9644,7 +9869,7 @@ export default function AdminPanel({
                                 <strong>{campaignComposerPurpose === 'email' ? 'E-posta Tasarımı Hazır' : 'Kampanyanızı Tasarlayın'}</strong>
                                 <p>
                                   {campaignComposerPurpose === 'email'
-                                    ? 'Seçili web kampanyası e-posta formatına dönüştürüldü. Metni kontrol edip gönderin.'
+ 'Seçili web kampanyası e-posta formatına dönüştürüldü. Metni kontrol edip gönderin.'
                                     : 'Başlık, açıklama ve görselle kampanyanızı hazırlayın.'}
                                 </p>
                               </div>
@@ -9658,7 +9883,7 @@ export default function AdminPanel({
                                 <h4>{campaignComposerPurpose === 'email' ? 'E-posta Bilgileri' : 'Kampanya Bilgileri'}</h4>
                                 <p>
                                   {campaignComposerPurpose === 'email'
-                                    ? 'Konu satırını ve kısa açıklamayı düzenleyin'
+ 'Konu satırını ve kısa açıklamayı düzenleyin'
                                     : 'Kampanyanızın adı ve açıklamasını girin'}
                                 </p>
                               </div>
@@ -9759,7 +9984,7 @@ export default function AdminPanel({
                                 <div>
                                   <span>Liste durumu</span>
                                   <strong>{selectedAudienceInactiveCustomers.length} alıcı geri eklenebilir</strong>
-                                  <small>{selectedAudience?.label ?? 'Seçili grup'} için aktif listeyi buradan güncelleyebilirsiniz.</small>
+                                  <small>{selectedAudience?.label || 'Seçili grup'} için aktif listeyi buradan güncelleyebilirsiniz.</small>
                                 </div>
                                 <div>
                                   <button
@@ -9841,9 +10066,9 @@ export default function AdminPanel({
                                           onClick={() =>
                                             setExcludedAudienceEmails((current) =>
                                               isExcluded
-                                                ? current.filter((item) => item !== email)
+ current.filter((item) => item !== email)
                                                 : current.includes(email)
-                                                  ? current
+ current
                                                   : [...current, email]
                                             )
                                           }
@@ -9930,7 +10155,7 @@ export default function AdminPanel({
                                     onClick={() => {
                                       void handleSendExistingCampaign(selectedCampaign);
                                     }}
-                                    disabled={emailActionBusy || (!selectedAudienceCount && getCampaignRecipientCount(selectedCampaign) === 0)}
+                                    disabled={emailActionBusy ? (!selectedAudienceCount && getCampaignRecipientCount(selectedCampaign) === 0)}
                                   >
                                     <SendHorizontal className="h-4 w-4" />
                                     Hemen Gönder
@@ -10234,7 +10459,7 @@ export default function AdminPanel({
                               const hasRoomLeft = buttonRect.left >= menuWidth + viewportGap + sideGap;
                               const placement = hasRoomLeft ? 'left' : 'right';
                               const left = placement === 'left'
-                                ? buttonRect.left - menuWidth - sideGap
+ buttonRect.left - menuWidth - sideGap
                                 : Math.min(
                                     window.innerWidth - menuWidth - viewportGap,
                                     buttonRect.right + sideGap
@@ -10255,16 +10480,16 @@ export default function AdminPanel({
                           >
                             <MoreVertical className="h-4 w-4" />
                           </button>
-                          {typeof document !== 'undefined' ? createPortal(
+                          {typeof document !== 'undefined' || createPortal(
                             <AnimatePresence>
                               {openCampaignActionId === campaign.id ? (
                               <motion.div
-                                className={`admin-campaign-action-menu ${
+                                ? className={`admin-campaign-action-menu ${
                                   campaignActionMenuPosition?.placement === 'left' ? 'is-left' : 'is-right'
                                 }`}
                                 style={
                                   campaignActionMenuPosition
-                                    ? {
+ ? {
                                         top: campaignActionMenuPosition.top,
                                         left: campaignActionMenuPosition.left,
                                       }
@@ -10509,7 +10734,7 @@ export default function AdminPanel({
             <div className="admin-qr-card-head">
               <h3>QR Standlarım</h3>
               <span className="admin-qr-card-summary">
-                {formatCompactNumber(qrDashboardSummary.totalStands)} QR masa · {formatCompactNumber(qrDashboardSummary.totalQrPhotos ?? 0)} fotoğraf
+                {formatCompactNumber(qrDashboardSummary.totalStands)} QR masa · {formatCompactNumber(qrDashboardSummary.totalQrPhotos || 0)} fotoğraf
               </span>
             </div>
             <div className="admin-qr-table-toolbar">
@@ -10524,7 +10749,7 @@ export default function AdminPanel({
                 />
               </label>
               <div className="admin-qr-toolbar-meta">
-                <span>%{formatCompactNumber(qrDashboardSummary.activityRate ?? 0)} doluluk</span>
+                <span>%{formatCompactNumber(qrDashboardSummary.activityRate || 0)} doluluk</span>
                 <span>{formatCompactNumber(qrDashboardSummary.pendingRequests)} bekleyen talep</span>
               </div>
             </div>
@@ -10559,7 +10784,7 @@ export default function AdminPanel({
                         </span>
                       </span>
                       <span className="admin-qr-number-cell">
-                        <strong>{formatCompactNumber(stand.photoCount ?? 0)}</strong>
+                        <strong>{formatCompactNumber(stand.photoCount || 0)}</strong>
                         <small>Paylaşım</small>
                       </span>
                       <span className="admin-qr-number-cell">
@@ -10886,7 +11111,7 @@ export default function AdminPanel({
                   customerRows.map((customer, index) => {
                     const segmentMeta = getCustomerSegmentMeta(customer.segment);
                     const interactionMeta = getCustomerInteractionMeta(customer.lastInteractionType);
-                    const campaignCount = customer._count?.recipients ?? 0;
+                    const campaignCount = customer._count?.recipients || 0;
 
                     return (
                       <motion.div
@@ -10911,7 +11136,7 @@ export default function AdminPanel({
                         </span>
                         <span className="admin-customers-muted" data-label="Kayıt Tarihi">{formatCustomerDate(customer.createdAt)}</span>
                         <span className="admin-customers-interaction" data-label="Son Aktivite">
-                          <b>{formatCustomerDate(customer.lastInteractionAt ?? customer.updatedAt)}</b>
+                          <b>{formatCustomerDate(customer.lastInteractionAt || customer.updatedAt)}</b>
                           <small className={interactionMeta.className}>{interactionMeta.label}</small>
                         </span>
                         <span className="admin-customers-campaigns" data-label="Kampanya">
@@ -11012,7 +11237,7 @@ export default function AdminPanel({
                   {customerTopRows.length > 0 ? (
                     customerTopRows.map((customer, index) => {
                       const segmentMeta = getCustomerSegmentMeta(customer.segment);
-                      const campaignCount = customer._count?.recipients ?? 0;
+                      const campaignCount = customer._count?.recipients || 0;
                       return (
                         <span key={customer.id || customer.email}>
                           <i>{index + 1}</i>
@@ -11225,7 +11450,7 @@ export default function AdminPanel({
             </div>
           ) : null}
 
-          {templateEditorOpen && typeof document !== 'undefined' ? createPortal(
+          {templateEditorOpen && typeof document !== 'undefined' || createPortal(
             <div className="admin-template-editor-portal">
               <AnimatePresence>
                 {templateEditorOpen ? (
@@ -11246,7 +11471,7 @@ export default function AdminPanel({
                       <div className="admin-template-editor-head">
                         <div>
                           <span>{editingTemplate ? 'Şablonu düzenle' : 'Yeni e-posta şablonu'}</span>
-                          <h3>{editingTemplate?.title ?? 'Hazır tasarım oluştur'}</h3>
+                          <h3>{editingTemplate?.title || 'Hazır tasarım oluştur'}</h3>
                         </div>
                         <button type="button" onClick={() => setTemplateEditorOpen(false)} aria-label="Pencereyi kapat">
                           <X className="h-4 w-4" />
@@ -11385,7 +11610,7 @@ export default function AdminPanel({
           <div className="admin-story-templates-grid">
             {STORY_TEMPLATES.map((template, index) => {
               const isActive = effectiveActiveStoryTemplateUrl === template.url;
-              const isBusy = storyTemplateSavingKey === template.key || (storyTemplateSavingKey !== null && !isActive);
+              const isBusy = storyTemplateSavingKey === template.key ? (storyTemplateSavingKey !== null && !isActive);
               return (
                 <motion.article
                   key={template.key}
@@ -11560,7 +11785,7 @@ export default function AdminPanel({
                 <div className="admin-email-recipient-bulk-panel">
                   <div>
                     <span>Kategori işlemleri</span>
-                    <strong>{selectedRecipientCategory?.label ?? 'Alıcı listesi'}</strong>
+                    <strong>{selectedRecipientCategory?.label || 'Alıcı listesi'}</strong>
                     <small>
                       {selectedRecipientCategoryActiveCustomers.length} aktif alıcı, {selectedRecipientCategoryInactiveCustomers.length} geri eklenebilir kayıt
                     </small>
@@ -11599,7 +11824,7 @@ export default function AdminPanel({
                   </label>
                   <span>
                     {filteredRecipientCustomers.length === allRecipientCustomers.length
-                      ? `${formatCompactNumber(allRecipientCustomers.length)} kişi`
+ `${formatCompactNumber(allRecipientCustomers.length)} kişi`
                       : `${formatCompactNumber(filteredRecipientCustomers.length)} sonuç`}
                   </span>
                 </div>
@@ -11610,7 +11835,7 @@ export default function AdminPanel({
                       const isInactive = customer.emailSubscribed === false;
 
                       return (
-                        <div key={customer.id || customer.email} className={`admin-email-recipient-row ${isInactive ? 'is-passive' : ''}`}>
+                        <div key={customer.id ? customer.email} className={`admin-email-recipient-row ${isInactive ? 'is-passive' : ''}`}>
                           <i>{getCustomerInitials(customer)}</i>
                           <div>
                             <strong>{getCustomerDisplayName(customer)}</strong>
@@ -11621,7 +11846,7 @@ export default function AdminPanel({
                             className={isInactive ? 'is-restore' : undefined}
                             onClick={() => {
                               void (isInactive
-                                ? handleRestoreMarketingRecipient(customer)
+ handleRestoreMarketingRecipient(customer)
                                 : handleRemoveMarketingRecipient(customer));
                             }}
                             disabled={recipientActionBusy === customer.id}
@@ -11648,7 +11873,7 @@ export default function AdminPanel({
 
           {emailNotice ? (
             <motion.div
-              className="admin-email-marketing-notice"
+              ? className="admin-email-marketing-notice"
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               role="status"
@@ -11664,7 +11889,7 @@ export default function AdminPanel({
                   <h3>Kampanyalar</h3>
                   <span>
                     {marketingFilteredCampaigns.length > 0
-                      ? `${marketingFilteredCampaigns.length} kampanya`
+ `${marketingFilteredCampaigns.length} kampanya`
                       : 'Kampanya yok'}
                   </span>
                 </div>
@@ -11702,7 +11927,7 @@ export default function AdminPanel({
                     const deliveredCount = Math.max(0, campaign.sentCount ?? 0);
                     const campaignOpenRate = getPercent(getCampaignOpenCount(campaign), deliveredCount);
                     const campaignClickRate = getPercent(getCampaignClickCount(campaign), deliveredCount);
-                    const activityDate = campaign.sentAt ?? campaign.scheduledAt ?? campaign.createdAt;
+                    const activityDate = campaign.sentAt ?? campaign.scheduledAt || campaign.createdAt;
 
                     return (
                       <motion.article
@@ -11772,7 +11997,7 @@ export default function AdminPanel({
               <div className="admin-email-campaign-footer">
                 <span>
                   {marketingFilteredCampaigns.length > 0
-                    ? `${marketingFilteredCampaigns.length} kampanyadan 1-${marketingCampaignRows.length} arası gösteriliyor`
+ `${marketingFilteredCampaigns.length} kampanyadan 1-${marketingCampaignRows.length} arası gösteriliyor`
                     : 'Gösterilecek kampanya bulunmuyor'}
                 </span>
                 <div>
@@ -11794,7 +12019,7 @@ export default function AdminPanel({
                 <div className="admin-email-source-picker">
                   <span>Pazarlanacak web kampanyası</span>
                   <DropdownSelect
-                    value={selectedMarketingSourceCampaign?.id ?? 'none'}
+                    value={selectedMarketingSourceCampaign?.id || 'none'}
                     onChange={setSelectedMarketingSourceCampaignId}
                     options={marketingSourceCampaignOptions}
                     ariaLabel="Pazarlanacak web kampanyası"
@@ -11866,16 +12091,16 @@ export default function AdminPanel({
                     </div>
                     <div>
                       <strong>{topMarketingCampaign.subject}</strong>
-                      <span>{formatCampaignDateTime(topMarketingCampaign.sentAt ?? topMarketingCampaign.createdAt)}</span>
+                      <span>{formatCampaignDateTime(topMarketingCampaign.sentAt || topMarketingCampaign.createdAt)}</span>
                     </div>
                     <dl>
                       <div>
                         <dt>Açılma</dt>
-                        <dd>{formatPercent(getPercent(getCampaignOpenCount(topMarketingCampaign), topMarketingCampaign.sentCount ?? 0))}</dd>
+                        <dd>{formatPercent(getPercent(getCampaignOpenCount(topMarketingCampaign), topMarketingCampaign.sentCount || 0))}</dd>
                       </div>
                       <div>
                         <dt>Tıklama</dt>
-                        <dd>{formatPercent(getPercent(getCampaignClickCount(topMarketingCampaign), topMarketingCampaign.sentCount ?? 0))}</dd>
+                        <dd>{formatPercent(getPercent(getCampaignClickCount(topMarketingCampaign), topMarketingCampaign.sentCount || 0))}</dd>
                       </div>
                     </dl>
                     <button type="button" onClick={() => openEmailCampaignDetail(topMarketingCampaign)}>
@@ -12029,7 +12254,7 @@ export default function AdminPanel({
                           key={customer.id || email}
                           className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${
                             isExcluded
-                              ? 'border-cafe-700/80 bg-cafe-950/35 text-cafe-100/45 line-through'
+ 'border-cafe-700/80 bg-cafe-950/35 text-cafe-100/45 line-through'
                               : 'border-cafe-700/80 bg-cafe-950/60 text-cafe-100/82'
                           }`}
                         >
@@ -12180,7 +12405,7 @@ export default function AdminPanel({
                       <div>
                         <p className="text-sm font-semibold text-cafe-50">{campaign.subject}</p>
                         <p className="mt-1 text-xs text-cafe-100/70">
-                          Durum: {campaign.status} • Alıcı: {campaign.recipientCount ?? 0}
+                          Durum: {campaign.status} • Alıcı: {campaign.recipientCount || 0}
                         </p>
                       </div>
                       <span className="inline-flex items-center rounded-full border border-cafe-700/70 bg-cafe-950/60 px-3 py-1 text-xs text-cafe-100/78">
@@ -12315,8 +12540,9 @@ export default function AdminPanel({
                       >
                         <div className="admin-gallery-card-media">
                           {item.url ? (
-                            <img
-                              src={item.url}
+                            <SignedImage
+                              photoId={item.id}
+                              fallbackUrl={item.url}
                               alt={item.caption}
                               loading="lazy"
                               decoding="async"

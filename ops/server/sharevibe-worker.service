@@ -1,0 +1,17 @@
+[Unit]
+Description=ShareVibe Email Worker
+After=network.target redis-server.service
+
+[Service]
+Type=simple
+WorkingDirectory=/var/www/sharevibe/backend
+EnvironmentFile=/var/www/sharevibe/backend/.env
+ExecStart=/usr/bin/node /var/www/sharevibe/backend/dist/worker.js
+Restart=always
+RestartSec=3
+User=root
+StandardOutput=append:/var/www/sharevibe/backend/logs/worker.service.log
+StandardError=append:/var/www/sharevibe/backend/logs/worker.service.log
+
+[Install]
+WantedBy=multi-user.target

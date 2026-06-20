@@ -23,7 +23,7 @@ export function updatePageMeta(meta: PageMetaData): void {
   document.title = meta.title;
 
   // Update description
-  updateMetaTag('description', meta.description);
+  updateMetaTag('name', 'description', meta.description);
 
   // Update Open Graph tags
   updateMetaTag('property', 'og:title', meta.title, 'og:');
